@@ -53,3 +53,27 @@ Arguments:
 - `--preview-chars`: maximum preview length per result. Defaults to `300`.
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
+
+## `src/basic_rag.py`
+
+Retrieves relevant dreams for a question and asks an Ollama chat model to answer using only those entries.
+
+```bash
+python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
+python3 src/basic_rag.py "What symbols recur in school dreams?" --top-k 5 --chat-model qwen3:8b
+```
+
+Arguments:
+
+- `question`: required question or prompt to answer.
+- `--top-k`: number of dream entries to retrieve. Defaults to `8`.
+- `--chroma-path`: path to the persistent ChromaDB database. Defaults to `data/chroma_db`.
+- `--collection-name`: ChromaDB collection name to query. Defaults to `dreams`.
+- `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
+- `--chat-model`: Ollama chat model. Defaults to `qwen3:8b`.
+- `--max-chars-per-dream`: maximum context characters per retrieved dream. Defaults to `2500`.
+- `--num-ctx`: Ollama context window option. Defaults to `4096`.
+- `--num-predict`: maximum generated tokens. Defaults to `700`.
+- `--temperature`: sampling temperature. Defaults to `0.1`.
+
+Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
