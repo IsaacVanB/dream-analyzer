@@ -1,6 +1,7 @@
 analysis/
 dreams/
 test/
+outputs/
 data/chroma_db
 .codex
 __pycache__/

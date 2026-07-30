@@ -33,6 +33,12 @@ Retrieve similar dreams:
 python3 src/retrieve_dreams.py "hidden room water" --top-k 5
 ```
 
+Plot tag frequency over time:
+
+```bash
+python3 src/plot_tags.py --tags house recurring school
+```
+
 Ask a RAG question:
 
 ```bash

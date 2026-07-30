@@ -34,6 +34,27 @@ Arguments:
 
 Requires Ollama running locally at `http://localhost:11434`.
 
+## `src/plot_tags.py`
+
+Plots dream tag frequency over time and saves the image to `outputs/plots/`.
+
+```bash
+python3 src/plot_tags.py
+python3 src/plot_tags.py --tags house recurring school --freq M
+python3 src/plot_tags.py --freq Y --normalize --output outputs/plots/tags_by_year.png
+```
+
+Arguments:
+
+- `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
+- `--output`: path where the plot image should be saved. Defaults to `outputs/plots/tag_frequency.png`.
+- `--tags`: specific tags to plot. Defaults to the top tags.
+- `--top-n`: number of top tags to plot when `--tags` is omitted. Defaults to `10`.
+- `--freq`: time grouping frequency: `M`, `Q`, or `Y`. Defaults to `M`.
+- `--normalize`: plot percent of dreams per period instead of raw counts.
+- `--title`: optional plot title.
+- `--show`: display the plot interactively after saving.
+
 ## `src/retrieve_dreams.py`
 
 Embeds a text query and returns the closest dreams from the ChromaDB collection.

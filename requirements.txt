@@ -1,4 +1,6 @@
 chromadb
-ollama
-requests
+matplotlib
 numpy
+ollama
+pandas
+requests
