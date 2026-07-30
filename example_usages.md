@@ -42,6 +42,7 @@ Plots dream tag frequency over time and saves the image to `outputs/plots/`.
 python3 src/plot_tags.py
 python3 src/plot_tags.py --tags house recurring school --freq M
 python3 src/plot_tags.py --freq Y --normalize --output outputs/plots/tags_by_year.png
+python3 src/plot_tags.py --start-date 2023-01-01 --end-date 2023-12-31
 ```
 
 Arguments:
@@ -51,6 +52,8 @@ Arguments:
 - `--tags`: specific tags to plot. Defaults to the top tags.
 - `--top-n`: number of top tags to plot when `--tags` is omitted. Defaults to `10`.
 - `--freq`: time grouping frequency: `M`, `Q`, or `Y`. Defaults to `M`.
+- `--start-date`: only include dreams on or after this date.
+- `--end-date`: only include dreams on or before this date.
 - `--normalize`: plot percent of dreams per period instead of raw counts.
 - `--title`: optional plot title.
 - `--show`: display the plot interactively after saving.

@@ -51,6 +51,39 @@ def top_tags(dreams: list[dict[str, Any]], *, top_n: int) -> list[str]:
     ]
 
 
+def parse_date_filter(date_text: str | None, *, argument_name: str) -> pd.Timestamp | None:
+    if date_text is None:
+        return None
+    try:
+        return pd.to_datetime(date_text)
+    except ValueError as exc:
+        raise ValueError(f"Invalid {argument_name}: {date_text!r}") from exc
+
+
+def filter_dreams_by_date(
+    dreams: list[dict[str, Any]],
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict[str, Any]]:
+    start = parse_date_filter(start_date, argument_name="start_date")
+    end = parse_date_filter(end_date, argument_name="end_date")
+
+    if start is not None and end is not None and start > end:
+        raise ValueError("start_date must be before or equal to end_date.")
+
+    filtered: list[dict[str, Any]] = []
+    for dream in dreams:
+        date = pd.to_datetime(dream["date"])
+        if start is not None and date < start:
+            continue
+        if end is not None and date > end:
+            continue
+        filtered.append(dream)
+
+    return filtered
+
+
 def tag_counts_over_time(
     dreams: list[dict[str, Any]],
     *,
@@ -103,20 +136,27 @@ def plot_tag_counts(
     counts: pd.DataFrame,
     *,
     output_path: Path,
+    freq: str = "M",
     title: str | None = None,
     normalize: bool = False,
     show: bool = False,
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(11, 6))
-    counts.plot(ax=ax, marker="o")
+    labels = [format_period_label(period, freq=freq) for period in counts.index]
+    plot_counts = counts.copy()
+    plot_counts.index = labels
+
+    width = max(11, len(plot_counts.index) * 0.28)
+    fig, ax = plt.subplots(figsize=(width, 6))
+    plot_counts.plot(kind="bar", ax=ax, width=0.85)
 
     ax.set_title(title or "Dream Tag Frequency Over Time")
     ax.set_xlabel("Date")
     ax.set_ylabel("Percent of dreams" if normalize else "Dream count")
-    ax.grid(True, alpha=0.25)
+    ax.grid(True, axis="y", alpha=0.25)
     ax.legend(title="Tag", bbox_to_anchor=(1.02, 1), loc="upper left")
+    ax.tick_params(axis="x", labelrotation=90)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
 
@@ -125,6 +165,15 @@ def plot_tag_counts(
 
     plt.close(fig)
     return output_path
+
+
+def format_period_label(period: pd.Timestamp, *, freq: str = "M") -> str:
+    if freq == "Y":
+        return f"{period.year}"
+    if freq == "Q":
+        quarter = ((period.month - 1) // 3) + 1
+        return f"Q{quarter}-{period.year}"
+    return f"{period.month}-{period.year}"
 
 
 def make_tag_frequency_plot(
@@ -137,8 +186,15 @@ def make_tag_frequency_plot(
     normalize: bool = False,
     title: str | None = None,
     show: bool = False,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
-    dreams = load_dreams(dreams_path)
+    all_dreams = load_dreams(dreams_path)
+    dreams = filter_dreams_by_date(
+        all_dreams,
+        start_date=start_date,
+        end_date=end_date,
+    )
     selected_tags = tags or top_tags(dreams, top_n=top_n)
     counts = tag_counts_over_time(
         dreams,
@@ -150,6 +206,7 @@ def make_tag_frequency_plot(
     plot_path = plot_tag_counts(
         counts,
         output_path=output_path,
+        freq=freq,
         title=title,
         normalize=normalize,
         show=show,
@@ -166,6 +223,8 @@ def make_tag_frequency_plot(
         "freq": freq,
         "normalize": normalize,
         "dream_count": len(dreams),
+        "start_date": start_date,
+        "end_date": end_date,
         "date_min": dates.min().date().isoformat(),
         "date_max": dates.max().date().isoformat(),
     }
@@ -205,6 +264,14 @@ def main() -> None:
         help="Time grouping frequency: M=month, Q=quarter, Y=year.",
     )
     parser.add_argument(
+        "--start-date",
+        help="Only include dreams on or after this date, e.g. 2023-01-01.",
+    )
+    parser.add_argument(
+        "--end-date",
+        help="Only include dreams on or before this date, e.g. 2023-12-31.",
+    )
+    parser.add_argument(
         "--normalize",
         action="store_true",
         help="Plot percent of dreams per period instead of raw counts.",
@@ -229,6 +296,8 @@ def main() -> None:
         normalize=args.normalize,
         title=args.title,
         show=args.show,
+        start_date=args.start_date,
+        end_date=args.end_date,
     )
     print(json.dumps(metadata, indent=2))
 
