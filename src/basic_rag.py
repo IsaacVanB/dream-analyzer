@@ -69,6 +69,59 @@ def retrieve_dreams(
     return retrieved
 
 
+def clean_retrieval_query(query: str) -> str:
+    return query.strip().strip('"').strip("'").strip()
+
+
+def generate_retrieval_query(
+    question: str,
+    *,
+    chat_model: str = CHAT_MODEL,
+) -> str:
+    system_prompt = (
+        "You convert user questions into keyword-expanded semantic search "
+        "queries for retrieving relevant dream journal entries. Return only "
+        "the search query text. Do not answer the question."
+    )
+    user_prompt = f"""
+/no_think
+
+QUESTION:
+{question}
+
+TASK:
+Write one concise keyword query for dream retrieval. Use 6 to 10 words total.
+Do not write a sentence. Do not include filler words like "dreams about",
+"patterns", "themes", "analyze", or "compare". Include the core image plus a
+few distinct variants or adjacent dream-language terms. Avoid repeating the
+same root idea more than twice.
+
+Examples:
+- Question: What patterns appear in dreams about hidden rooms?
+- Query: hidden room hallway extra room concealed door behind wall
+
+- Question: How do school anxiety dreams show up?
+- Query: school class exam final late campus anxiety
+"""
+
+    response = ollama.chat(
+        model=chat_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        think=False,
+        options={
+            "temperature": 0,
+            "num_ctx": 2048,
+            "num_predict": 80,
+        },
+    )
+
+    retrieval_query = clean_retrieval_query(response["message"]["content"])
+    return retrieval_query or question
+
+
 def format_context(
     retrieved: list[dict[str, Any]],
     *,
@@ -173,6 +226,13 @@ def main() -> None:
         help="Number of dream entries to retrieve.",
     )
     parser.add_argument(
+        "--retrieval-query",
+        help=(
+            "Optional focused query to embed for dream retrieval. If omitted, "
+            "the chat model generates one from the question."
+        ),
+    )
+    parser.add_argument(
         "--chroma-path",
         default=CHROMA_PATH,
         help="Path to the persistent ChromaDB database.",
@@ -218,8 +278,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    retrieval_query = args.retrieval_query
+    if retrieval_query is None:
+        retrieval_query = generate_retrieval_query(
+            args.question,
+            chat_model=args.chat_model,
+        )
+        print(f"\nGenerated retrieval query: {retrieval_query}")
+    else:
+        print(f"\nRetrieval query: {retrieval_query}")
+
     retrieved = retrieve_dreams(
-        args.question,
+        retrieval_query,
         top_k=args.top_k,
         chroma_path=args.chroma_path,
         collection_name=args.collection_name,

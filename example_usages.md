@@ -61,12 +61,14 @@ Retrieves relevant dreams for a question and asks an Ollama chat model to answer
 ```bash
 python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
 python3 src/basic_rag.py "What symbols recur in school dreams?" --top-k 5 --chat-model qwen3:8b
+python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?" --retrieval-query "hidden room hidden hallway secret room"
 ```
 
 Arguments:
 
 - `question`: required question or prompt to answer.
 - `--top-k`: number of dream entries to retrieve. Defaults to `8`.
+- `--retrieval-query`: optional focused query to embed for retrieval. If omitted, the chat model generates one from `question`.
 - `--chroma-path`: path to the persistent ChromaDB database. Defaults to `data/chroma_db`.
 - `--collection-name`: ChromaDB collection name to query. Defaults to `dreams`.
 - `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.

@@ -2,3 +2,6 @@ analysis/
 dreams/
 test/
 data/chroma_db
+.codex
+__pycache__/
+*.py[cod]
