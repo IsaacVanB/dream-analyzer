@@ -34,6 +34,22 @@ def word_count(text: str) -> int:
     return len(WORD_RE.findall(text))
 
 
+def detect_dream_separator_blank_lines(journal_text: str) -> int:
+    """Infer whether dreams are separated by one or two blank lines."""
+    max_blank_run = 0
+    current_blank_run = 0
+
+    for raw_line in journal_text.splitlines():
+        line = raw_line.rstrip().removeprefix("\ufeff")
+        if not line.strip():
+            current_blank_run += 1
+            max_blank_run = max(max_blank_run, current_blank_run)
+        else:
+            current_blank_run = 0
+
+    return 2 if max_blank_run >= 2 else 1
+
+
 def build_dream(
     *,
     month: int,
@@ -67,11 +83,21 @@ def build_dream(
     }
 
 
-def parse_journal(journal_text: str) -> list[dict[str, Any]]:
+def parse_journal(
+    journal_text: str,
+    *,
+    dream_separator_blank_lines: int | None = None,
+) -> list[dict[str, Any]]:
     dreams: list[dict[str, Any]] = []
     current_date: tuple[int, int, int] | None = None
     current_dream_lines: list[str] = []
     current_date_dream_index = 0
+    pending_blank_lines = 0
+
+    if dream_separator_blank_lines is None:
+        dream_separator_blank_lines = detect_dream_separator_blank_lines(journal_text)
+    if dream_separator_blank_lines < 1:
+        raise ValueError("dream_separator_blank_lines must be at least 1.")
 
     def flush_dream() -> None:
         nonlocal current_date_dream_index, current_dream_lines
@@ -93,10 +119,11 @@ def parse_journal(journal_text: str) -> list[dict[str, Any]]:
         current_dream_lines = []
 
     for raw_line in journal_text.splitlines():
-        line = raw_line.rstrip()
+        line = raw_line.rstrip().removeprefix("\ufeff")
         date_match = DATE_RE.match(line)
 
         if date_match:
+            pending_blank_lines = 0
             flush_dream()
             month_text, day_text, year_text = date_match.groups()
             current_date = (
@@ -113,8 +140,14 @@ def parse_journal(journal_text: str) -> list[dict[str, Any]]:
             continue
 
         if not line.strip():
-            flush_dream()
+            pending_blank_lines += 1
             continue
+
+        if pending_blank_lines >= dream_separator_blank_lines:
+            flush_dream()
+        elif pending_blank_lines:
+            current_dream_lines.extend([""] * pending_blank_lines)
+        pending_blank_lines = 0
 
         current_dream_lines.append(line)
 
@@ -146,10 +179,21 @@ def main() -> None:
         default=Path("data/dreams.jsonl"),
         help="Path where the JSON Lines output should be written.",
     )
+    parser.add_argument(
+        "--dream-separator-blank-lines",
+        type=int,
+        help=(
+            "Number of consecutive blank lines that separates dreams. "
+            "Defaults to auto-detection."
+        ),
+    )
     args = parser.parse_args()
 
     journal_text = args.input.read_text(encoding="utf-8")
-    dreams = parse_journal(journal_text)
+    dreams = parse_journal(
+        journal_text,
+        dream_separator_blank_lines=args.dream_separator_blank_lines,
+    )
     write_jsonl(dreams, args.output)
     print(f"Wrote {len(dreams)} dreams to {args.output}")
 

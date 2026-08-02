@@ -7,12 +7,14 @@ Parses the raw dream journal text file into JSON Lines, one JSON object per drea
 ```bash
 python3 src/parse_dreams.py
 python3 src/parse_dreams.py data/mock_dream_journal.txt data/dreams.jsonl
+python3 src/parse_dreams.py other_journal.txt data/other_dreams.jsonl --dream-separator-blank-lines 2
 ```
 
 Arguments:
 
 - `input`: optional path to the raw journal text file. Defaults to `data/mock_dream_journal.txt`.
 - `output`: optional path for parsed JSONL output. Defaults to `data/dreams.jsonl`.
+- `--dream-separator-blank-lines`: number of consecutive blank lines that separates dreams. Defaults to auto-detection.
 
 Output fields include `dream_id`, `date`, `year`, `month`, `tags`, `text`, and `word_count`.
 
