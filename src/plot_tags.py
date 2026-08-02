@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 MPLCONFIGDIR = Path("/tmp/dream_analysis_matplotlib")
 MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(MPLCONFIGDIR.resolve()))
@@ -20,6 +22,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+
+plt.style.use("seaborn-v0_8-whitegrid")
 
 DREAMS_PATH = Path("data/dreams.jsonl")
 OUTPUT_PATH = Path("outputs/plots/tag_frequency.png")
@@ -132,11 +136,24 @@ def tag_counts_over_time(
     return counts
 
 
+def dream_counts_over_time(dreams: list[dict[str, Any]], *, freq: str = "M") -> pd.Series:
+    if not dreams:
+        raise ValueError("No dreams found.")
+
+    periods = [
+        pd.to_datetime(dream["date"]).to_period(freq).to_timestamp()
+        for dream in dreams
+    ]
+    all_periods = pd.Index(sorted(set(periods)), name="period")
+    return pd.Series(periods).value_counts().sort_index().reindex(all_periods, fill_value=0)
+
+
 def plot_tag_counts(
     counts: pd.DataFrame,
     *,
     output_path: Path,
     freq: str = "M",
+    total_counts: pd.Series | None = None,
     title: str | None = None,
     normalize: bool = False,
     show: bool = False,
@@ -149,22 +166,64 @@ def plot_tag_counts(
 
     width = max(11, len(plot_counts.index) * 0.28)
     fig, ax = plt.subplots(figsize=(width, 6))
-    plot_counts.plot(kind="bar", ax=ax, width=0.85)
+    tag_colors = plt.get_cmap("Set2").colors
+    if normalize or total_counts is None:
+        plot_counts.plot(kind="bar", ax=ax, width=0.85, color=tag_colors)
+    else:
+        x_positions = np.arange(len(plot_counts.index))
+        total_values = total_counts.reindex(counts.index, fill_value=0).to_numpy()
+        ax.bar(
+            x_positions,
+            total_values,
+            width=0.85,
+            color="#e8e8e8",
+            edgecolor="#c7c7c7",
+            linewidth=0.8,
+            label="total dreams",
+            zorder=1,
+        )
+
+        tag_width = 0.7 / max(len(plot_counts.columns), 1)
+        offsets = (
+            np.arange(len(plot_counts.columns)) - (len(plot_counts.columns) - 1) / 2
+        ) * tag_width
+        for index, (offset, tag) in enumerate(zip(offsets, plot_counts.columns)):
+            ax.bar(
+                x_positions + offset,
+                plot_counts[tag].to_numpy(),
+                width=tag_width,
+                color=tag_colors[index % len(tag_colors)],
+                label=tag,
+                zorder=2,
+            )
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(plot_counts.index)
 
     ax.set_title(title or "Dream Tag Frequency Over Time")
     ax.set_xlabel("Date")
     ax.set_ylabel("Percent of dreams" if normalize else "Dream count")
-    ax.grid(True, axis="y", alpha=0.25)
+    style_axis(ax)
     ax.legend(title="Tag", bbox_to_anchor=(1.02, 1), loc="upper left")
-    ax.tick_params(axis="x", labelrotation=90)
+    ax.tick_params(axis="x", labelrotation=90, labelsize=8)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
+    fig.savefig(output_path, dpi=180, bbox_inches="tight", facecolor="white")
 
     if show:
         plt.show()
 
     plt.close(fig)
     return output_path
+
+
+def style_axis(ax: plt.Axes) -> None:
+    ax.set_axisbelow(True)
+    ax.grid(True, axis="y", alpha=0.2, linewidth=0.8)
+    ax.grid(False, axis="x")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#c0c0c0")
+    ax.spines["bottom"].set_color("#c0c0c0")
 
 
 def format_period_label(period: pd.Timestamp, *, freq: str = "M") -> str:
@@ -203,10 +262,12 @@ def make_tag_frequency_plot(
         top_n=top_n,
         normalize=normalize,
     )
+    total_counts = dream_counts_over_time(dreams, freq=freq)
     plot_path = plot_tag_counts(
         counts,
         output_path=output_path,
         freq=freq,
+        total_counts=total_counts,
         title=title,
         normalize=normalize,
         show=show,
@@ -222,6 +283,7 @@ def make_tag_frequency_plot(
         "missing_tags": missing_tags,
         "freq": freq,
         "normalize": normalize,
+        "includes_total_dream_bars": not normalize,
         "dream_count": len(dreams),
         "start_date": start_date,
         "end_date": end_date,
