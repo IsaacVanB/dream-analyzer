@@ -64,6 +64,16 @@ def parse_date_filter(date_text: str | None, *, argument_name: str) -> pd.Timest
         raise ValueError(f"Invalid {argument_name}: {date_text!r}") from exc
 
 
+def dream_plot_date(dream: dict[str, Any]) -> pd.Timestamp | None:
+    date_text = dream.get("date_sort", dream.get("date"))
+    if not date_text:
+        return None
+    try:
+        return pd.to_datetime(date_text)
+    except ValueError:
+        return None
+
+
 def filter_dreams_by_date(
     dreams: list[dict[str, Any]],
     *,
@@ -78,7 +88,9 @@ def filter_dreams_by_date(
 
     filtered: list[dict[str, Any]] = []
     for dream in dreams:
-        date = pd.to_datetime(dream["date"])
+        date = dream_plot_date(dream)
+        if date is None:
+            continue
         if start is not None and date < start:
             continue
         if end is not None and date > end:
@@ -107,7 +119,9 @@ def tag_counts_over_time(
     dream_periods: list[pd.Timestamp] = []
 
     for dream in dreams:
-        date = pd.to_datetime(dream["date"])
+        date = dream_plot_date(dream)
+        if date is None:
+            continue
         period = date.to_period(freq).to_timestamp()
         dream_periods.append(period)
 
@@ -140,10 +154,12 @@ def dream_counts_over_time(dreams: list[dict[str, Any]], *, freq: str = "M") -> 
     if not dreams:
         raise ValueError("No dreams found.")
 
-    periods = [
-        pd.to_datetime(dream["date"]).to_period(freq).to_timestamp()
-        for dream in dreams
-    ]
+    periods: list[pd.Timestamp] = []
+    for dream in dreams:
+        date = dream_plot_date(dream)
+        if date is not None:
+            periods.append(date.to_period(freq).to_timestamp())
+
     all_periods = pd.Index(sorted(set(periods)), name="period")
     return pd.Series(periods).value_counts().sort_index().reindex(all_periods, fill_value=0)
 
@@ -249,6 +265,9 @@ def make_tag_frequency_plot(
     end_date: str | None = None,
 ) -> dict[str, Any]:
     all_dreams = load_dreams(dreams_path)
+    excluded_unknown_date_count = sum(
+        1 for dream in all_dreams if dream_plot_date(dream) is None
+    )
     dreams = filter_dreams_by_date(
         all_dreams,
         start_date=start_date,
@@ -276,7 +295,7 @@ def make_tag_frequency_plot(
     available_tags = set(top_tags(dreams, top_n=10_000))
     missing_tags = [tag for tag in selected_tags if tag not in available_tags]
 
-    dates = pd.to_datetime([dream["date"] for dream in dreams])
+    dates = pd.Series([dream_plot_date(dream) for dream in dreams])
     return {
         "plot_path": str(plot_path),
         "tags": selected_tags,
@@ -285,6 +304,7 @@ def make_tag_frequency_plot(
         "normalize": normalize,
         "includes_total_dream_bars": not normalize,
         "dream_count": len(dreams),
+        "excluded_unknown_date_count": excluded_unknown_date_count,
         "start_date": start_date,
         "end_date": end_date,
         "date_min": dates.min().date().isoformat(),

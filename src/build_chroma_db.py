@@ -57,6 +57,14 @@ def dream_word_count(dream: dict[str, Any]) -> int:
     return int(dream.get("word_count", dream.get("word count", 0)))
 
 
+def metadata_int(value: Any) -> int:
+    return int(value) if value is not None else 0
+
+
+def document_value(value: Any) -> str:
+    return "" if value is None else str(value)
+
+
 def build_document(dream: dict[str, Any], dream_id: str) -> str:
     tags = dream.get("tags", [])
     tag_text = ", ".join(str(tag) for tag in tags)
@@ -64,8 +72,10 @@ def build_document(dream: dict[str, Any], dream_id: str) -> str:
     return (
         f"DREAM_ID: {dream_id}\n"
         f"DATE: {dream['date']}\n"
-        f"YEAR: {dream.get('year', '')}\n"
-        f"MONTH: {dream.get('month', '')}\n"
+        f"YEAR: {document_value(dream.get('year'))}\n"
+        f"MONTH: {document_value(dream.get('month'))}\n"
+        f"DAY: {document_value(dream.get('day'))}\n"
+        f"DATE_PRECISION: {dream.get('date_precision', '')}\n"
         f"TAGS: {tag_text}\n\n"
         f"--- DREAM TEXT ---\n\n"
         f"{dream['text']}"
@@ -76,8 +86,11 @@ def build_metadata(dream: dict[str, Any]) -> dict[str, str | int]:
     tags = dream.get("tags", [])
     return {
         "date": str(dream["date"]),
-        "year": int(dream["year"]),
-        "month": int(dream["month"]),
+        "year": metadata_int(dream.get("year")),
+        "month": metadata_int(dream.get("month")),
+        "day": metadata_int(dream.get("day")),
+        "date_precision": str(dream.get("date_precision", "day")),
+        "date_sort": str(dream.get("date_sort") or ""),
         "tags": ", ".join(str(tag) for tag in tags),
         "word_count": dream_word_count(dream),
     }

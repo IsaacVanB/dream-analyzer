@@ -23,6 +23,45 @@ def normalize_year(year_text: str) -> int:
     return year
 
 
+def normalize_date_parts(
+    *,
+    month: int,
+    day: int,
+    year: int,
+    year_text: str,
+) -> dict[str, Any]:
+    parsed_year: int | None = year
+    parsed_month: int | None = month
+    parsed_day: int | None = day
+    date_sort: str | None = None
+
+    if month == 0 and day == 0 and year_text in {"0", "00", "0000"}:
+        parsed_year = None
+        parsed_month = None
+        parsed_day = None
+        date_precision = "unknown"
+    elif month == 0 and day == 0:
+        parsed_month = None
+        parsed_day = None
+        date_precision = "year"
+        date_sort = f"{year:04d}-01-01"
+    elif day == 0:
+        parsed_day = None
+        date_precision = "month"
+        date_sort = f"{year:04d}-{month:02d}-01"
+    else:
+        date_precision = "day"
+        date_sort = f"{year:04d}-{month:02d}-{day:02d}"
+
+    return {
+        "year": parsed_year,
+        "month": parsed_month,
+        "day": parsed_day,
+        "date_precision": date_precision,
+        "date_sort": date_sort,
+    }
+
+
 def parse_tag_line(line: str) -> list[str] | None:
     """Return tags from a tag-only line, or None when the line is dream text."""
     if not TAG_LINE_RE.match(line):
@@ -55,6 +94,7 @@ def build_dream(
     month: int,
     day: int,
     year: int,
+    year_text: str,
     dream_index: int,
     dream_lines: list[str],
 ) -> dict[str, Any]:
@@ -71,12 +111,17 @@ def build_dream(
         text_start = len(dream_lines)
 
     text = "\n".join(dream_lines[text_start:]).strip()
+    date_parts = normalize_date_parts(
+        month=month,
+        day=day,
+        year=year,
+        year_text=year_text,
+    )
 
     return {
         "dream_id": f"dream-{year}-{month}-{day}-{dream_index}",
         "date": f"{month}/{day}/{year}",
-        "year": year,
-        "month": month,
+        **date_parts,
         "tags": tags,
         "text": text,
         "word_count": word_count(text),
@@ -89,7 +134,7 @@ def parse_journal(
     dream_separator_blank_lines: int | None = None,
 ) -> list[dict[str, Any]]:
     dreams: list[dict[str, Any]] = []
-    current_date: tuple[int, int, int] | None = None
+    current_date: tuple[int, int, int, str] | None = None
     current_dream_lines: list[str] = []
     current_date_dream_index = 0
     pending_blank_lines = 0
@@ -105,12 +150,13 @@ def parse_journal(
             current_dream_lines = []
             return
 
-        month, day, year = current_date
+        month, day, year, year_text = current_date
         dreams.append(
             build_dream(
                 month=month,
                 day=day,
                 year=year,
+                year_text=year_text,
                 dream_index=current_date_dream_index,
                 dream_lines=current_dream_lines,
             )
@@ -130,6 +176,7 @@ def parse_journal(
                 int(month_text),
                 int(day_text),
                 normalize_year(year_text),
+                year_text,
             )
             current_date_dream_index = 0
             continue

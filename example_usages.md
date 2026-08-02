@@ -16,7 +16,7 @@ Arguments:
 - `output`: optional path for parsed JSONL output. Defaults to `data/dreams.jsonl`.
 - `--dream-separator-blank-lines`: number of consecutive blank lines that separates dreams. Defaults to auto-detection.
 
-Output fields include `dream_id`, `date`, `year`, `month`, `tags`, `text`, and `word_count`.
+Output fields include `dream_id`, `date`, `year`, `month`, `day`, `date_precision`, `date_sort`, `tags`, `text`, and `word_count`.
 
 ## `src/build_chroma_db.py`
 
