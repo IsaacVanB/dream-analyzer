@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import statistics
 from collections import Counter
 from pathlib import Path
@@ -15,6 +16,110 @@ import pandas as pd
 
 DREAMS_PATH = Path("data/dreams.jsonl")
 OUTPUT_PATH = Path("outputs/stats/dream_stats.json")
+WORD_RE = re.compile(r"[A-Za-z']+")
+DEFAULT_STOPWORDS = {
+    "a",
+    "about",
+    "after",
+    "again",
+    "all",
+    "also",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "at",
+    "back",
+    "be",
+    "because",
+    "been",
+    "before",
+    "being",
+    "but",
+    "by",
+    "can",
+    "could",
+    "did",
+    "didn't",
+    "do",
+    "don't",
+    "dream",
+    "dreaming",
+    "dreams",
+    "every",
+    "everyone",
+    "for",
+    "from",
+    "get",
+    "go",
+    "got",
+    "had",
+    "has",
+    "have",
+    "he",
+    "her",
+    "him",
+    "his",
+    "how",
+    "i",
+    "i'd",
+    "i'm",
+    "in",
+    "into",
+    "is",
+    "it",
+    "it's",
+    "just",
+    "kept",
+    "know",
+    "like",
+    "me",
+    "my",
+    "no",
+    "not",
+    "of",
+    "on",
+    "one",
+    "only",
+    "or",
+    "out",
+    "really",
+    "remember",
+    "said",
+    "see",
+    "she",
+    "so",
+    "some",
+    "someone",
+    "something",
+    "that",
+    "the",
+    "them",
+    "then",
+    "there",
+    "they",
+    "this",
+    "through",
+    "to",
+    "too",
+    "tried",
+    "up",
+    "was",
+    "we",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "who",
+    "with",
+    "woke",
+    "would",
+    "you",
+}
 
 
 def load_dreams(path: Path) -> list[dict[str, Any]]:
@@ -87,6 +192,20 @@ def word_count_for(dream: dict[str, Any]) -> int:
     return int(dream.get("word_count", dream.get("word count", 0)))
 
 
+def load_stopwords(path: Path | None = None) -> set[str]:
+    stopwords = set(DEFAULT_STOPWORDS)
+    if path is None:
+        return stopwords
+
+    with path.open("r", encoding="utf-8") as input_file:
+        for line in input_file:
+            word = line.strip().lower()
+            if word and not word.startswith("#"):
+                stopwords.add(word)
+
+    return stopwords
+
+
 def dream_summary(dream: dict[str, Any]) -> dict[str, Any]:
     return {
         "dream_id": dream.get("dream_id"),
@@ -155,6 +274,44 @@ def length_stats(dreams: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def tokenize_words(text: str) -> list[str]:
+    return [
+        match.group(0).lower().strip("'")
+        for match in WORD_RE.finditer(text)
+        if match.group(0).strip("'")
+    ]
+
+
+def common_word_stats(
+    dreams: list[dict[str, Any]],
+    *,
+    top_n: int = 20,
+    stopwords: set[str] | None = None,
+    min_word_length: int = 3,
+) -> list[dict[str, Any]]:
+    stopwords = stopwords or DEFAULT_STOPWORDS
+    counts: Counter[str] = Counter()
+    total_kept_words = 0
+
+    for dream in dreams:
+        for word in tokenize_words(str(dream.get("text", ""))):
+            if len(word) < min_word_length or word in stopwords:
+                continue
+            counts[word] += 1
+            total_kept_words += 1
+
+    return [
+        {
+            "word": word,
+            "count": count,
+            "percentage": round((count / total_kept_words) * 100, 2)
+            if total_kept_words
+            else 0,
+        }
+        for word, count in counts.most_common(top_n)
+    ]
+
+
 def compute_dream_stats(
     *,
     dreams_path: Path = DREAMS_PATH,
@@ -162,6 +319,9 @@ def compute_dream_stats(
     freq: str = "M",
     start_date: str | None = None,
     end_date: str | None = None,
+    common_words: int = 20,
+    stopwords_path: Path | None = None,
+    min_word_length: int = 3,
 ) -> dict[str, Any]:
     all_dreams = load_dreams(dreams_path)
     excluded_unknown_date_count = sum(
@@ -173,6 +333,7 @@ def compute_dream_stats(
         end_date=end_date,
     )
     dates = [dream_stats_date(dream) for dream in dreams]
+    stopwords = load_stopwords(stopwords_path)
 
     stats = {
         "dreams_path": str(dreams_path),
@@ -187,6 +348,12 @@ def compute_dream_stats(
         "entries_per_period": entries_per_period(dreams, freq=freq),
         "tag_stats": tag_stats(dreams),
         "length_stats": length_stats(dreams),
+        "common_words": common_word_stats(
+            dreams,
+            top_n=common_words,
+            stopwords=stopwords,
+            min_word_length=min_word_length,
+        ),
     }
 
     if output_path is not None:
@@ -226,6 +393,23 @@ def main() -> None:
         "--end-date",
         help="Only include dreams on or before this date, e.g. 2023-12-31.",
     )
+    parser.add_argument(
+        "--common-words",
+        type=int,
+        default=20,
+        help="Number of most common non-trivial words to include.",
+    )
+    parser.add_argument(
+        "--stopwords-path",
+        type=Path,
+        help="Optional text file of additional stopwords, one per line.",
+    )
+    parser.add_argument(
+        "--min-word-length",
+        type=int,
+        default=3,
+        help="Minimum word length to include in common-word stats.",
+    )
     args = parser.parse_args()
 
     stats = compute_dream_stats(
@@ -234,6 +418,9 @@ def main() -> None:
         freq=args.freq,
         start_date=args.start_date,
         end_date=args.end_date,
+        common_words=args.common_words,
+        stopwords_path=args.stopwords_path,
+        min_word_length=args.min_word_length,
     )
     print(json.dumps(stats, indent=2))
 

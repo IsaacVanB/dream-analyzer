@@ -68,6 +68,7 @@ Computes dream counts, tag frequencies, and word-count statistics, then prints a
 python3 src/compute_stats.py
 python3 src/compute_stats.py --freq Q --start-date 2023-01-01 --end-date 2023-12-31
 python3 src/compute_stats.py --freq Y --output outputs/stats/yearly_stats.json
+python3 src/compute_stats.py --common-words 50 --stopwords-path data/stopwords.txt
 ```
 
 Arguments:
@@ -77,6 +78,9 @@ Arguments:
 - `--freq`: time grouping frequency for entry counts: `M`, `Q`, or `Y`. Defaults to `M`.
 - `--start-date`: only include dreams on or after this date.
 - `--end-date`: only include dreams on or before this date.
+- `--common-words`: number of most common non-trivial words to include. Defaults to `20`.
+- `--stopwords-path`: optional text file of additional stopwords, one per line.
+- `--min-word-length`: minimum word length for common-word stats. Defaults to `3`.
 
 ## `src/retrieve_dreams.py`
 
