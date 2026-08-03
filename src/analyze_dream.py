@@ -23,6 +23,7 @@ COLLECTION_NAME = "dreams"
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "qwen3:8b"
 OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
+DREAM_TEXT_SEPARATOR = "--- DREAM TEXT ---"
 
 
 def load_dream_by_id(path: Path, dream_id: str) -> dict[str, Any]:
@@ -65,6 +66,18 @@ def cosine_similarity(first: list[float], second: list[float]) -> float:
 
     dot_product = sum(a * b for a, b in zip(first, second))
     return dot_product / (first_norm * second_norm)
+
+
+def extract_dream_text(document: str) -> str:
+    """Extract raw dream text from a formatted Chroma document."""
+    _, separator, dream_text = document.partition(DREAM_TEXT_SEPARATOR)
+    return (dream_text if separator else document).strip()
+
+
+def word_preview(text: str, *, max_words: int = 25) -> str:
+    words = text.split()
+    preview = " ".join(words[:max_words])
+    return preview + ("..." if len(words) > max_words else "")
 
 
 def retrieve_related_dreams(
@@ -123,7 +136,7 @@ def retrieve_related_dreams(
                 "dream_id": dream_id,
                 "date": (metadata or {}).get("date", "unknown"),
                 "similarity": similarity,
-                "document": document or "",
+                "text": extract_dream_text(document or ""),
             }
         )
 
@@ -141,14 +154,14 @@ def format_related_context(
 
     blocks: list[str] = []
     for item in related_dreams:
-        document = item["document"]
-        if len(document) > max_chars_per_dream:
-            document = document[:max_chars_per_dream] + "\n[TRUNCATED]"
+        dream_text = item["text"]
+        if len(dream_text) > max_chars_per_dream:
+            dream_text = dream_text[:max_chars_per_dream] + "\n[TRUNCATED]"
         blocks.append(
             f"RELATED_DREAM_ID: {item['dream_id']}\n"
             f"DATE: {item['date']}\n"
             f"COSINE_SIMILARITY: {item['similarity']:.4f}\n\n"
-            f"{document}"
+            f"{dream_text}"
         )
     return "\n\n---\n\n".join(blocks)
 
@@ -162,8 +175,8 @@ def analyze_dream(
     tags: list[str] | None = None,
     related_dreams: list[dict[str, Any]] | None = None,
     max_chars_per_related_dream: int = 1500,
-    num_ctx: int = 4096,
-    num_predict: int = 900,
+    num_ctx: int = 8192,
+    num_predict: int = 1500,
     temperature: float = 0.2,
 ) -> str:
     """Ask Ollama for a close, evidence-based analysis of one dream."""
@@ -237,7 +250,18 @@ Analyze this dream using these sections:
     )
 
     content = response["message"]["content"]
-    return content or "[No analysis returned by chat model.]"
+    if not content:
+        return "[No analysis returned by chat model.]"
+
+    done_reason = getattr(response, "done_reason", None)
+    if done_reason is None and isinstance(response, dict):
+        done_reason = response.get("done_reason")
+    if done_reason == "length":
+        content += (
+            "\n\n[The model reached the generation limit. Rerun with a larger "
+            "--num-predict value.]"
+        )
+    return content
 
 
 def save_analysis(
@@ -329,13 +353,13 @@ def main() -> None:
     parser.add_argument(
         "--num-ctx",
         type=int,
-        default=4096,
+        default=8192,
         help="Ollama context window option.",
     )
     parser.add_argument(
         "--num-predict",
         type=int,
-        default=900,
+        default=1500,
         help="Maximum generated tokens.",
     )
     parser.add_argument(
@@ -387,6 +411,7 @@ def main() -> None:
                 f"- {item['dream_id']} | {item['date']} | "
                 f"similarity={item['similarity']:.4f}"
             )
+            print(f"  Preview: {word_preview(item['text'])}")
         print()
 
     analysis = analyze_dream(

@@ -154,8 +154,8 @@ Arguments:
 - `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
 - `--max-chars-per-related-dream`: maximum context characters per related dream. Defaults to `1500`.
 - `--output-dir`: directory where analysis files are saved. Defaults to `outputs/analysis`.
-- `--num-ctx`: Ollama context window option. Defaults to `4096`.
-- `--num-predict`: maximum generated tokens. Defaults to `900`.
+- `--num-ctx`: Ollama context window option. Defaults to `8192`.
+- `--num-predict`: maximum generated tokens. Defaults to `1500`.
 - `--temperature`: sampling temperature. Defaults to `0.2`.
 
 Related-dream context requires an existing ChromaDB index. Ollama must be running locally.

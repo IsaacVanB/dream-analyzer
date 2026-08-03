@@ -1,7 +1,8 @@
-# Dream Analysis
+# Dream Analyzer
 
 Small local pipeline for parsing a dream journal, embedding dreams with Ollama,
-storing them in ChromaDB, and asking retrieval-augmented questions.
+storing them in ChromaDB, and asking retrieval-augmented questions.  
+This project is a work in progress.
 
 ## Setup
 
