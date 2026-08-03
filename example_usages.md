@@ -18,6 +18,23 @@ Arguments:
 
 Output fields include `dream_id`, `date`, `year`, `month`, `day`, `date_precision`, `date_sort`, `tags`, `text`, and `word_count`.
 
+## `src/check_dates.py`
+
+Checks parsed dreams for suspicious years, duplicate dates, and duplicate dream IDs. It is helpful for finding human errors in dream journal dates and does not modify the data. Dates containing `0` placeholders are ignored during date checks, but their dream IDs are still checked for duplicates.
+
+```bash
+python3 src/check_dates.py
+python3 src/check_dates.py --dreams-path data/other_dreams.jsonl
+python3 src/check_dates.py --max-isolated-dates 5 --json
+```
+
+Arguments:
+
+- `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
+- `--max-isolated-dates`: largest surrounded year run to flag. Defaults to `3` dates.
+- `--max-year-jump`: largest adjacent year change not flagged. Defaults to `1`.
+- `--json`: print machine-readable JSON instead of the text report.
+
 ## `src/build_chroma_db.py`
 
 Embeds only each dream's text with Ollama `nomic-embed-text` and saves the vectors to a persistent ChromaDB collection. Dates, tags, and other metadata remain available for display and filtering but do not affect similarity.
