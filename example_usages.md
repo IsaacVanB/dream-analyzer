@@ -127,3 +127,27 @@ Arguments:
 - `--temperature`: sampling temperature. Defaults to `0.1`.
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
+
+## `src/analyze_dream.py`
+
+Loads one dream by ID or accepts dream text directly, then asks an Ollama chat model for a close analysis of its events, dynamics, themes, and possible interpretations.
+The analysis is printed and saved under `outputs/analysis/`. ID-based filenames use `<dream_id>_<datetime>.txt`; direct-text filenames use `<datetime>.txt`.
+
+```bash
+python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
+python3 src/analyze_dream.py --text "I opened a door and found another kitchen."
+python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --chat-model qwen3:8b
+```
+
+Arguments:
+
+- `--dream-id`: dream ID to load from JSONL. Mutually exclusive with `--text`.
+- `--text`: dream text to analyze directly. Mutually exclusive with `--dream-id`.
+- `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
+- `--chat-model`: Ollama chat model. Defaults to `qwen3:8b`.
+- `--output-dir`: directory where analysis files are saved. Defaults to `outputs/analysis`.
+- `--num-ctx`: Ollama context window option. Defaults to `4096`.
+- `--num-predict`: maximum generated tokens. Defaults to `900`.
+- `--temperature`: sampling temperature. Defaults to `0.2`.
+
+Requires Ollama running locally.

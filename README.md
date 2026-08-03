@@ -45,6 +45,12 @@ Compute summary stats:
 python3 src/compute_stats.py --freq Y
 ```
 
+Analyze one dream:
+
+```bash
+python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
+```
+
 Ask a RAG question:
 
 ```bash
