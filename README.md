@@ -39,6 +39,12 @@ Plot tag frequency over time:
 python3 src/plot_tags.py --tags house recurring school
 ```
 
+Compute summary stats:
+
+```bash
+python3 src/compute_stats.py --freq Y
+```
+
 Ask a RAG question:
 
 ```bash

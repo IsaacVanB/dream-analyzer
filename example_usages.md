@@ -60,6 +60,24 @@ Arguments:
 - `--title`: optional plot title.
 - `--show`: display the plot interactively after saving.
 
+## `src/compute_stats.py`
+
+Computes dream counts, tag frequencies, and word-count statistics, then prints and saves JSON.
+
+```bash
+python3 src/compute_stats.py
+python3 src/compute_stats.py --freq Q --start-date 2023-01-01 --end-date 2023-12-31
+python3 src/compute_stats.py --freq Y --output outputs/stats/yearly_stats.json
+```
+
+Arguments:
+
+- `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
+- `--output`: path where JSON stats should be saved. Defaults to `outputs/stats/dream_stats.json`.
+- `--freq`: time grouping frequency for entry counts: `M`, `Q`, or `Y`. Defaults to `M`.
+- `--start-date`: only include dreams on or after this date.
+- `--end-date`: only include dreams on or before this date.
+
 ## `src/retrieve_dreams.py`
 
 Embeds a text query and returns the closest dreams from the ChromaDB collection.
