@@ -96,12 +96,23 @@ def build_metadata(dream: dict[str, Any]) -> dict[str, str | int]:
     }
 
 
-def recreate_collection(client: chromadb.PersistentClient, name: str):
+def recreate_collection(
+    client: chromadb.PersistentClient,
+    name: str,
+    *,
+    embed_model: str,
+):
     try:
         client.delete_collection(name)
     except (NotFoundError, ValueError):
         pass
-    return client.create_collection(name=name)
+    return client.create_collection(
+        name=name,
+        metadata={
+            "embedding_source": "dream_text",
+            "embedding_model": embed_model,
+        },
+    )
 
 
 def build_chroma_db(
@@ -113,7 +124,11 @@ def build_chroma_db(
 ) -> int:
     dreams = load_dreams(dreams_path)
     client = chromadb.PersistentClient(path=chroma_path)
-    collection = recreate_collection(client, collection_name)
+    collection = recreate_collection(
+        client,
+        collection_name,
+        embed_model=embed_model,
+    )
 
     ids: list[str] = []
     documents: list[str] = []
@@ -129,7 +144,7 @@ def build_chroma_db(
         ids.append(dream_id)
         documents.append(document)
         metadatas.append(build_metadata(dream))
-        embeddings.append(ollama_embed(document, model=embed_model))
+        embeddings.append(ollama_embed(str(dream["text"]), model=embed_model))
 
     if ids:
         collection.add(

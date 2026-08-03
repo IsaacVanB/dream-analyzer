@@ -27,6 +27,8 @@ Build the ChromaDB index:
 python3 src/build_chroma_db.py
 ```
 
+Embeddings are generated from dream text only; metadata is stored separately.
+
 Retrieve similar dreams:
 
 ```bash

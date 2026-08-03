@@ -20,7 +20,7 @@ Output fields include `dream_id`, `date`, `year`, `month`, `day`, `date_precisio
 
 ## `src/build_chroma_db.py`
 
-Embeds parsed dreams with Ollama `nomic-embed-text` and saves them to a persistent ChromaDB collection.
+Embeds only each dream's text with Ollama `nomic-embed-text` and saves the vectors to a persistent ChromaDB collection. Dates, tags, and other metadata remain available for display and filtering but do not affect similarity.
 
 ```bash
 python3 src/build_chroma_db.py
@@ -35,6 +35,7 @@ Arguments:
 - `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
 
 Requires Ollama running locally at `http://localhost:11434`.
+Run this command again after changing the embedding logic so the existing index is rebuilt with text-only embeddings.
 
 ## `src/plot_tags.py`
 
