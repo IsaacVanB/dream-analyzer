@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import calendar
 import json
 import math
 import re
@@ -91,15 +90,13 @@ def parse_index_date(value: Any) -> Date | None:
         return None
 
 
-def subtract_months(value: Date, months: int) -> Date:
-    """Subtract calendar months, clamping the day when needed."""
-    if months < 0:
-        raise ValueError("months cannot be negative.")
-    month_index = value.year * 12 + value.month - 1 - months
-    year, zero_based_month = divmod(month_index, 12)
-    month = zero_based_month + 1
-    day = min(value.day, calendar.monthrange(year, month)[1])
-    return Date(year, month, day)
+def parse_cli_date(value: str) -> Date:
+    parsed_date = parse_index_date(value)
+    if parsed_date is None:
+        raise argparse.ArgumentTypeError(
+            f"invalid date {value!r}; expected YYYY-MM-DD"
+        )
+    return parsed_date
 
 
 def retrieve_related_dreams(
@@ -108,8 +105,8 @@ def retrieve_related_dreams(
     n_results: int,
     similarity_threshold: float = 0.5,
     target_dream_id: str | None = None,
-    target_date: Date | None = None,
-    months_back: int | None = None,
+    start_date: Date | None = None,
+    end_date: Date | None = None,
     chroma_path: str = CHROMA_PATH,
     collection_name: str = COLLECTION_NAME,
     embed_model: str = EMBED_MODEL,
@@ -119,18 +116,10 @@ def retrieve_related_dreams(
         raise ValueError("n_results cannot be negative.")
     if not -1.0 <= similarity_threshold <= 1.0:
         raise ValueError("similarity_threshold must be between -1 and 1.")
-    if months_back is not None and months_back < 0:
-        raise ValueError("months_back cannot be negative.")
-    if months_back is not None and target_date is None:
-        raise ValueError("target_date is required when months_back is set.")
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise ValueError("start_date must be before or equal to end_date.")
     if n_results == 0:
         return []
-
-    earliest_related_date = (
-        subtract_months(target_date, months_back)
-        if target_date is not None and months_back is not None
-        else None
-    )
 
     client = chromadb.PersistentClient(path=chroma_path)
     collection = client.get_collection(name=collection_name)
@@ -159,10 +148,13 @@ def retrieve_related_dreams(
             continue
         metadata = metadata or {}
         related_date = parse_index_date(metadata.get("date_sort"))
-        if earliest_related_date is not None and (
-            related_date is None or related_date < earliest_related_date
-        ):
-            continue
+        if start_date is not None or end_date is not None:
+            if related_date is None:
+                continue
+            if start_date is not None and related_date < start_date:
+                continue
+            if end_date is not None and related_date > end_date:
+                continue
 
         similarity = cosine_similarity(
             target_embedding,
@@ -364,12 +356,14 @@ def main() -> None:
         help="Minimum cosine similarity for a related dream. Defaults to 0.5.",
     )
     parser.add_argument(
-        "--months-back",
-        type=int,
-        help=(
-            "Exclude related dreams older than this many months before the "
-            "target dream. Requires --dream-id."
-        ),
+        "--start-date",
+        type=parse_cli_date,
+        help="Earliest reference dream date to include (YYYY-MM-DD).",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=parse_cli_date,
+        help="Latest reference dream date to include (YYYY-MM-DD).",
     )
     parser.add_argument(
         "--chroma-path",
@@ -425,14 +419,12 @@ def main() -> None:
             raise ValueError(f"Dream {args.dream_id} has no valid text field.")
         dream_id = args.dream_id
         date = dream.get("date")
-        target_date = parse_index_date(dream.get("date_sort"))
         tags = dream.get("tags")
         print(f"Analyzing {dream_id} | {date or 'date unknown'}\n")
     else:
         text = args.text
         dream_id = None
         date = None
-        target_date = None
         tags = None
 
     if args.related_dreams < 0:
@@ -441,33 +433,30 @@ def main() -> None:
         parser.error("--similarity-threshold must be between -1 and 1")
     if args.max_chars_per_related_dream < 1:
         parser.error("--max-chars-per-related-dream must be positive")
-    if args.months_back is not None and args.months_back < 0:
-        parser.error("--months-back cannot be negative")
-    if args.months_back is not None and args.dream_id is None:
-        parser.error("--months-back requires --dream-id")
-    if args.months_back is not None and target_date is None:
-        parser.error("--months-back requires a target dream with a known date")
+    if (
+        args.start_date is not None
+        and args.end_date is not None
+        and args.start_date > args.end_date
+    ):
+        parser.error("--start-date must be before or equal to --end-date")
 
     related_dreams = retrieve_related_dreams(
         text,
         n_results=args.related_dreams,
         similarity_threshold=args.similarity_threshold,
         target_dream_id=dream_id,
-        target_date=target_date,
-        months_back=args.months_back,
+        start_date=args.start_date,
+        end_date=args.end_date,
         chroma_path=args.chroma_path,
         collection_name=args.collection_name,
         embed_model=args.embed_model,
     )
     if args.related_dreams:
-        if args.months_back is not None:
-            earliest_related_date = subtract_months(
-                target_date,
-                args.months_back,
-            )
+        if args.start_date is not None or args.end_date is not None:
             print(
-                f"Related dream cutoff: {earliest_related_date.isoformat()} "
-                f"({args.months_back} month(s) before target)"
+                "Reference dream date range: "
+                f"{args.start_date.isoformat() if args.start_date else 'earliest'} "
+                f"through {args.end_date.isoformat() if args.end_date else 'latest'}"
             )
         print(
             f"Using {len(related_dreams)} related dream(s) with cosine "

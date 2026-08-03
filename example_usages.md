@@ -156,7 +156,7 @@ python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
 python3 src/analyze_dream.py --text "I opened a door and found another kitchen."
 python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --chat-model qwen3:8b
 python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5 --similarity-threshold 0.55
-python3 src/analyze_dream.py --dream-id dream-2022-10-10-0 --related-dreams 5 --months-back 6
+python3 src/analyze_dream.py --dream-id dream-2022-10-10-0 --related-dreams 5 --start-date 2022-04-10 --end-date 2022-10-10
 ```
 
 Arguments:
@@ -167,7 +167,8 @@ Arguments:
 - `--chat-model`: Ollama chat model. Defaults to `qwen3:8b`.
 - `--related-dreams`: maximum number of similar indexed dreams to use as context. Defaults to `0` (disabled).
 - `--similarity-threshold`: minimum cosine similarity for related dreams. Defaults to `0.5`.
-- `--months-back`: exclude related dreams older than this many calendar months before the target dream. Requires `--dream-id` and a known target date.
+- `--start-date`: earliest reference dream date to include, in `YYYY-MM-DD` format.
+- `--end-date`: latest reference dream date to include, in `YYYY-MM-DD` format.
 - `--chroma-path`: path to the persistent ChromaDB database. Defaults to `data/chroma_db`.
 - `--collection-name`: ChromaDB collection name. Defaults to `dreams`.
 - `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
