@@ -5,17 +5,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import chromadb
 import ollama
+import requests
 
 
 DREAMS_PATH = Path("data/dreams.jsonl")
 OUTPUT_DIR = Path("outputs/analysis")
+CHROMA_PATH = "data/chroma_db"
+COLLECTION_NAME = "dreams"
+EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "qwen3:8b"
+OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
 
 
 def load_dream_by_id(path: Path, dream_id: str) -> dict[str, Any]:
@@ -37,6 +44,115 @@ def load_dream_by_id(path: Path, dream_id: str) -> dict[str, Any]:
     raise ValueError(f"Dream ID not found in {path}: {dream_id}")
 
 
+def ollama_embed(text: str, *, model: str = EMBED_MODEL) -> list[float]:
+    response = requests.post(
+        OLLAMA_EMBED_URL,
+        json={"model": model, "prompt": text},
+        timeout=120,
+    )
+    response.raise_for_status()
+    return [float(value) for value in response.json()["embedding"]]
+
+
+def cosine_similarity(first: list[float], second: list[float]) -> float:
+    if len(first) != len(second):
+        raise ValueError("Embedding dimensions do not match.")
+
+    first_norm = math.sqrt(sum(value * value for value in first))
+    second_norm = math.sqrt(sum(value * value for value in second))
+    if first_norm == 0 or second_norm == 0:
+        return 0.0
+
+    dot_product = sum(a * b for a, b in zip(first, second))
+    return dot_product / (first_norm * second_norm)
+
+
+def retrieve_related_dreams(
+    text: str,
+    *,
+    n_results: int,
+    similarity_threshold: float = 0.5,
+    target_dream_id: str | None = None,
+    chroma_path: str = CHROMA_PATH,
+    collection_name: str = COLLECTION_NAME,
+    embed_model: str = EMBED_MODEL,
+) -> list[dict[str, Any]]:
+    """Return the most similar indexed dreams above a cosine threshold."""
+    if n_results < 0:
+        raise ValueError("n_results cannot be negative.")
+    if not -1.0 <= similarity_threshold <= 1.0:
+        raise ValueError("similarity_threshold must be between -1 and 1.")
+    if n_results == 0:
+        return []
+
+    client = chromadb.PersistentClient(path=chroma_path)
+    collection = client.get_collection(name=collection_name)
+    records = collection.get(include=["documents", "metadatas", "embeddings"])
+
+    documents = records.get("documents") or []
+    metadatas = records.get("metadatas") or []
+    embeddings = records.get("embeddings")
+    if embeddings is None:
+        raise ValueError("The ChromaDB collection contains no embeddings.")
+
+    target_embedding: list[float] | None = None
+    if target_dream_id is not None:
+        for indexed_id, embedding in zip(records["ids"], embeddings):
+            if indexed_id == target_dream_id:
+                target_embedding = [float(value) for value in embedding]
+                break
+    if target_embedding is None:
+        target_embedding = ollama_embed(text, model=embed_model)
+
+    related: list[dict[str, Any]] = []
+    for dream_id, document, metadata, embedding in zip(
+        records["ids"], documents, metadatas, embeddings
+    ):
+        if dream_id == target_dream_id:
+            continue
+
+        similarity = cosine_similarity(
+            target_embedding,
+            [float(value) for value in embedding],
+        )
+        if similarity < similarity_threshold:
+            continue
+
+        related.append(
+            {
+                "dream_id": dream_id,
+                "date": (metadata or {}).get("date", "unknown"),
+                "similarity": similarity,
+                "document": document or "",
+            }
+        )
+
+    related.sort(key=lambda item: item["similarity"], reverse=True)
+    return related[:n_results]
+
+
+def format_related_context(
+    related_dreams: list[dict[str, Any]],
+    *,
+    max_chars_per_dream: int = 1500,
+) -> str:
+    if not related_dreams:
+        return "No related dreams were supplied."
+
+    blocks: list[str] = []
+    for item in related_dreams:
+        document = item["document"]
+        if len(document) > max_chars_per_dream:
+            document = document[:max_chars_per_dream] + "\n[TRUNCATED]"
+        blocks.append(
+            f"RELATED_DREAM_ID: {item['dream_id']}\n"
+            f"DATE: {item['date']}\n"
+            f"COSINE_SIMILARITY: {item['similarity']:.4f}\n\n"
+            f"{document}"
+        )
+    return "\n\n---\n\n".join(blocks)
+
+
 def analyze_dream(
     text: str,
     *,
@@ -44,6 +160,8 @@ def analyze_dream(
     dream_id: str | None = None,
     date: str | None = None,
     tags: list[str] | None = None,
+    related_dreams: list[dict[str, Any]] | None = None,
+    max_chars_per_related_dream: int = 1500,
     num_ctx: int = 4096,
     num_predict: int = 900,
     temperature: float = 0.2,
@@ -63,7 +181,9 @@ def analyze_dream(
         "claims such as 'X always symbolizes Y.' Treat interpretations as "
         "possibilities rather than facts, and distinguish evidence from "
         "inference. Do not diagnose mental illness or infer real-world events "
-        "that the dream does not establish."
+        "that the dream does not establish. Related dreams are comparison "
+        "material only: use them to support or complicate interpretations of "
+        "the target dream, but do not transfer their details into the target."
     )
 
     metadata_lines = []
@@ -74,6 +194,10 @@ def analyze_dream(
     if tags:
         metadata_lines.append(f"JOURNAL_TAGS: {', '.join(tags)}")
     metadata = "\n".join(metadata_lines) or "SOURCE: text supplied directly"
+    related_context = format_related_context(
+        related_dreams or [],
+        max_chars_per_dream=max_chars_per_related_dream,
+    )
 
     user_prompt = f"""
 /no_think
@@ -83,13 +207,17 @@ def analyze_dream(
 DREAM TEXT:
 {text}
 
+RELATED DREAMS FOR COMPARISON:
+{related_context}
+
 Analyze this dream using these sections:
 1. What happens: a concise account of the events, shifts, characters, and setting.
 2. Emotional and relational dynamics: tensions, desires, fears, power relations,
    contradictions, and changes in the dreamer's position.
 3. Themes and motifs: the strongest recurring ideas or images, with evidence.
 4. Interpretation: several plausible readings tied closely to details in the
-   dream, including uncomfortable readings when supported.
+   dream, including uncomfortable readings when supported. When related dreams
+   are supplied, cite their IDs when they corroborate or contrast with a reading.
 5. Uncertainties: details whose meaning depends on personal context, plus a few
    focused questions that would help distinguish between interpretations.
 """
@@ -159,6 +287,40 @@ def main() -> None:
         help="Ollama chat model name.",
     )
     parser.add_argument(
+        "--related-dreams",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of similar indexed dreams to use as context.",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.5,
+        help="Minimum cosine similarity for a related dream. Defaults to 0.5.",
+    )
+    parser.add_argument(
+        "--chroma-path",
+        default=CHROMA_PATH,
+        help="Path to the persistent ChromaDB database.",
+    )
+    parser.add_argument(
+        "--collection-name",
+        default=COLLECTION_NAME,
+        help="Name of the ChromaDB collection to search.",
+    )
+    parser.add_argument(
+        "--embed-model",
+        default=EMBED_MODEL,
+        help="Ollama embedding model name.",
+    )
+    parser.add_argument(
+        "--max-chars-per-related-dream",
+        type=int,
+        default=1500,
+        help="Maximum context characters to include per related dream.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=OUTPUT_DIR,
@@ -199,12 +361,42 @@ def main() -> None:
         date = None
         tags = None
 
+    if args.related_dreams < 0:
+        parser.error("--related-dreams cannot be negative")
+    if not -1.0 <= args.similarity_threshold <= 1.0:
+        parser.error("--similarity-threshold must be between -1 and 1")
+    if args.max_chars_per_related_dream < 1:
+        parser.error("--max-chars-per-related-dream must be positive")
+
+    related_dreams = retrieve_related_dreams(
+        text,
+        n_results=args.related_dreams,
+        similarity_threshold=args.similarity_threshold,
+        target_dream_id=dream_id,
+        chroma_path=args.chroma_path,
+        collection_name=args.collection_name,
+        embed_model=args.embed_model,
+    )
+    if args.related_dreams:
+        print(
+            f"Using {len(related_dreams)} related dream(s) with cosine "
+            f"similarity >= {args.similarity_threshold:.2f}:"
+        )
+        for item in related_dreams:
+            print(
+                f"- {item['dream_id']} | {item['date']} | "
+                f"similarity={item['similarity']:.4f}"
+            )
+        print()
+
     analysis = analyze_dream(
         text,
         chat_model=args.chat_model,
         dream_id=dream_id,
         date=date,
         tags=tags,
+        related_dreams=related_dreams,
+        max_chars_per_related_dream=args.max_chars_per_related_dream,
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
         temperature=args.temperature,

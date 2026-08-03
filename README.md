@@ -49,6 +49,7 @@ Analyze one dream:
 
 ```bash
 python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
+python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5
 ```
 
 Ask a RAG question:

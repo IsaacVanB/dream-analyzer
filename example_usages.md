@@ -137,6 +137,7 @@ The analysis is printed and saved under `outputs/analysis/`. ID-based filenames 
 python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
 python3 src/analyze_dream.py --text "I opened a door and found another kitchen."
 python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --chat-model qwen3:8b
+python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5 --similarity-threshold 0.55
 ```
 
 Arguments:
@@ -145,9 +146,15 @@ Arguments:
 - `--text`: dream text to analyze directly. Mutually exclusive with `--dream-id`.
 - `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
 - `--chat-model`: Ollama chat model. Defaults to `qwen3:8b`.
+- `--related-dreams`: maximum number of similar indexed dreams to use as context. Defaults to `0` (disabled).
+- `--similarity-threshold`: minimum cosine similarity for related dreams. Defaults to `0.5`.
+- `--chroma-path`: path to the persistent ChromaDB database. Defaults to `data/chroma_db`.
+- `--collection-name`: ChromaDB collection name. Defaults to `dreams`.
+- `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
+- `--max-chars-per-related-dream`: maximum context characters per related dream. Defaults to `1500`.
 - `--output-dir`: directory where analysis files are saved. Defaults to `outputs/analysis`.
 - `--num-ctx`: Ollama context window option. Defaults to `4096`.
 - `--num-predict`: maximum generated tokens. Defaults to `900`.
 - `--temperature`: sampling temperature. Defaults to `0.2`.
 
-Requires Ollama running locally.
+Related-dream context requires an existing ChromaDB index. Ollama must be running locally.
