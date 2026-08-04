@@ -1,7 +1,10 @@
 analysis/
 dreams/
 test/
-outputs/
+outputs/*
+!outputs/plots/
+outputs/plots/*
+!outputs/plots/tags_by_month_normalized.png
 data/chroma_db
 .codex
 __pycache__/
