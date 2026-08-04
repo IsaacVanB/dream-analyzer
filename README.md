@@ -2,7 +2,8 @@
 
 Small local pipeline for parsing a dream journal, embedding dreams with Ollama,
 storing them in ChromaDB, and asking retrieval-augmented questions.  
-This project is a work in progress.
+The goal is to analyze a private dream journal over time while keeping all raw journal data local. The project is designed to support semantic dream retrieval, theme extraction, longitudinal analysis, graphing, and eventually a CLI/GUI interface where a user can ask natural-language questions about their dream journal.
+🚧🛠️ This project is a work in progress. 🛠️🚧
 
 ## Setup
 
@@ -29,6 +30,8 @@ python3 src/build_chroma_db.py
 ```
 
 Embeddings are generated from dream text only; metadata is stored separately.
+
+## Current Tools
 
 Retrieve similar dreams:
 
