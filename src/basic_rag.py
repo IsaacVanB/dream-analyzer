@@ -32,6 +32,32 @@ def ollama_embed(text: str, *, model: str = EMBED_MODEL) -> list[float]:
     return [float(value) for value in embedding]
 
 
+def validate_collection_embedding_model(
+    collection: Any,
+    *,
+    collection_name: str,
+    embed_model: str,
+) -> None:
+    """Ensure queries use the model that produced the stored embeddings."""
+    metadata = collection.metadata or {}
+    indexed_model = metadata.get("embedding_model")
+
+    if indexed_model == embed_model:
+        return
+
+    if indexed_model is None:
+        detail = "does not record an embedding model"
+    else:
+        detail = f"was built with embedding model {indexed_model!r}"
+
+    raise ValueError(
+        f"ChromaDB collection {collection_name!r} {detail}, but the requested "
+        f"embedding model is {embed_model!r}. Rebuild a separate collection "
+        "with src/build_chroma_db.py using matching --collection-name and "
+        "--embed-model values."
+    )
+
+
 def retrieve_dreams(
     query: str,
     *,
@@ -42,6 +68,11 @@ def retrieve_dreams(
 ) -> list[dict[str, Any]]:
     client = chromadb.PersistentClient(path=chroma_path)
     collection = client.get_collection(name=collection_name)
+    validate_collection_embedding_model(
+        collection,
+        collection_name=collection_name,
+        embed_model=embed_model,
+    )
     query_embedding = ollama_embed(query, model=embed_model)
 
     results = collection.query(
