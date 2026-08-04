@@ -13,7 +13,7 @@ ollama pull nomic-embed-text
 ollama pull qwen3:8b
 ```
 
-Ollama must be running locally at `http://localhost:11434`.
+At least one embedding model and chat embedding model is needed. Ollama must be running locally at `http://localhost:11434`.
 
 ## Workflow
 
@@ -62,6 +62,14 @@ Ask a RAG question:
 
 ```bash
 python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
+```
+
+Compare the four chat/embedding combinations (qwen3:8b and gemma3:12b for chat, nomic-embed-text and qwen3-embedding for embedding) with a fixed retrieval query:
+
+```bash
+python3 src/compare_models.py rag \
+  "What patterns appear in dreams about hidden rooms?" \
+  --retrieval-query "hidden room hallway extra room concealed door behind wall"
 ```
 
 Use a manual retrieval query when the question has extra analysis language:

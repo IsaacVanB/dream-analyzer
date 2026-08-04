@@ -179,3 +179,38 @@ Arguments:
 - `--temperature`: sampling temperature. Defaults to `0.2`.
 
 Related-dream context requires an existing ChromaDB index. Ollama must be running locally.
+
+## `src/compare_models.py`
+
+Runs the same task across these four combinations:
+
+- `qwen3:8b` with `nomic-embed-text`
+- `gemma3:12b` with `nomic-embed-text`
+- `qwen3:8b` with `qwen3-embedding`
+- `gemma3:12b` with `qwen3-embedding`
+
+It expects collections named `dreams_nomic_embed_text` and
+`dreams_qwen3_embedding`. Retrieval is performed once per embedding model and
+the exact retrieved context is reused for both chat models. Results are saved
+as JSON and Markdown under `outputs/model_comparisons/`.
+
+Compare RAG answers. A fixed retrieval query is required so chat models do not
+generate different search queries:
+
+```bash
+python3 src/compare_models.py rag \
+  "What patterns appear in dreams about hidden rooms?" \
+  --retrieval-query "hidden room hallway extra room concealed door behind wall"
+```
+
+Compare analysis of one dream with five related dreams:
+
+```bash
+python3 src/compare_models.py analyze \
+  --dream-id dream-2022-1-22-0 \
+  --related-dreams 5
+```
+
+The runner defaults to temperature `0` for a controlled first comparison. Run
+`python3 src/compare_models.py rag --help` or
+`python3 src/compare_models.py analyze --help` for task-specific options.
