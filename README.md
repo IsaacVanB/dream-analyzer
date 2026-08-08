@@ -101,6 +101,12 @@ python3 src/compare_models.py rag \
   --retrieval-query "hidden room hallway extra room concealed door behind wall"
 ```
 
+Evaluate each embedding model's top retrievals with Gemma:
+
+```bash
+python3 src/evalutate_retrieval.py "hidden room hallway concealed door" --top-k 8
+```
+
 Use a manual retrieval query when the question has extra analysis language:
 
 ```bash

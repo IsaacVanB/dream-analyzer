@@ -214,3 +214,21 @@ python3 src/compare_models.py analyze \
 The runner defaults to temperature `0` for a controlled first comparison. Run
 `python3 src/compare_models.py rag --help` or
 `python3 src/compare_models.py analyze --help` for task-specific options.
+
+## `src/evalutate_retrieval.py`
+
+Embeds one retrieval prompt with both `nomic-embed-text` and
+`qwen3-embedding`, retrieves the top-k dreams from their matching collections,
+and asks `gemma3:12b` to score every result from 1 (irrelevant) to 5 (directly
+relevant). The judge sees the prompt and dream content but not the embedding
+model name. JSON and Markdown reports are saved under
+`outputs/retrieval_evaluations/`.
+
+```bash
+python3 src/evalutate_retrieval.py \
+  "hidden room hallway extra room concealed door behind wall" \
+  --top-k 8
+```
+
+Useful options include `--judge-model`, `--max-chars-per-dream`, `--num-ctx`,
+`--chroma-path`, and `--output-dir`.
