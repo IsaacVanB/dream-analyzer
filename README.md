@@ -104,7 +104,8 @@ python3 src/compare_models.py rag \
 Evaluate each embedding model's top retrievals with Gemma:
 
 ```bash
-python3 src/evalutate_retrieval.py "hidden room hallway concealed door" --top-k 8
+python3 src/evaluate_retrieval.py "hidden room hallway concealed door" --top-k 8
+python3 src/evaluate_retrieval.py --dream-id dream-2022-1-22-0 --top-k 8
 ```
 
 Use a manual retrieval query when the question has extra analysis language:

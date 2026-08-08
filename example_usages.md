@@ -215,7 +215,7 @@ The runner defaults to temperature `0` for a controlled first comparison. Run
 `python3 src/compare_models.py rag --help` or
 `python3 src/compare_models.py analyze --help` for task-specific options.
 
-## `src/evalutate_retrieval.py`
+## `src/evaluate_retrieval.py`
 
 Embeds one retrieval prompt with both `nomic-embed-text` and
 `qwen3-embedding`, retrieves the top-k dreams from their matching collections,
@@ -225,8 +225,17 @@ model name. JSON and Markdown reports are saved under
 `outputs/retrieval_evaluations/`.
 
 ```bash
-python3 src/evalutate_retrieval.py \
+python3 src/evaluate_retrieval.py \
   "hidden room hallway extra room concealed door behind wall" \
+  --top-k 8
+```
+
+Use the complete text of an existing dream as the retrieval and relevance
+target. The target dream itself is excluded from the results:
+
+```bash
+python3 src/evaluate_retrieval.py \
+  --dream-id dream-2022-1-22-0 \
   --top-k 8
 ```
 

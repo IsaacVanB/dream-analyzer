@@ -14,6 +14,7 @@ from typing import Any
 
 import ollama
 
+import analyze_dream
 import basic_rag
 
 
@@ -207,11 +208,16 @@ def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def markdown_report(report: dict[str, Any]) -> str:
+    target = report["target"]
+    if "dream_id" in target:
+        target_line = f"- Target dream: `{target['dream_id']}`"
+    else:
+        target_line = f"- Retrieval prompt: {target['retrieval_prompt']}"
     lines = [
         "# Retrieval evaluation",
         "",
         f"- Created: `{report['created_at']}`",
-        f"- Retrieval prompt: {report['retrieval_prompt']}",
+        target_line,
         f"- Top k: `{report['top_k']}`",
         f"- Judge model: `{report['judge_model']}`",
     ]
@@ -265,7 +271,20 @@ def build_parser() -> argparse.ArgumentParser:
             "their relevance from 1 to 5."
         )
     )
-    parser.add_argument("retrieval_prompt", help="Prompt used for retrieval and judging.")
+    parser.add_argument(
+        "retrieval_prompt",
+        nargs="?",
+        help="Prompt used for retrieval and judging.",
+    )
+    parser.add_argument(
+        "--dream-id",
+        help="Load a dream and use its complete text for retrieval and judging.",
+    )
+    parser.add_argument(
+        "--dreams-path",
+        type=Path,
+        default=analyze_dream.DREAMS_PATH,
+    )
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--chroma-path", default=basic_rag.CHROMA_PATH)
     parser.add_argument("--judge-model", default=JUDGE_MODEL)
@@ -276,7 +295,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if not args.retrieval_prompt.strip():
+    if args.retrieval_prompt is None and args.dream_id is None:
+        parser.error("provide retrieval_prompt or --dream-id")
+    if args.retrieval_prompt is not None and args.dream_id is not None:
+        parser.error("retrieval_prompt and --dream-id are mutually exclusive")
+    if args.retrieval_prompt is not None and not args.retrieval_prompt.strip():
         parser.error("retrieval_prompt cannot be empty")
     if args.top_k < 1:
         parser.error("--top-k must be positive")
@@ -287,6 +310,19 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    if args.dream_id is not None:
+        dream = analyze_dream.load_dream_by_id(args.dreams_path, args.dream_id)
+        retrieval_prompt = dream.get("text")
+        if not isinstance(retrieval_prompt, str) or not retrieval_prompt.strip():
+            raise ValueError(f"Dream {args.dream_id} has no valid text field.")
+        target = {
+            "dream_id": args.dream_id,
+            "dreams_path": str(args.dreams_path),
+        }
+    else:
+        retrieval_prompt = args.retrieval_prompt
+        target = {"retrieval_prompt": retrieval_prompt}
+
     results: list[dict[str, Any]] = []
     for embed_model, collection_name in EMBEDDING_INDEXES:
         print(f"Retrieving with {embed_model} from {collection_name} ...")
@@ -296,18 +332,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         evaluation_seconds: float | None = None
         try:
             retrieved = basic_rag.retrieve_dreams(
-                args.retrieval_prompt,
-                top_k=args.top_k,
+                retrieval_prompt,
+                top_k=args.top_k + (1 if args.dream_id is not None else 0),
                 chroma_path=args.chroma_path,
                 collection_name=collection_name,
                 embed_model=embed_model,
             )
+            if args.dream_id is not None:
+                retrieved = [
+                    item for item in retrieved if item["dream_id"] != args.dream_id
+                ][: args.top_k]
             retrieval_seconds = perf_counter() - retrieval_started
 
             print(f"Evaluating {len(retrieved)} dreams with {args.judge_model} ...")
             evaluation_started = perf_counter()
             evaluations = evaluate_relevance(
-                args.retrieval_prompt,
+                retrieval_prompt,
                 retrieved,
                 judge_model=args.judge_model,
                 max_chars_per_dream=args.max_chars_per_dream,
@@ -351,7 +391,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "retrieval_prompt": args.retrieval_prompt,
+        "target": target,
         "top_k": args.top_k,
         "judge_model": args.judge_model,
         "settings": {
