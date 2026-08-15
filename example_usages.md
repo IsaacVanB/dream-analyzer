@@ -239,5 +239,31 @@ python3 src/evaluate_retrieval.py \
   --top-k 8
 ```
 
-Useful options include `--judge-model`, `--max-chars-per-dream`, `--num-ctx`,
-`--chroma-path`, and `--output-dir`.
+For a long or multi-scene dream, specify which part should control relevance:
+
+```bash
+python3 src/evaluate_retrieval.py \
+  --dream-id dream-2022-1-22-0 \
+  --focus "discovering a hidden room that reveals a disturbing family secret" \
+  --top-k 8
+```
+
+Alternatively, use an exact passage from the dream or generate a focus:
+
+```bash
+python3 src/evaluate_retrieval.py \
+  --dream-id dream-2022-1-22-0 \
+  --focus-passage "I opened the concealed door behind the wall"
+
+python3 src/evaluate_retrieval.py \
+  --dream-id dream-2022-1-22-0 \
+  --generate-focus
+```
+
+The evaluator pools and deduplicates both embedding models' results, hides
+their source and rank, and has Gemma score every unique dream once. Focal
+relevance is the primary 1-5 score; generic overlap is reported separately and
+does not increase focal relevance.
+
+Useful options include `--judge-model`, `--max-chars-per-dream`,
+`--max-target-chars`, `--num-ctx`, `--chroma-path`, and `--output-dir`.
