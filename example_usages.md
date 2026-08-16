@@ -272,3 +272,27 @@ dream.
 
 Useful options include `--judge-model`, `--max-chars-per-dream`,
 `--max-target-chars`, `--num-ctx`, `--chroma-path`, and `--output-dir`.
+
+## `src/structure_dreams.py`
+
+Uses structured Ollama output to extract grounded, descriptive fields from
+every dream and saves one JSON object per line to
+`outputs/structured_dreams/dream_features.jsonl`:
+
+```bash
+python3 src/structure_dreams.py
+```
+
+Process or regenerate one dream:
+
+```bash
+python3 src/structure_dreams.py --dream-id dream-2022-1-22-0
+python3 src/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
+```
+
+Existing dream IDs are skipped unless `--overwrite` is supplied. Successful
+records are saved after each model response, so a long run can be resumed. The
+output includes source metadata plus settings, characters, relationships,
+emotions, themes, objects, actions, sensory details, dream mechanics, tone,
+lucidity, violence, sexual content, social conflict, threat, agency,
+bizarreness, perspective, ending, memory quality, and a factual summary.
