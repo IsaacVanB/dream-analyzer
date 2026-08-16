@@ -352,6 +352,17 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- Unique candidates judged once: `{report['unique_candidates_judged']}`",
         f"- Evaluation time: `{report['evaluation_seconds']}` seconds",
     ]
+    if "text" in target:
+        lines.extend(
+            [
+                "",
+                "## Target dream text",
+                "",
+                "````text",
+                target["text"].rstrip(),
+                "````",
+            ]
+        )
 
     for result in report["embedding_models"]:
         lines.extend(
@@ -500,6 +511,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         target = {
             "dream_id": args.dream_id,
             "dreams_path": str(args.dreams_path),
+            "text": target_text,
         }
         retrieval_input = target_text
 

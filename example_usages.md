@@ -149,7 +149,10 @@ Requires an existing ChromaDB index and Ollama running locally at `http://localh
 ## `src/analyze_dream.py`
 
 Loads one dream by ID or accepts dream text directly, then asks an Ollama chat model for a close analysis of its events, dynamics, themes, and possible interpretations.
-The analysis is printed and saved under `outputs/analysis/`. ID-based filenames use `<dream_id>_<datetime>.txt`; direct-text filenames use `<datetime>.txt`.
+The analysis is printed and saved under `outputs/analysis/`. Saved files include
+the complete target dream, complete retrieved related dreams, and generated
+analysis. ID-based filenames use `<dream_id>_<datetime>.txt`; direct-text
+filenames use `<datetime>.txt`.
 
 ```bash
 python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
@@ -192,7 +195,9 @@ Runs the same task across these four combinations:
 It expects collections named `dreams_nomic_embed_text` and
 `dreams_qwen3_embedding`. Retrieval is performed once per embedding model and
 the exact retrieved context is reused for both chat models. Results are saved
-as JSON and Markdown under `outputs/model_comparisons/`.
+as JSON and Markdown under `outputs/model_comparisons/`. Analyze-mode reports
+include the complete target dream, and both modes include complete retrieved
+dream texts.
 
 Compare RAG answers. A fixed retrieval query is required so chat models do not
 generate different search queries:
@@ -267,8 +272,8 @@ dream text. Focus options affect only Gemma's evaluation. The evaluator pools
 and deduplicates both models' results, hides their source and rank, and has
 Gemma score every unique dream once. Focal relevance is the primary 1-5 score;
 generic overlap is reported separately and does not increase focal relevance.
-The JSON and Markdown reports include the complete text of every retrieved
-dream.
+The JSON and Markdown reports include the complete target dream near the
+beginning, followed by the complete text of every retrieved dream.
 
 Useful options include `--judge-model`, `--max-chars-per-dream`,
 `--max-target-chars`, `--num-ctx`, `--chroma-path`, and `--output-dir`.

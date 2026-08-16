@@ -33,15 +33,22 @@ def retrieval_summary(
     *,
     score_key: str,
 ) -> list[dict[str, Any]]:
-    return [
-        {
-            "rank": rank,
-            "dream_id": item["dream_id"],
-            "date": item["date"],
-            score_key: item[score_key],
-        }
-        for rank, item in enumerate(retrieved, start=1)
-    ]
+    summaries: list[dict[str, Any]] = []
+    for rank, item in enumerate(retrieved, start=1):
+        if "text" in item:
+            text = item["text"]
+        else:
+            text = analyze_dream.extract_dream_text(item.get("document", ""))
+        summaries.append(
+            {
+                "rank": rank,
+                "dream_id": item["dream_id"],
+                "date": item["date"],
+                score_key: item[score_key],
+                "text": text,
+            }
+        )
+    return summaries
 
 
 def run_matrix(
@@ -133,7 +140,13 @@ def run_analyze(args: argparse.Namespace) -> dict[str, Any]:
         dream_id = args.dream_id
         dream_date = dream.get("date")
         tags = dream.get("tags")
-        source = {"dream_id": dream_id, "dreams_path": str(args.dreams_path)}
+        source = {
+            "dream_id": dream_id,
+            "date": dream_date,
+            "tags": tags,
+            "dreams_path": str(args.dreams_path),
+            "text": text,
+        }
     else:
         text = args.text
         dream_id = None
@@ -236,6 +249,9 @@ def run_rag(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def markdown_report(report: dict[str, Any]) -> str:
+    prompt_metadata = {
+        key: value for key, value in report["prompt"].items() if key != "text"
+    }
     lines = [
         "# Model comparison",
         "",
@@ -247,7 +263,7 @@ def markdown_report(report: dict[str, Any]) -> str:
         "## Prompt",
         "",
         "```json",
-        json.dumps(report["prompt"], indent=2, ensure_ascii=False),
+        json.dumps(prompt_metadata, indent=2, ensure_ascii=False),
         "```",
         "",
         "## Settings",
@@ -256,6 +272,17 @@ def markdown_report(report: dict[str, Any]) -> str:
         json.dumps(report["settings"], indent=2, ensure_ascii=False),
         "```",
     ]
+    if report["mode"] == "analyze" and "text" in report["prompt"]:
+        lines.extend(
+            [
+                "",
+                "## Target dream text",
+                "",
+                "````text",
+                report["prompt"]["text"].rstrip(),
+                "````",
+            ]
+        )
 
     for index, result in enumerate(report["results"], start=1):
         lines.extend(
@@ -286,6 +313,18 @@ def markdown_report(report: dict[str, Any]) -> str:
                 lines.append(
                     f"| {item['rank']} | {item['dream_id']} | {item['date']} | "
                     f"{item[score_key]:.4f} |"
+                )
+            lines.extend(["", "### Retrieved dream texts"])
+            for item in result["retrieved"]:
+                lines.extend(
+                    [
+                        "",
+                        f"#### {item['rank']}. {item['dream_id']} — {item['date']}",
+                        "",
+                        "````text",
+                        item["text"].rstrip(),
+                        "````",
+                    ]
                 )
 
         lines.extend(["", "### Response", ""])

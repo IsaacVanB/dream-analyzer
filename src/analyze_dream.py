@@ -349,6 +349,44 @@ def save_analysis(
     return output_path
 
 
+def format_saved_analysis(
+    analysis: str,
+    *,
+    target_text: str,
+    dream_id: str | None,
+    date: str | None,
+    related_dreams: list[dict[str, Any]],
+) -> str:
+    """Build a self-contained saved artifact with source and retrieved text."""
+    source_lines = [
+        "TARGET DREAM",
+        f"DREAM_ID: {dream_id or 'text supplied directly'}",
+        f"DATE: {date or 'unknown'}",
+        "",
+        target_text.rstrip(),
+        "",
+        "RELATED DREAMS",
+    ]
+    if related_dreams:
+        for rank, item in enumerate(related_dreams, start=1):
+            source_lines.extend(
+                [
+                    "",
+                    f"--- RELATED DREAM {rank} ---",
+                    f"DREAM_ID: {item['dream_id']}",
+                    f"DATE: {item['date']}",
+                    f"COSINE_SIMILARITY: {item['similarity']:.4f}",
+                    "",
+                    item["text"].rstrip(),
+                ]
+            )
+    else:
+        source_lines.extend(["", "No related dreams were retrieved."])
+
+    source_lines.extend(["", "ANALYSIS", "", analysis.rstrip()])
+    return "\n".join(source_lines) + "\n"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Analyze a dream selected by ID or supplied as text."
@@ -514,8 +552,15 @@ def main() -> None:
         temperature=args.temperature,
     )
     print(analysis)
-    output_path = save_analysis(
+    saved_content = format_saved_analysis(
         analysis,
+        target_text=text,
+        dream_id=dream_id,
+        date=date,
+        related_dreams=related_dreams,
+    )
+    output_path = save_analysis(
+        saved_content,
         dream_id=dream_id,
         output_dir=args.output_dir,
     )
