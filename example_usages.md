@@ -239,7 +239,8 @@ python3 src/evaluate_retrieval.py \
   --top-k 8
 ```
 
-For a long or multi-scene dream, specify which part should control relevance:
+For a long or multi-scene dream, specify which part should control the LLM's
+relevance judgment:
 
 ```bash
 python3 src/evaluate_retrieval.py \
@@ -248,7 +249,8 @@ python3 src/evaluate_retrieval.py \
   --top-k 8
 ```
 
-Alternatively, use an exact passage from the dream or generate a focus:
+Alternatively, use an exact passage from the dream or generate an evaluation
+focus:
 
 ```bash
 python3 src/evaluate_retrieval.py \
@@ -260,10 +262,13 @@ python3 src/evaluate_retrieval.py \
   --generate-focus
 ```
 
-The evaluator pools and deduplicates both embedding models' results, hides
-their source and rank, and has Gemma score every unique dream once. Focal
-relevance is the primary 1-5 score; generic overlap is reported separately and
-does not increase focal relevance.
+In all dream-ID modes, both embedding models search with the complete target
+dream text. Focus options affect only Gemma's evaluation. The evaluator pools
+and deduplicates both models' results, hides their source and rank, and has
+Gemma score every unique dream once. Focal relevance is the primary 1-5 score;
+generic overlap is reported separately and does not increase focal relevance.
+The JSON and Markdown reports include the complete text of every retrieved
+dream.
 
 Useful options include `--judge-model`, `--max-chars-per-dream`,
 `--max-target-chars`, `--num-ctx`, `--chroma-path`, and `--output-dir`.

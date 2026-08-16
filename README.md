@@ -111,6 +111,9 @@ python3 src/evaluate_retrieval.py \
   --top-k 8
 ```
 
+In dream-ID mode, retrieval always embeds the complete target dream. `--focus`
+changes only Gemma's evaluation criterion.
+
 Use a manual retrieval query when the question has extra analysis language:
 
 ```bash
