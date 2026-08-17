@@ -295,9 +295,12 @@ python3 src/structure_dreams.py --dream-id dream-2022-1-22-0
 python3 src/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
 ```
 
-Existing dream IDs are skipped unless `--overwrite` is supplied. Successful
-records are saved after each model response, so a long run can be resumed. The
-output includes source metadata plus settings, characters, relationships,
-emotions, themes, objects, actions, sensory details, dream mechanics, tone,
+Existing dream IDs with the current schema version are skipped unless
+`--overwrite` is supplied; records from an older schema are regenerated
+automatically. Successful records are saved after each model response, so a
+long run can be resumed. The
+output includes source metadata plus settings, characters, emotions, themes,
+objects, actions, sensory details, dream mechanics, tone,
 lucidity, violence, sexual content, social conflict, threat, agency,
 bizarreness, perspective, ending, memory quality, and a factual summary.
+Social conflict and bizarreness use `none`, `low`, `moderate`, and `high`.

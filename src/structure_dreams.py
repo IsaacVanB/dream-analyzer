@@ -19,7 +19,7 @@ import ollama
 DREAMS_PATH = Path("data/dreams.jsonl")
 OUTPUT_PATH = Path("outputs/structured_dreams/dream_features.jsonl")
 MODEL = "gemma3:12b"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 LEVELS = ["none", "low", "moderate", "high"]
 
@@ -28,7 +28,6 @@ DREAM_FEATURE_SCHEMA = {
     "properties": {
         "setting": {"type": "array", "items": {"type": "string"}},
         "characters": {"type": "array", "items": {"type": "string"}},
-        "relationships": {"type": "array", "items": {"type": "string"}},
         "emotions": {"type": "array", "items": {"type": "string"}},
         "themes": {"type": "array", "items": {"type": "string"}},
         "objects": {"type": "array", "items": {"type": "string"}},
@@ -43,16 +42,13 @@ DREAM_FEATURE_SCHEMA = {
         },
         "violence": {"type": "string", "enum": LEVELS},
         "sexual_content": {"type": "string", "enum": LEVELS},
-        "social_conflict": {"type": "boolean"},
+        "social_conflict": {"type": "string", "enum": LEVELS},
         "threat_level": {"type": "string", "enum": LEVELS},
         "agency": {
             "type": "string",
             "enum": ["low", "moderate", "high", "unclear"],
         },
-        "bizarreness": {
-            "type": "string",
-            "enum": ["ordinary", "low", "moderate", "high"],
-        },
+        "bizarreness": {"type": "string", "enum": LEVELS},
         "perspective": {
             "type": "string",
             "enum": ["first_person", "third_person", "mixed", "unclear"],
@@ -70,7 +66,6 @@ DREAM_FEATURE_SCHEMA = {
     "required": [
         "setting",
         "characters",
-        "relationships",
         "emotions",
         "themes",
         "objects",
@@ -99,7 +94,7 @@ ARRAY_FIELDS = {
     for name, definition in DREAM_FEATURE_SCHEMA["properties"].items()
     if definition["type"] == "array"
 }
-BOOLEAN_FIELDS = {"lucidity", "social_conflict"}
+BOOLEAN_FIELDS = {"lucidity"}
 
 
 def load_dreams(path: Path) -> list[dict[str, Any]]:
@@ -152,8 +147,8 @@ def extract_features(
         "information supported by the supplied text. Do not apply dream dictionaries, "
         "diagnose the dreamer, infer real-world events, or assign symbolic meanings. "
         "Use concise lowercase phrases in arrays, remove duplicates, and use empty "
-        "arrays when a category has no evidence. Characters should use roles or "
-        "relationships when possible rather than inventing identities. Themes should "
+        "arrays when a category has no evidence. Characters should use social roles "
+        "when possible rather than inventing identities. Themes should "
         "describe observable narrative patterns such as being chased, failing a task, "
         "or discovering a hidden space—not speculative psychological interpretations."
     )
@@ -168,7 +163,6 @@ DREAM TEXT:
 Extraction guidance:
 - `setting`: distinct physical or social locations.
 - `characters`: people, animals, creatures, or personified entities.
-- `relationships`: explicit social roles or interactions.
 - `emotions`: stated or strongly evidenced feelings only.
 - `themes`: concrete recurring situations, goals, conflicts, or transformations.
 - `objects`: salient physical objects, not every incidental noun.
@@ -178,11 +172,17 @@ Extraction guidance:
   time discontinuity, altered physics, or other explicitly dreamlike mechanics.
 - `tone`: one concise dominant tone, or `unclear`.
 - `lucidity`: true only when the dreamer knows they are dreaming.
-- `violence`, `sexual_content`, and `threat_level`: none, low, moderate, or high.
-- `social_conflict`: true when there is interpersonal opposition, rejection,
-  coercion, betrayal, humiliation, or argument.
+- `violence`, `sexual_content`, `threat_level`, `social_conflict`, and
+  `bizarreness` use none, low, moderate, or high.
+- `social_conflict`: none for no interpersonal friction; low for mild tension,
+  awkwardness, or disagreement; moderate for sustained hostility, rejection,
+  coercion, humiliation, or betrayal; high for severe domination, interpersonal
+  danger, or violent conflict.
 - `agency`: how effectively the dreamer makes consequential choices.
-- `bizarreness`: degree of departure from ordinary reality.
+- `bizarreness`: none for ordinary and physically plausible events; low for a
+  small number of odd but coherent details; moderate for clear impossibilities,
+  transformations, or unstable space/time; high when radical impossibility or
+  incoherence pervades the dream.
 - `perspective`: first_person, third_person, mixed, or unclear.
 - `ending`: resolved, unresolved, interrupted, or unclear.
 - `memory_quality`: fragmentary, partial, or detailed based on the report itself.
@@ -332,7 +332,10 @@ def main() -> None:
     pending = [
         dream
         for dream in dreams
-        if args.overwrite or dream.get("dream_id") not in records
+        if args.overwrite
+        or dream.get("dream_id") not in records
+        or records[str(dream.get("dream_id"))].get("schema_version")
+        != SCHEMA_VERSION
     ]
     skipped = len(dreams) - len(pending)
     if not pending:
