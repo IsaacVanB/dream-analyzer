@@ -94,6 +94,13 @@ python3 src/structure_dreams.py
 python3 src/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
 ```
 
+Build a fillable character lookup from those structured records without more
+LLM calls:
+
+```bash
+python3 src/build_character_lookup.py --temporal-context
+```
+
 Ask a RAG question:
 
 ```bash

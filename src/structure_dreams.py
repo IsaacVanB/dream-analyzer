@@ -19,7 +19,7 @@ import ollama
 DREAMS_PATH = Path("data/dreams.jsonl")
 OUTPUT_PATH = Path("outputs/structured_dreams/dream_features.jsonl")
 MODEL = "gemma3:12b"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 LEVELS = ["none", "low", "moderate", "high"]
 
@@ -28,6 +28,7 @@ DREAM_FEATURE_SCHEMA = {
     "properties": {
         "setting": {"type": "array", "items": {"type": "string"}},
         "characters": {"type": "array", "items": {"type": "string"}},
+        "named_characters": {"type": "array", "items": {"type": "string"}},
         "emotions": {"type": "array", "items": {"type": "string"}},
         "themes": {"type": "array", "items": {"type": "string"}},
         "objects": {"type": "array", "items": {"type": "string"}},
@@ -66,6 +67,7 @@ DREAM_FEATURE_SCHEMA = {
     "required": [
         "setting",
         "characters",
+        "named_characters",
         "emotions",
         "themes",
         "objects",
@@ -146,9 +148,9 @@ def extract_features(
         "Extract structured, descriptive features from a dream report. Use only "
         "information supported by the supplied text. Do not apply dream dictionaries, "
         "diagnose the dreamer, infer real-world events, or assign symbolic meanings. "
-        "Use concise lowercase phrases in arrays, remove duplicates, and use empty "
-        "arrays when a category has no evidence. Characters should use social roles "
-        "when possible rather than inventing identities. Themes should "
+        "Use concise lowercase phrases in arrays except named_characters, preserve "
+        "the capitalization of names, remove duplicates, and use empty arrays when a "
+        "category has no evidence. Do not invent identities. Themes should "
         "describe observable narrative patterns such as being chased, failing a task, "
         "or discovering a hidden space—not speculative psychological interpretations."
     )
@@ -162,7 +164,12 @@ DREAM TEXT:
 
 Extraction guidance:
 - `setting`: distinct physical or social locations.
-- `characters`: people, animals, creatures, or personified entities.
+- `characters`: unnamed characters expressed as roles, such as mother, unknown
+  man, teacher, dog, or former classmate. Do not duplicate named characters here.
+- `named_characters`: only characters explicitly called by a proper name in the
+  report, preserving how the name is capitalized. Include named real people,
+  public figures, fictional characters, animals, or other personified entities.
+  Do not infer a name from a role or description.
 - `emotions`: stated or strongly evidenced feelings only.
 - `themes`: concrete recurring situations, goals, conflicts, or transformations.
 - `objects`: salient physical objects, not every incidental noun.
@@ -231,9 +238,12 @@ def validate_features(features: Any) -> dict[str, Any]:
         cleaned: list[str] = []
         seen: set[str] = set()
         for item in value:
-            normalized = re.sub(r"\s+", " ", item.strip().lower())
-            if normalized and normalized not in seen:
-                seen.add(normalized)
+            normalized = re.sub(r"\s+", " ", item.strip())
+            if field != "named_characters":
+                normalized = normalized.lower()
+            identity = normalized.casefold()
+            if normalized and identity not in seen:
+                seen.add(identity)
                 cleaned.append(normalized)
         features[field] = cleaned
 

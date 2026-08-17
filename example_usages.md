@@ -304,3 +304,34 @@ objects, actions, sensory details, dream mechanics, tone,
 lucidity, violence, sexual content, social conflict, threat, agency,
 bizarreness, perspective, ending, memory quality, and a factual summary.
 Social conflict and bizarreness use `none`, `low`, `moderate`, and `high`.
+
+`characters` contains unnamed roles, while `named_characters` contains only
+explicit proper names and preserves their capitalization. Both are produced in
+the same model call.
+
+## `src/build_character_lookup.py`
+
+Aggregates `named_characters` from structured dream records and creates a
+fillable lookup without making any additional LLM calls:
+
+```bash
+python3 src/build_character_lookup.py
+```
+
+Add date-bounded relationship templates when a relationship may change over
+time:
+
+```bash
+python3 src/build_character_lookup.py --temporal-context
+```
+
+The default output is `data/characters.json`. Each entry includes the detected
+name, aliases, mention count, first and last mention dates, and contributing
+dream IDs. With temporal context, fill in or duplicate entries under
+`relationship_history`, using inclusive `start_date` and `end_date` values in
+`YYYY-MM-DD` format. Null boundaries mean open-ended. Without temporal context,
+fill in the single `relationship` and `context` fields.
+
+The script refuses to replace an existing lookup by default because it may
+contain manual edits. Use `--overwrite` only when you intentionally want to
+regenerate it.
