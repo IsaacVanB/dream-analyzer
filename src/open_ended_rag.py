@@ -54,23 +54,44 @@ def generate_query_plan(
     max_queries: int = 4,
 ) -> list[dict[str, str]]:
     """Decompose a question into complementary semantic retrieval queries."""
+    anchor_query = clean_phrase(question)
+    plan = [
+        {
+            "query": anchor_query,
+            "purpose": "Anchor retrieval in the user's original question.",
+        }
+    ]
+    if max_queries == 1:
+        return plan
+
+    supplemental_limit = max_queries - 1
     system_prompt = (
-        "You plan semantic retrieval over a private dream journal. Create focused, "
-        "keyword-rich queries that retrieve concrete dream scenes relevant to the "
-        "user's question. Do not answer the question. Cover distinct dimensions of "
-        "an open-ended question without producing superficial paraphrases."
+        "You plan semantic retrieval over a private dream journal. The user's exact "
+        "question is already being used as an anchor query. Create only supplemental "
+        "semantic queries grounded in concepts and distinctions explicitly present in "
+        "the question. Do not answer the question and do not guess what scenes might "
+        "appear in the journal."
     )
     user_prompt = f"""
 QUESTION:
 {question}
 
-Create between 1 and {max_queries} complementary retrieval queries. Use fewer
-when the question is narrow and several when it asks about patterns, changes,
-relationships, contrasts, causes, or recurring themes. Each query should:
-- contain roughly 5-14 concrete words likely to occur in dream descriptions;
-- focus on one image, situation, emotion, relationship, conflict, or variation;
-- omit filler such as "dreams about", "analyze", "patterns", and "journal";
-- avoid making claims that retrieval has not established.
+The exact question above is already included unchanged as the first retrieval
+query. Create between 1 and {supplemental_limit} supplemental queries. Use
+semantic paraphrases, synonyms, broader formulations, or separate facets that
+the question explicitly names. Preserve abstract language when the question is
+abstract; do not force it into a hypothetical physical scene.
+
+Do not introduce a setting, character, relationship, emotion, action, object,
+or event unless the question directly names it. Do not infer possible concrete
+manifestations. For example, do not translate "authority" into guessed school,
+teacher, workplace, police, or parent scenes. A useful alternative would stay
+conceptual, such as "authority control rules obedience resistance power
+imbalance."
+
+Each supplemental query should be a concise standalone phrase. Avoid filler
+such as "dreams about", "analyze", "patterns", and "journal", and avoid making
+claims that retrieval has not established.
 
 Give a short `purpose` explaining what evidence that query is intended to find.
 """
@@ -100,21 +121,20 @@ Give a short `purpose` explaining what evidence that query is intended to find.
     ):
         raise ValueError("The query planner returned no retrieval_queries list.")
 
-    plan: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen: set[str] = {anchor_query.casefold()}
     for item in parsed["retrieval_queries"]:
         if not isinstance(item, dict):
             raise ValueError("Every planned query must be an object.")
-        query = clean_phrase(item.get("query", "")) if isinstance(item.get("query"), str) else ""
-        purpose = clean_phrase(item.get("purpose", "")) if isinstance(item.get("purpose"), str) else ""
+        query_value = item.get("query")
+        purpose_value = item.get("purpose")
+        query = clean_phrase(query_value) if isinstance(query_value, str) else ""
+        purpose = clean_phrase(purpose_value) if isinstance(purpose_value, str) else ""
         identity = query.casefold()
         if not query or not purpose:
             raise ValueError("Every planned query needs non-empty query and purpose text.")
         if identity not in seen:
             seen.add(identity)
             plan.append({"query": query, "purpose": purpose})
-    if not plan:
-        raise ValueError("The query planner returned no usable queries.")
     if len(plan) > max_queries:
         plan = plan[:max_queries]
     return plan

@@ -128,6 +128,11 @@ duplicates with reciprocal-rank fusion, and answering only from the fused dream
 context. It reuses the validated Chroma/Ollama retrieval code in
 `src/basic_rag.py`.
 
+The user's complete question is always included as the first anchor query.
+Generated supplemental queries use grounded semantic paraphrases and explicit
+facets of the question; the planner is instructed not to guess possible dream
+scenes, settings, characters, or objects.
+
 ```bash
 python3 src/open_ended_rag.py \
   "How have dreams about responsibility and unfinished obligations changed over time?"
