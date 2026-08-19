@@ -74,6 +74,18 @@ Plot tag frequency over time:
 python3 src/plot_tags.py --tags house recurring school
 ```
 
+Cluster the existing dream embeddings and generate theme evidence, static plots,
+an interactive map, and per-dream assignments:
+
+```bash
+python3 src/cluster_dreams.py
+python3 src/cluster_dreams.py --label-clusters
+```
+
+Cluster labels summarize recurring content and are not psychological diagnoses.
+The optional `--label-clusters` flag uses the local Ollama chat model; clustering
+itself does not require new model calls.
+
 Compute summary stats:
 
 ```bash
