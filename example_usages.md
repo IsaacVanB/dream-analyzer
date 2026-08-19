@@ -120,6 +120,34 @@ Arguments:
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
 
+## `src/open_ended_rag.py`
+
+Answers broader journal questions by asking an LLM to generate several
+complementary retrieval queries, retrieving dreams for each query, combining
+duplicates with reciprocal-rank fusion, and answering only from the fused dream
+context. It reuses the validated Chroma/Ollama retrieval code in
+`src/basic_rag.py`.
+
+```bash
+python3 src/open_ended_rag.py \
+  "How have dreams about responsibility and unfinished obligations changed over time?"
+```
+
+Supply manual queries to skip LLM query planning:
+
+```bash
+python3 src/open_ended_rag.py \
+  "How does conflict with authority appear?" \
+  --query "teacher professor authority punishment school" \
+  --query "boss manager workplace rules humiliation"
+```
+
+Important options include `--num-queries`, `--top-k-per-query`,
+`--max-context-dreams`, `--query-model`, `--chat-model`, `--embed-model`, and
+`--collection-name`. JSON and Markdown reports are saved under
+`outputs/open_ended_rag/` and include the retrieval plan, per-query rankings,
+fused rankings, complete retrieved dream texts, timings, and grounded answer.
+
 ## `src/basic_rag.py`
 
 Retrieves relevant dreams for a question and asks an Ollama chat model to answer using only those entries.
