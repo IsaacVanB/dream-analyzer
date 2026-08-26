@@ -104,9 +104,19 @@ class OllamaGateway:
             options=options,
         )
 
+    @classmethod
+    def message_content(cls, response: Any) -> str:
+        """Extract text content from a mapping or SDK chat response."""
+        message = cls._response_value(response, "message")
+        content = cls._response_value(message, "content")
+        if content is None:
+            raise OllamaResponseError("Ollama returned no chat message content")
+        if not isinstance(content, str):
+            raise OllamaResponseError("Ollama returned non-text chat content")
+        return content
+
     @staticmethod
     def _response_value(response: Any, key: str) -> Any:
         if isinstance(response, Mapping):
             return response.get(key)
         return getattr(response, key, None)
-
