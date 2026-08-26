@@ -22,23 +22,26 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from dream_analysis.config import Settings
+from dream_analysis.dates import (
+    filter_records_by_date,
+    format_period_label as shared_period_label,
+    parse_date_bound,
+    record_date,
+)
+from dream_analysis.repository import DreamRepository
+
 
 plt.style.use("seaborn-v0_8-whitegrid")
 
-DREAMS_PATH = Path("data/dreams.jsonl")
-OUTPUT_PATH = Path("outputs/plots/tag_frequency.png")
+DEFAULT_SETTINGS = Settings()
+DREAMS_PATH = DEFAULT_SETTINGS.dreams_path
+OUTPUT_PATH = DEFAULT_SETTINGS.output_path / "plots/tag_frequency.png"
 
 
 def load_dreams(path: Path) -> list[dict[str, Any]]:
-    dreams: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as input_file:
-        for line_number, line in enumerate(input_file, start=1):
-            if line.strip():
-                try:
-                    dreams.append(json.loads(line))
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON on line {line_number}: {exc}") from exc
-    return dreams
+    """Compatibility wrapper returning validated record dictionaries."""
+    return DreamRepository(path).records()
 
 
 def top_tags(dreams: list[dict[str, Any]], *, top_n: int) -> list[str]:
@@ -56,22 +59,13 @@ def top_tags(dreams: list[dict[str, Any]], *, top_n: int) -> list[str]:
 
 
 def parse_date_filter(date_text: str | None, *, argument_name: str) -> pd.Timestamp | None:
-    if date_text is None:
-        return None
-    try:
-        return pd.to_datetime(date_text)
-    except ValueError as exc:
-        raise ValueError(f"Invalid {argument_name}: {date_text!r}") from exc
+    parsed = parse_date_bound(date_text, argument_name=argument_name)
+    return pd.Timestamp(parsed) if parsed is not None else None
 
 
 def dream_plot_date(dream: dict[str, Any]) -> pd.Timestamp | None:
-    date_text = dream.get("date_sort", dream.get("date"))
-    if not date_text:
-        return None
-    try:
-        return pd.to_datetime(date_text)
-    except ValueError:
-        return None
+    parsed = record_date(dream)
+    return pd.Timestamp(parsed) if parsed is not None else None
 
 
 def filter_dreams_by_date(
@@ -80,24 +74,11 @@ def filter_dreams_by_date(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> list[dict[str, Any]]:
-    start = parse_date_filter(start_date, argument_name="start_date")
-    end = parse_date_filter(end_date, argument_name="end_date")
-
-    if start is not None and end is not None and start > end:
-        raise ValueError("start_date must be before or equal to end_date.")
-
-    filtered: list[dict[str, Any]] = []
-    for dream in dreams:
-        date = dream_plot_date(dream)
-        if date is None:
-            continue
-        if start is not None and date < start:
-            continue
-        if end is not None and date > end:
-            continue
-        filtered.append(dream)
-
-    return filtered
+    return filter_records_by_date(
+        dreams,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def tag_counts_over_time(
@@ -243,12 +224,7 @@ def style_axis(ax: plt.Axes) -> None:
 
 
 def format_period_label(period: pd.Timestamp, *, freq: str = "M") -> str:
-    if freq == "Y":
-        return f"{period.year}"
-    if freq == "Q":
-        quarter = ((period.month - 1) // 3) + 1
-        return f"Q{quarter}-{period.year}"
-    return f"{period.month}-{period.year}"
+    return shared_period_label(period, frequency=freq)
 
 
 def make_tag_frequency_plot(

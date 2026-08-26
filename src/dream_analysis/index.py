@@ -11,6 +11,7 @@ from typing import Any
 import chromadb
 from chromadb.errors import NotFoundError
 
+from dream_analysis.dates import parse_date_value, validate_date_range
 from dream_analysis.models import Dream, RelatedDream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
 
@@ -41,12 +42,7 @@ def extract_dream_text(document: str) -> str:
 
 def parse_index_date(value: Any) -> date | None:
     """Parse a Chroma ISO date, returning None for missing/invalid values."""
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(str(value))
-    except ValueError:
-        return None
+    return parse_date_value(value)
 
 
 def build_document(dream: Dream) -> str:
@@ -222,8 +218,7 @@ class DreamIndex:
             raise ValueError("limit cannot be negative")
         if not -1.0 <= similarity_threshold <= 1.0:
             raise ValueError("similarity_threshold must be between -1 and 1")
-        if start_date is not None and end_date is not None and start_date > end_date:
-            raise ValueError("start_date must be before or equal to end_date")
+        validate_date_range(start_date, end_date)
         if limit == 0:
             return []
         if not isinstance(text, str) or not text.strip():

@@ -15,6 +15,7 @@ from typing import Any
 
 from dream_analysis.config import Settings
 from dream_analysis.ollama_client import OllamaGateway
+from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_SETTINGS = Settings()
@@ -102,26 +103,8 @@ BOOLEAN_FIELDS = {"lucidity"}
 
 
 def load_dreams(path: Path) -> list[dict[str, Any]]:
-    dreams: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    with path.open("r", encoding="utf-8") as source:
-        for line_number, line in enumerate(source, start=1):
-            if not line.strip():
-                continue
-            try:
-                dream = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSON on line {line_number} of {path}: {exc}") from exc
-            if not isinstance(dream, dict):
-                raise ValueError(f"Dream on line {line_number} of {path} is not an object.")
-            dream_id = dream.get("dream_id")
-            if not isinstance(dream_id, str) or not dream_id:
-                raise ValueError(f"Dream on line {line_number} of {path} has no dream_id.")
-            if dream_id in seen_ids:
-                raise ValueError(f"Duplicate dream_id {dream_id!r} in {path}.")
-            seen_ids.add(dream_id)
-            dreams.append(dream)
-    return dreams
+    """Compatibility wrapper returning validated record dictionaries."""
+    return DreamRepository(path).records()
 
 
 def select_dreams(

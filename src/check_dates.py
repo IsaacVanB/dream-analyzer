@@ -7,12 +7,16 @@ import argparse
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 
+from dream_analysis.config import Settings
+from dream_analysis.dates import parse_date_value
+from dream_analysis.repository import load_jsonl_objects
 
-DREAMS_PATH = Path("data/dreams.jsonl")
+
+DREAMS_PATH = Settings().dreams_path
 DATE_PARTS_RE = re.compile(r"^\s*(\d{1,4})/(\d{1,2})/(\d{1,4})\s*$")
 
 
@@ -28,35 +32,15 @@ class DateBlock:
 
 
 def load_dreams(path: Path) -> list[tuple[int, dict[str, Any]]]:
-    dreams: list[tuple[int, dict[str, Any]]] = []
-    with path.open("r", encoding="utf-8") as input_file:
-        for line_number, line in enumerate(input_file, start=1):
-            if not line.strip():
-                continue
-            try:
-                dreams.append((line_number, json.loads(line)))
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Invalid JSON on line {line_number} of {path}: {exc}"
-                ) from exc
-    return dreams
+    """Load raw records with line numbers for human-error diagnostics."""
+    return load_jsonl_objects(path)
 
 
 def parse_sort_date(dream: dict[str, Any]) -> date | None:
     date_sort = dream.get("date_sort")
     if date_sort:
-        try:
-            return date.fromisoformat(str(date_sort))
-        except ValueError:
-            return None
-
-    date_text = dream.get("date")
-    if not date_text:
-        return None
-    try:
-        return datetime.strptime(str(date_text), "%m/%d/%Y").date()
-    except ValueError:
-        return None
+        return parse_date_value(date_sort)
+    return parse_date_value(dream.get("date"))
 
 
 def has_unknown_date_placeholder(dream: dict[str, Any]) -> bool:

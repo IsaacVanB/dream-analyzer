@@ -7,6 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 import re
 
+from dream_analysis.dates import validate_date_range
 from dream_analysis.index import DreamIndex
 from dream_analysis.models import Dream, RelatedDream
 from dream_analysis.ollama_client import OllamaGateway
@@ -140,8 +141,7 @@ class SingleDreamAnalysisService:
             raise ValueError("limit cannot be negative")
         if not -1.0 <= similarity_threshold <= 1.0:
             raise ValueError("similarity_threshold must be between -1 and 1")
-        if start_date is not None and end_date is not None and start_date > end_date:
-            raise ValueError("start_date must be before or equal to end_date")
+        validate_date_range(start_date, end_date)
         if limit == 0:
             return []
         if self.index is None:

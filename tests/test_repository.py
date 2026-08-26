@@ -7,7 +7,11 @@ from datetime import date
 from pathlib import Path
 
 from dream_analysis.models import DreamValidationError
-from dream_analysis.repository import DreamNotFoundError, DreamRepository
+from dream_analysis.repository import (
+    DreamNotFoundError,
+    DreamRepository,
+    load_jsonl_objects,
+)
 
 
 class DreamRepositoryTests(unittest.TestCase):
@@ -72,7 +76,37 @@ class DreamRepositoryTests(unittest.TestCase):
         with self.assertRaisesRegex(DreamValidationError, "line 1"):
             DreamRepository(self.path).all()
 
+    def test_records_return_json_compatible_validated_shape(self) -> None:
+        self.write_records(
+            [
+                {
+                    "dream_id": "dream-1",
+                    "date": "1/2/2024",
+                    "date_sort": "2024-01-02",
+                    "tags": ["house"],
+                    "text": "Dream text",
+                }
+            ]
+        )
+
+        record = DreamRepository(self.path).records()[0]
+
+        self.assertEqual(record["date_sort"], "2024-01-02")
+        self.assertEqual(record["tags"], ["house"])
+        self.assertEqual(record["word_count"], 2)
+
+    def test_line_aware_loader_preserves_blank_line_offsets_and_duplicates(self) -> None:
+        record = {"dream_id": "same", "date": "1/1/2024", "text": "Dream"}
+        self.path.write_text(
+            json.dumps(record) + "\n\n" + json.dumps(record) + "\n",
+            encoding="utf-8",
+        )
+
+        loaded = load_jsonl_objects(self.path)
+
+        self.assertEqual([line_number for line_number, _ in loaded], [1, 3])
+        self.assertEqual([item["dream_id"] for _, item in loaded], ["same", "same"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

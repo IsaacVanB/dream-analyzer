@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Mapping
 
+from dream_analysis.dates import parse_iso_date_value
+
 
 class DreamValidationError(ValueError):
     """Raised when a parsed dream record does not satisfy the domain model."""
@@ -36,12 +38,12 @@ def _date_sort(record: Mapping[str, Any]) -> date | None:
         return None
     if not isinstance(value, str):
         raise DreamValidationError("date_sort must be an ISO date string or null")
-    try:
-        return date.fromisoformat(value)
-    except ValueError as exc:
+    parsed = parse_iso_date_value(value)
+    if parsed is None:
         raise DreamValidationError(
             "date_sort must use YYYY-MM-DD format or be null"
-        ) from exc
+        )
+    return parsed
 
 
 @dataclass(frozen=True, slots=True)
