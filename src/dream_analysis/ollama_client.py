@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -103,6 +104,39 @@ class OllamaGateway:
             think=think,
             options=options,
         )
+
+    def chat_json(
+        self,
+        messages: Sequence[Mapping[str, Any]],
+        *,
+        schema: Mapping[str, Any],
+        model: str | None = None,
+        think: bool | str | None = False,
+        options: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Request schema-constrained output and decode its JSON content.
+
+        Domain-specific validation remains with the caller because JSON Schema
+        generation constraints do not replace application-level checks.
+        """
+        if not isinstance(schema, Mapping) or not schema:
+            raise ValueError("schema must be a non-empty mapping")
+        response = self.chat(
+            messages,
+            model=model,
+            format=schema,
+            think=think,
+            options=options,
+        )
+        content = self.message_content(response)
+        if not content.strip():
+            raise OllamaResponseError("Ollama returned empty structured content")
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise OllamaResponseError(
+                f"Ollama returned invalid JSON: {exc.msg}"
+            ) from exc
 
     @classmethod
     def message_content(cls, response: Any) -> str:

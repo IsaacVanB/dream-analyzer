@@ -13,11 +13,13 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-import ollama
+from dream_analysis.config import Settings
+from dream_analysis.ollama_client import OllamaGateway
 
 
-DREAMS_PATH = Path("data/dreams.jsonl")
-OUTPUT_PATH = Path("outputs/structured_dreams/dream_features.jsonl")
+DEFAULT_SETTINGS = Settings()
+DREAMS_PATH = DEFAULT_SETTINGS.dreams_path
+OUTPUT_PATH = DEFAULT_SETTINGS.output_path / "structured_dreams/dream_features.jsonl"
 MODEL = "gemma3:12b"
 SCHEMA_VERSION = 4
 
@@ -139,6 +141,7 @@ def extract_features(
     *,
     model: str = MODEL,
     num_ctx: int = 8192,
+    gateway: OllamaGateway | None = None,
 ) -> dict[str, Any]:
     text = dream.get("text")
     if not isinstance(text, str) or not text.strip():
@@ -196,13 +199,13 @@ Extraction guidance:
 - `summary`: one or two factual sentences covering the central events.
 """
 
-    response = ollama.chat(
+    features = (gateway or OllamaGateway()).chat_json(
+        schema=DREAM_FEATURE_SCHEMA,
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        format=DREAM_FEATURE_SCHEMA,
         think=False,
         options={
             "temperature": 0,
@@ -210,13 +213,6 @@ Extraction guidance:
             "num_predict": 1200,
         },
     )
-    content = response["message"]["content"]
-    if not content:
-        raise ValueError("The model returned an empty structured response.")
-    try:
-        features = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"The model returned invalid JSON: {exc}") from exc
     return validate_features(features)
 
 
@@ -355,6 +351,7 @@ def main() -> None:
 
     failures = 0
     started = perf_counter()
+    gateway = OllamaGateway()
     for index, dream in enumerate(pending, start=1):
         dream_id = str(dream.get("dream_id", "<unknown>"))
         print(f"Structuring {index}/{len(pending)}: {dream_id}")
@@ -363,6 +360,7 @@ def main() -> None:
                 dream,
                 model=args.model,
                 num_ctx=args.num_ctx,
+                gateway=gateway,
             )
             records[dream_id] = build_record(dream, features, model=args.model)
             save_records(args.output, records)

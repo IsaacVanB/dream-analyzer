@@ -31,6 +31,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import normalize
 
+from dream_analysis.ollama_client import OllamaGateway
+
 
 CHROMA_PATH = "data/chroma_db"
 COLLECTION_NAME = "dreams"
@@ -177,10 +179,13 @@ def automatic_label(terms: list[str], tags: list[tuple[str, float, int]]) -> str
 
 
 def llm_label(
-    *, model: str, terms: list[str], tags: list[tuple[str, float, int]], texts: list[str]
+    *,
+    model: str,
+    terms: list[str],
+    tags: list[tuple[str, float, int]],
+    texts: list[str],
+    gateway: OllamaGateway | None = None,
 ) -> str:
-    import ollama
-
     excerpts = "\n\n".join(text[:700] for text in texts)
     prompt = f"""Give this dream cluster a short, descriptive theme label of 2-7 words.
 Do not diagnose or infer hidden psychological meaning. Describe only recurring content.
@@ -189,12 +194,14 @@ Overrepresented tags: {', '.join(tag for tag, _, _ in tags) or 'none'}
 Representative dreams:
 {excerpts}
 Return only the label."""
-    response = ollama.chat(
+    ollama_gateway = gateway or OllamaGateway()
+    response = ollama_gateway.chat(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         options={"temperature": 0.1, "num_predict": 30},
     )
-    label = str(response["message"]["content"]).strip().strip('"').splitlines()[0]
+    content = ollama_gateway.message_content(response).strip()
+    label = content.splitlines()[0].strip().strip('"') if content else ""
     return label[:100] or automatic_label(terms, tags)
 
 
@@ -354,9 +361,16 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
         for cluster in sorted(set(labels)) if cluster >= 0
     }
     cluster_labels = {}
+    label_gateway = OllamaGateway() if args.label_clusters else None
     for cluster, indices in representatives.items():
         cluster_labels[cluster] = (
-            llm_label(model=args.label_model, terms=terms[cluster], tags=tags[cluster], texts=[documents[i] for i in indices])
+            llm_label(
+                model=args.label_model,
+                terms=terms[cluster],
+                tags=tags[cluster],
+                texts=[documents[i] for i in indices],
+                gateway=label_gateway,
+            )
             if args.label_clusters else automatic_label(terms[cluster], tags[cluster])
         )
     settings = {

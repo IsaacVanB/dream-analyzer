@@ -7,9 +7,10 @@ from dream_analysis.ollama_client import OllamaGateway, OllamaResponseError
 
 
 class FakeOllamaClient:
-    def __init__(self) -> None:
+    def __init__(self, *, chat_content: str = "answer") -> None:
         self.embed_calls: list[dict] = []
         self.chat_calls: list[dict] = []
+        self.chat_content = chat_content
 
     def embed(self, **kwargs):
         self.embed_calls.append(kwargs)
@@ -22,7 +23,7 @@ class FakeOllamaClient:
 
     def chat(self, **kwargs):
         self.chat_calls.append(kwargs)
-        return {"message": {"content": "answer"}}
+        return {"message": {"content": self.chat_content}}
 
 
 class OllamaGatewayTests(unittest.TestCase):
@@ -63,7 +64,35 @@ class OllamaGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(OllamaResponseError, "1 embeddings for 2"):
             gateway.embed_many(["one", "two"])
 
+    def test_chat_json_forwards_schema_and_decodes_content(self) -> None:
+        client = FakeOllamaClient(chat_content='{"value": 3}')
+        gateway = OllamaGateway(client=client)
+        schema = {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+        }
+
+        result = gateway.chat_json(
+            [{"role": "user", "content": "Return a value"}],
+            schema=schema,
+            model="structured-model",
+            options={"temperature": 0},
+        )
+
+        self.assertEqual(result, {"value": 3})
+        self.assertEqual(client.chat_calls[0]["format"], schema)
+        self.assertEqual(client.chat_calls[0]["model"], "structured-model")
+
+    def test_chat_json_rejects_invalid_json(self) -> None:
+        gateway = OllamaGateway(client=FakeOllamaClient(chat_content="not json"))
+
+        with self.assertRaisesRegex(OllamaResponseError, "invalid JSON"):
+            gateway.chat_json(
+                [{"role": "user", "content": "Return JSON"}],
+                schema={"type": "object"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-

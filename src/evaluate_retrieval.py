@@ -13,10 +13,9 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-import ollama
-
 import analyze_dream
 import basic_rag
+from dream_analysis.ollama_client import OllamaGateway
 
 
 EMBEDDING_INDEXES = (
@@ -74,9 +73,11 @@ def generate_focus(
     *,
     model: str = JUDGE_MODEL,
     num_ctx: int = 16384,
+    gateway: OllamaGateway | None = None,
 ) -> str:
     """Generate an evaluation focus centered on distinctive dream material."""
-    response = ollama.chat(
+    parsed = (gateway or OllamaGateway()).chat_json(
+        schema=FOCUS_SCHEMA,
         model=model,
         messages=[
             {
@@ -98,17 +99,9 @@ def generate_focus(
                 ),
             },
         ],
-        format=FOCUS_SCHEMA,
         think=False,
         options={"temperature": 0, "num_ctx": num_ctx, "num_predict": 100},
     )
-    content = response["message"]["content"]
-    if not content:
-        raise ValueError("The focus model returned an empty response.")
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"The focus model returned invalid JSON: {exc}") from exc
     focus = parsed.get("focus") if isinstance(parsed, dict) else None
     if not isinstance(focus, str) or not focus.strip():
         raise ValueError("The focus model returned no valid focus.")
@@ -142,6 +135,7 @@ def evaluate_relevance(
     judge_model: str = JUDGE_MODEL,
     max_chars_per_dream: int = 2500,
     num_ctx: int = 16384,
+    gateway: OllamaGateway | None = None,
 ) -> list[dict[str, Any]]:
     """Ask the judge to score every retrieved dream and validate its response."""
     if not retrieved:
@@ -184,13 +178,13 @@ verbatim. Give a brief, evidence-based reason for each score. Do not mention or
 guess which retrieval system produced the candidates.
 """
 
-    response = ollama.chat(
+    parsed = (gateway or OllamaGateway()).chat_json(
+        schema=EVALUATION_SCHEMA,
         model=judge_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        format=EVALUATION_SCHEMA,
         think=False,
         options={
             "temperature": 0,
@@ -198,15 +192,6 @@ guess which retrieval system produced the candidates.
             "num_predict": max(500, len(retrieved) * 160),
         },
     )
-    content = response["message"]["content"]
-    if not content:
-        raise ValueError("The judge returned an empty evaluation.")
-
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"The judge returned invalid JSON: {exc}") from exc
-
     if not isinstance(parsed, dict):
         raise ValueError("The judge response must be a JSON object.")
     evaluations = parsed.get("evaluations")
@@ -502,6 +487,7 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    gateway = OllamaGateway()
     focus_generation_seconds: float | None = None
     if args.dream_id is not None:
         dream = analyze_dream.load_dream_by_id(args.dreams_path, args.dream_id)
@@ -532,6 +518,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 target_text,
                 model=args.judge_model,
                 num_ctx=args.num_ctx,
+                gateway=gateway,
             )
             focus_generation_seconds = perf_counter() - focus_started
             focus_source = "generated"
@@ -613,6 +600,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 judge_model=args.judge_model,
                 max_chars_per_dream=args.max_chars_per_dream,
                 num_ctx=args.num_ctx,
+                gateway=gateway,
             )
         except Exception as exc:
             evaluation_error = exc
