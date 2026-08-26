@@ -119,3 +119,19 @@ class Dream:
             "word_count": self.word_count,
         }
 
+
+ChromaMetadata = Mapping[str, str | int | float | bool]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    """One normalized result returned by the dream vector index."""
+
+    dream_id: str
+    document: str
+    metadata: ChromaMetadata
+    distance: float
+
+    @property
+    def date(self) -> str:
+        return str(self.metadata.get("date", "unknown"))

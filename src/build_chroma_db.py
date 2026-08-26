@@ -4,46 +4,38 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
 import chromadb
 from chromadb.errors import NotFoundError
-import requests
+
+from dream_analysis.config import Settings
+from dream_analysis.index import (
+    DreamIndex,
+    build_document as build_index_document,
+    build_metadata as build_index_metadata,
+)
+from dream_analysis.models import Dream
+from dream_analysis.ollama_client import OllamaGateway
+from dream_analysis.repository import DreamRepository
 
 
-DREAMS_PATH = Path("data/dreams.jsonl")
-CHROMA_PATH = "data/chroma_db"
-COLLECTION_NAME = "dreams"
-EMBED_MODEL = "nomic-embed-text"
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
+DEFAULT_SETTINGS = Settings()
+DREAMS_PATH = DEFAULT_SETTINGS.dreams_path
+CHROMA_PATH = str(DEFAULT_SETTINGS.index.path)
+COLLECTION_NAME = DEFAULT_SETTINGS.index.collection_name
+EMBED_MODEL = DEFAULT_SETTINGS.ollama.embedding_model
 
 
 def ollama_embed(text: str, *, model: str = EMBED_MODEL) -> list[float]:
-    response = requests.post(
-        OLLAMA_EMBED_URL,
-        json={
-            "model": model,
-            "prompt": text,
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    embedding = response.json()["embedding"]
-    return [float(value) for value in embedding]
+    """Compatibility wrapper around the shared Ollama gateway."""
+    return OllamaGateway().embed_one(text, model=model)
 
 
 def load_dreams(path: Path) -> list[dict[str, Any]]:
-    dreams: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as input_file:
-        for line_number, line in enumerate(input_file, start=1):
-            if line.strip():
-                try:
-                    dreams.append(json.loads(line))
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSON on line {line_number}: {exc}") from exc
-    return dreams
+    """Compatibility wrapper returning decoded record dictionaries."""
+    return [dream.to_record() for dream in DreamRepository(path).all()]
 
 
 def dream_id_for(dream: dict[str, Any], index: int) -> str:
@@ -66,34 +58,13 @@ def document_value(value: Any) -> str:
 
 
 def build_document(dream: dict[str, Any], dream_id: str) -> str:
-    tags = dream.get("tags", [])
-    tag_text = ", ".join(str(tag) for tag in tags)
-
-    return (
-        f"DREAM_ID: {dream_id}\n"
-        f"DATE: {dream['date']}\n"
-        f"YEAR: {document_value(dream.get('year'))}\n"
-        f"MONTH: {document_value(dream.get('month'))}\n"
-        f"DAY: {document_value(dream.get('day'))}\n"
-        f"DATE_PRECISION: {dream.get('date_precision', '')}\n"
-        f"TAGS: {tag_text}\n\n"
-        f"--- DREAM TEXT ---\n\n"
-        f"{dream['text']}"
-    )
+    record = dict(dream)
+    record["dream_id"] = dream_id
+    return build_index_document(Dream.from_record(record))
 
 
 def build_metadata(dream: dict[str, Any]) -> dict[str, str | int]:
-    tags = dream.get("tags", [])
-    return {
-        "date": str(dream["date"]),
-        "year": metadata_int(dream.get("year")),
-        "month": metadata_int(dream.get("month")),
-        "day": metadata_int(dream.get("day")),
-        "date_precision": str(dream.get("date_precision", "day")),
-        "date_sort": str(dream.get("date_sort") or ""),
-        "tags": ", ".join(str(tag) for tag in tags),
-        "word_count": dream_word_count(dream),
-    }
+    return build_index_metadata(Dream.from_record(dream))
 
 
 def recreate_collection(
@@ -121,40 +92,22 @@ def build_chroma_db(
     chroma_path: str = CHROMA_PATH,
     collection_name: str = COLLECTION_NAME,
     embed_model: str = EMBED_MODEL,
+    batch_size: int = 32,
 ) -> int:
-    dreams = load_dreams(dreams_path)
-    client = chromadb.PersistentClient(path=chroma_path)
-    collection = recreate_collection(
-        client,
-        collection_name,
-        embed_model=embed_model,
+    dreams = DreamRepository(dreams_path).all()
+    index = DreamIndex(
+        path=chroma_path,
+        collection_name=collection_name,
+        embedding_model=embed_model,
+        ollama_gateway=OllamaGateway(),
     )
-
-    ids: list[str] = []
-    documents: list[str] = []
-    metadatas: list[dict[str, str | int]] = []
-    embeddings: list[list[float]] = []
-
-    for index, dream in enumerate(dreams, start=1):
-        dream_id = dream_id_for(dream, index)
-        document = build_document(dream, dream_id)
-
-        print(f"Embedding {index}/{len(dreams)}: {dream_id}")
-
-        ids.append(dream_id)
-        documents.append(document)
-        metadatas.append(build_metadata(dream))
-        embeddings.append(ollama_embed(str(dream["text"]), model=embed_model))
-
-    if ids:
-        collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas,
-            embeddings=embeddings,
-        )
-
-    return len(dreams)
+    return index.rebuild(
+        dreams,
+        batch_size=batch_size,
+        progress=lambda current, total, dream: print(
+            f"Embedding {current}/{total}: {dream.dream_id}"
+        ),
+    )
 
 
 def main() -> None:
@@ -182,6 +135,12 @@ def main() -> None:
         default=EMBED_MODEL,
         help="Ollama embedding model name.",
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Number of dream texts to embed per Ollama request.",
+    )
     args = parser.parse_args()
 
     indexed_count = build_chroma_db(
@@ -189,6 +148,7 @@ def main() -> None:
         chroma_path=args.chroma_path,
         collection_name=args.collection_name,
         embed_model=args.embed_model,
+        batch_size=args.batch_size,
     )
     print(f"Indexed {indexed_count} dreams in ChromaDB at {args.chroma_path}.")
 

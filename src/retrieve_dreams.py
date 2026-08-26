@@ -5,28 +5,20 @@ from __future__ import annotations
 
 import argparse
 
-import chromadb
-import requests
+from dream_analysis.config import Settings
+from dream_analysis.index import DreamIndex
+from dream_analysis.ollama_client import OllamaGateway
 
 
-CHROMA_PATH = "data/chroma_db"
-COLLECTION_NAME = "dreams"
-EMBED_MODEL = "nomic-embed-text"
-OLLAMA_EMBED_URL = "http://localhost:11434/api/embeddings"
+DEFAULT_SETTINGS = Settings()
+CHROMA_PATH = str(DEFAULT_SETTINGS.index.path)
+COLLECTION_NAME = DEFAULT_SETTINGS.index.collection_name
+EMBED_MODEL = DEFAULT_SETTINGS.ollama.embedding_model
 
 
 def ollama_embed(text: str, *, model: str = EMBED_MODEL) -> list[float]:
-    response = requests.post(
-        OLLAMA_EMBED_URL,
-        json={
-            "model": model,
-            "prompt": text,
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    embedding = response.json()["embedding"]
-    return [float(value) for value in embedding]
+    """Compatibility wrapper around the shared Ollama gateway."""
+    return OllamaGateway().embed_one(text, model=model)
 
 
 def preview(text: str, max_chars: int = 300) -> str:
@@ -43,15 +35,19 @@ def retrieve_dreams(
     collection_name: str = COLLECTION_NAME,
     embed_model: str = EMBED_MODEL,
 ) -> dict:
-    client = chromadb.PersistentClient(path=chroma_path)
-    collection = client.get_collection(name=collection_name)
-    query_embedding = ollama_embed(query, model=embed_model)
-
-    return collection.query(
-        query_embeddings=[query_embedding],
-        n_results=top_k,
-        include=["documents", "metadatas", "distances"],
+    index = DreamIndex(
+        path=chroma_path,
+        collection_name=collection_name,
+        embedding_model=embed_model,
+        ollama_gateway=OllamaGateway(),
     )
+    matches = index.search(query, limit=top_k)
+    return {
+        "ids": [[match.dream_id for match in matches]],
+        "documents": [[match.document for match in matches]],
+        "metadatas": [[dict(match.metadata) for match in matches]],
+        "distances": [[match.distance for match in matches]],
+    }
 
 
 def print_results(results: dict, *, max_chars: int = 300) -> None:

@@ -42,6 +42,7 @@ Embeds only each dream's text with Ollama `nomic-embed-text` and saves the vecto
 ```bash
 python3 src/build_chroma_db.py
 python3 src/build_chroma_db.py --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
+python3 src/build_chroma_db.py --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
 ```
 
 Arguments:
@@ -50,6 +51,7 @@ Arguments:
 - `--chroma-path`: directory for the persistent ChromaDB database. Defaults to `data/chroma_db`.
 - `--collection-name`: ChromaDB collection name to recreate. Defaults to `dreams`.
 - `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
+- `--batch-size`: number of dream texts sent to Ollama per embedding request. Defaults to `32`.
 
 Requires Ollama running locally at `http://localhost:11434`.
 Run this command again after changing the embedding logic so the existing index is rebuilt with text-only embeddings.
