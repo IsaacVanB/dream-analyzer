@@ -135,3 +135,13 @@ class SearchResult:
     @property
     def date(self) -> str:
         return str(self.metadata.get("date", "unknown"))
+
+
+@dataclass(frozen=True, slots=True)
+class RelatedDream:
+    """A dream selected as cosine-similar comparison material."""
+
+    dream_id: str
+    date: str
+    text: str
+    similarity: float

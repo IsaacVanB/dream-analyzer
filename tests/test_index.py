@@ -104,7 +104,35 @@ class DreamIndexTests(unittest.TestCase):
         with self.assertRaises(EmbeddingModelMismatchError):
             other_index.search("room")
 
+    def test_related_reuses_target_embedding_and_applies_filters(self) -> None:
+        self.index.rebuild(self.dreams)
+        self.gateway.calls.clear()
+
+        related = self.index.related(
+            self.dreams[0].text,
+            limit=5,
+            similarity_threshold=0.3,
+            target_dream_id="room-dream",
+            start_date=date(2024, 1, 2),
+        )
+
+        self.assertEqual([item.dream_id for item in related], ["school-dream"])
+        self.assertEqual(related[0].text, "late for school")
+        self.assertEqual(self.gateway.calls, [])
+
+    def test_related_embeds_direct_text_when_target_is_not_indexed(self) -> None:
+        self.index.rebuild(self.dreams)
+        self.gateway.calls.clear()
+
+        related = self.index.related(
+            "room",
+            limit=1,
+            similarity_threshold=0.8,
+        )
+
+        self.assertEqual(related[0].dream_id, "room-dream")
+        self.assertEqual(self.gateway.calls, [(["room"], "test-embed")])
+
 
 if __name__ == "__main__":
     unittest.main()
-

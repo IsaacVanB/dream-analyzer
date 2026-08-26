@@ -115,6 +115,14 @@ class OllamaGateway:
             raise OllamaResponseError("Ollama returned non-text chat content")
         return content
 
+    @classmethod
+    def done_reason(cls, response: Any) -> str | None:
+        """Return Ollama's completion reason when one was supplied."""
+        value = cls._response_value(response, "done_reason")
+        if value is None:
+            return None
+        return str(value)
+
     @staticmethod
     def _response_value(response: Any, key: str) -> Any:
         if isinstance(response, Mapping):

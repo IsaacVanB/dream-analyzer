@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import date
+import math
 from pathlib import Path
 from typing import Any
 
 import chromadb
 from chromadb.errors import NotFoundError
 
-from dream_analysis.models import Dream, SearchResult
+from dream_analysis.models import Dream, RelatedDream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
 
 
@@ -18,6 +20,33 @@ DREAM_TEXT_SEPARATOR = "--- DREAM TEXT ---"
 
 class EmbeddingModelMismatchError(ValueError):
     """Raised when a query model differs from the collection's model."""
+
+
+def cosine_similarity(first: Sequence[float], second: Sequence[float]) -> float:
+    """Return cosine similarity for two equal-length vectors."""
+    if len(first) != len(second):
+        raise ValueError("Embedding dimensions do not match.")
+    first_norm = math.sqrt(sum(value * value for value in first))
+    second_norm = math.sqrt(sum(value * value for value in second))
+    if first_norm == 0 or second_norm == 0:
+        return 0.0
+    return sum(a * b for a, b in zip(first, second)) / (first_norm * second_norm)
+
+
+def extract_dream_text(document: str) -> str:
+    """Extract raw dream text from a formatted Chroma document."""
+    _, separator, dream_text = document.partition(DREAM_TEXT_SEPARATOR)
+    return (dream_text if separator else document).strip()
+
+
+def parse_index_date(value: Any) -> date | None:
+    """Parse a Chroma ISO date, returning None for missing/invalid values."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def build_document(dream: Dream) -> str:
@@ -177,6 +206,87 @@ class DreamIndex:
                 raw["distances"][0],
             )
         ]
+
+    def related(
+        self,
+        text: str,
+        *,
+        limit: int,
+        similarity_threshold: float = 0.5,
+        target_dream_id: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[RelatedDream]:
+        """Return the most cosine-similar dreams meeting optional filters."""
+        if limit < 0:
+            raise ValueError("limit cannot be negative")
+        if not -1.0 <= similarity_threshold <= 1.0:
+            raise ValueError("similarity_threshold must be between -1 and 1")
+        if start_date is not None and end_date is not None and start_date > end_date:
+            raise ValueError("start_date must be before or equal to end_date")
+        if limit == 0:
+            return []
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("text cannot be empty")
+
+        collection = self.client.get_collection(name=self.collection_name)
+        validate_collection_embedding_model(
+            collection,
+            collection_name=self.collection_name,
+            embedding_model=self.embedding_model,
+        )
+        records = collection.get(include=["documents", "metadatas", "embeddings"])
+        embeddings = records.get("embeddings")
+        if embeddings is None:
+            raise ValueError("The ChromaDB collection contains no embeddings.")
+
+        target_embedding: list[float] | None = None
+        if target_dream_id is not None:
+            for indexed_id, embedding in zip(records["ids"], embeddings):
+                if indexed_id == target_dream_id:
+                    target_embedding = [float(value) for value in embedding]
+                    break
+        if target_embedding is None:
+            target_embedding = self.ollama.embed_one(
+                text,
+                model=self.embedding_model,
+            )
+
+        related: list[RelatedDream] = []
+        documents = records.get("documents") or []
+        metadatas = records.get("metadatas") or []
+        for dream_id, document, metadata, embedding in zip(
+            records["ids"], documents, metadatas, embeddings
+        ):
+            if dream_id == target_dream_id:
+                continue
+            metadata = metadata or {}
+            related_date = parse_index_date(metadata.get("date_sort"))
+            if start_date is not None or end_date is not None:
+                if related_date is None:
+                    continue
+                if start_date is not None and related_date < start_date:
+                    continue
+                if end_date is not None and related_date > end_date:
+                    continue
+
+            similarity = cosine_similarity(
+                target_embedding,
+                [float(value) for value in embedding],
+            )
+            if similarity < similarity_threshold:
+                continue
+            related.append(
+                RelatedDream(
+                    dream_id=str(dream_id),
+                    date=str(metadata.get("date", "unknown")),
+                    similarity=similarity,
+                    text=extract_dream_text(str(document or "")),
+                )
+            )
+
+        related.sort(key=lambda item: item.similarity, reverse=True)
+        return related[:limit]
 
     def _recreate_collection(self) -> Any:
         try:
