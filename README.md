@@ -119,13 +119,6 @@ Ask a RAG question:
 python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
 ```
 
-Ask a broader question using LLM-planned multi-query retrieval:
-
-```bash
-python3 src/open_ended_rag.py \
-  "How have dreams about responsibility and unfinished obligations changed over time?"
-```
-
 Compare the four chat/embedding combinations (qwen3:8b and gemma3:12b for chat, nomic-embed-text and qwen3-embedding for embedding) with a fixed retrieval query:
 
 ```bash
