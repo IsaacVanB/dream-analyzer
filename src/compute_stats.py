@@ -5,9 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
-import statistics
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -21,115 +18,24 @@ from dream_analysis.dates import (
     record_date,
 )
 from dream_analysis.repository import DreamRepository
+from dream_analysis.models import Dream
+from dream_analysis.statistics import (
+    DEFAULT_STOPWORDS as SERVICE_STOPWORDS,
+    WORD_RE,
+    DreamStatisticsService,
+    common_word_statistics,
+    dream_summary as summarize_dream,
+    entries_per_period as service_entries_per_period,
+    length_statistics,
+    tag_statistics,
+    tokenize_words,
+)
 
 
 DEFAULT_SETTINGS = Settings()
 DREAMS_PATH = DEFAULT_SETTINGS.dreams_path
 OUTPUT_PATH = DEFAULT_SETTINGS.output_path / "stats/dream_stats.json"
-WORD_RE = re.compile(r"[A-Za-z']+")
-DEFAULT_STOPWORDS = {
-    "a",
-    "about",
-    "after",
-    "again",
-    "all",
-    "also",
-    "am",
-    "an",
-    "and",
-    "any",
-    "are",
-    "as",
-    "at",
-    "back",
-    "be",
-    "because",
-    "been",
-    "before",
-    "being",
-    "but",
-    "by",
-    "can",
-    "could",
-    "did",
-    "didn't",
-    "do",
-    "don't",
-    "dream",
-    "dreaming",
-    "dreams",
-    "every",
-    "everyone",
-    "for",
-    "from",
-    "get",
-    "go",
-    "got",
-    "had",
-    "has",
-    "have",
-    "he",
-    "her",
-    "him",
-    "his",
-    "how",
-    "i",
-    "i'd",
-    "i'm",
-    "in",
-    "into",
-    "is",
-    "it",
-    "it's",
-    "just",
-    "kept",
-    "know",
-    "like",
-    "me",
-    "my",
-    "no",
-    "not",
-    "of",
-    "on",
-    "one",
-    "only",
-    "or",
-    "out",
-    "really",
-    "remember",
-    "said",
-    "see",
-    "she",
-    "so",
-    "some",
-    "someone",
-    "something",
-    "that",
-    "the",
-    "them",
-    "then",
-    "there",
-    "they",
-    "this",
-    "through",
-    "to",
-    "too",
-    "tried",
-    "up",
-    "was",
-    "we",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "while",
-    "who",
-    "with",
-    "woke",
-    "would",
-    "you",
-}
+DEFAULT_STOPWORDS = set(SERVICE_STOPWORDS)
 
 
 def load_dreams(path: Path) -> list[dict[str, Any]]:
@@ -183,12 +89,7 @@ def load_stopwords(path: Path | None = None) -> set[str]:
 
 
 def dream_summary(dream: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "dream_id": dream.get("dream_id"),
-        "date": dream.get("date"),
-        "date_precision": dream.get("date_precision", "day"),
-        "word_count": word_count_for(dream),
-    }
+    return summarize_dream(Dream.from_record(dream))
 
 
 def entries_per_period(
@@ -196,66 +97,15 @@ def entries_per_period(
     *,
     freq: str,
 ) -> list[dict[str, Any]]:
-    periods: list[pd.Timestamp] = []
-    for dream in dreams:
-        date = dream_stats_date(dream)
-        if date is not None:
-            periods.append(date.to_period(freq).to_timestamp())
-
-    counts = Counter(periods)
-    return [
-        {
-            "period": format_period_label(period, freq=freq),
-            "entries": counts[period],
-        }
-        for period in sorted(counts)
-    ]
+    return service_entries_per_period(_as_dreams(dreams), frequency=freq)
 
 
 def tag_stats(dreams: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    dream_count = len(dreams)
-    counts: Counter[str] = Counter()
-
-    for dream in dreams:
-        counts.update({str(tag) for tag in dream.get("tags", [])})
-
-    return [
-        {
-            "tag": tag,
-            "count": count,
-            "percentage": round((count / dream_count) * 100, 2) if dream_count else 0,
-        }
-        for tag, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-    ]
+    return tag_statistics(_as_dreams(dreams))
 
 
 def length_stats(dreams: list[dict[str, Any]]) -> dict[str, Any]:
-    if not dreams:
-        return {
-            "longest": None,
-            "shortest": None,
-            "average_word_count": 0,
-            "median_word_count": 0,
-        }
-
-    lengths = [word_count_for(dream) for dream in dreams]
-    longest = max(dreams, key=word_count_for)
-    shortest = min(dreams, key=word_count_for)
-
-    return {
-        "longest": dream_summary(longest),
-        "shortest": dream_summary(shortest),
-        "average_word_count": round(statistics.mean(lengths), 2),
-        "median_word_count": round(statistics.median(lengths), 2),
-    }
-
-
-def tokenize_words(text: str) -> list[str]:
-    return [
-        match.group(0).lower().strip("'")
-        for match in WORD_RE.finditer(text)
-        if match.group(0).strip("'")
-    ]
+    return length_statistics(_as_dreams(dreams))
 
 
 def common_word_stats(
@@ -265,27 +115,16 @@ def common_word_stats(
     stopwords: set[str] | None = None,
     min_word_length: int = 3,
 ) -> list[dict[str, Any]]:
-    stopwords = stopwords or DEFAULT_STOPWORDS
-    counts: Counter[str] = Counter()
-    total_kept_words = 0
+    return common_word_statistics(
+        _as_dreams(dreams),
+        top_n=top_n,
+        stopwords=stopwords or DEFAULT_STOPWORDS,
+        min_word_length=min_word_length,
+    )
 
-    for dream in dreams:
-        for word in tokenize_words(str(dream.get("text", ""))):
-            if len(word) < min_word_length or word in stopwords:
-                continue
-            counts[word] += 1
-            total_kept_words += 1
 
-    return [
-        {
-            "word": word,
-            "count": count,
-            "percentage": round((count / total_kept_words) * 100, 2)
-            if total_kept_words
-            else 0,
-        }
-        for word, count in counts.most_common(top_n)
-    ]
+def _as_dreams(records: list[dict[str, Any]]) -> list[Dream]:
+    return [Dream.from_record(record) for record in records]
 
 
 def compute_dream_stats(
@@ -299,37 +138,22 @@ def compute_dream_stats(
     stopwords_path: Path | None = None,
     min_word_length: int = 3,
 ) -> dict[str, Any]:
-    all_dreams = load_dreams(dreams_path)
-    excluded_unknown_date_count = sum(
-        1 for dream in all_dreams if dream_stats_date(dream) is None
-    )
-    dreams = filter_dreams_by_date(
-        all_dreams,
+    dreams = DreamRepository(dreams_path).all()
+    stopwords = load_stopwords(stopwords_path)
+    service_stats = DreamStatisticsService(dreams).summarize(
+        frequency=freq,
         start_date=start_date,
         end_date=end_date,
+        common_words=common_words,
+        stopwords=stopwords,
+        min_word_length=min_word_length,
     )
-    dates = [dream_stats_date(dream) for dream in dreams]
-    stopwords = load_stopwords(stopwords_path)
 
     stats = {
         "dreams_path": str(dreams_path),
         "output_path": str(output_path) if output_path else None,
-        "freq": freq,
-        "start_date": start_date,
-        "end_date": end_date,
-        "dream_count": len(dreams),
-        "excluded_unknown_date_count": excluded_unknown_date_count,
-        "date_min": min(dates).date().isoformat() if dates else None,
-        "date_max": max(dates).date().isoformat() if dates else None,
-        "entries_per_period": entries_per_period(dreams, freq=freq),
-        "tag_stats": tag_stats(dreams),
-        "length_stats": length_stats(dreams),
-        "common_words": common_word_stats(
-            dreams,
-            top_n=common_words,
-            stopwords=stopwords,
-            min_word_length=min_word_length,
-        ),
+        "freq": service_stats.pop("frequency"),
+        **service_stats,
     }
 
     if output_path is not None:

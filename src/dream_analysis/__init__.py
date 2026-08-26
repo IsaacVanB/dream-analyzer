@@ -1,11 +1,14 @@
 """Reusable services for the dream-analysis project."""
 
 from dream_analysis.analysis import SingleDreamAnalysisService
+from dream_analysis.characters import CharacterLookupService
 from dream_analysis.config import Settings
 from dream_analysis.dates import (
     filter_records_by_date,
+    filter_dreams_by_date,
     format_period_label,
     parse_date_bound,
+    period_start,
     record_date,
     validate_date_range,
 )
@@ -18,6 +21,8 @@ from dream_analysis.repository import (
     DreamRepository,
     load_jsonl_objects,
 )
+from dream_analysis.statistics import DreamStatisticsService
+from dream_analysis.trends import TagTrendService
 
 __all__ = [
     "Dream",
@@ -25,17 +30,22 @@ __all__ = [
     "DreamNotFoundError",
     "DreamRepository",
     "DreamValidationError",
+    "DreamStatisticsService",
     "DirectRagService",
     "EmbeddingModelMismatchError",
     "filter_records_by_date",
+    "filter_dreams_by_date",
     "format_period_label",
     "load_jsonl_objects",
     "OllamaGateway",
     "parse_date_bound",
+    "period_start",
     "RelatedDream",
     "record_date",
     "SearchResult",
     "Settings",
     "SingleDreamAnalysisService",
+    "TagTrendService",
     "validate_date_range",
+    "CharacterLookupService",
 ]

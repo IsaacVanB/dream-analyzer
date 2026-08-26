@@ -30,6 +30,8 @@ from dream_analysis.dates import (
     record_date,
 )
 from dream_analysis.repository import DreamRepository
+from dream_analysis.models import Dream
+from dream_analysis.trends import TagTrendService, dream_counts_by_period, rank_tags
 
 
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -45,17 +47,7 @@ def load_dreams(path: Path) -> list[dict[str, Any]]:
 
 
 def top_tags(dreams: list[dict[str, Any]], *, top_n: int) -> list[str]:
-    counts: dict[str, int] = {}
-    for dream in dreams:
-        for tag in dream.get("tags", []):
-            counts[str(tag)] = counts.get(str(tag), 0) + 1
-    return [
-        tag
-        for tag, _ in sorted(
-            counts.items(),
-            key=lambda item: (-item[1], item[0]),
-        )[:top_n]
-    ]
+    return rank_tags(_as_dreams(dreams), top_n=top_n)
 
 
 def parse_date_filter(date_text: str | None, *, argument_name: str) -> pd.Timestamp | None:
@@ -89,60 +81,37 @@ def tag_counts_over_time(
     top_n: int = 10,
     normalize: bool = False,
 ) -> pd.DataFrame:
-    if not dreams:
-        raise ValueError("No dreams found.")
-
-    selected_tags = tags or top_tags(dreams, top_n=top_n)
-    if not selected_tags:
-        raise ValueError("No tags found in dreams.")
-
-    rows: list[dict[str, Any]] = []
-    dream_periods: list[pd.Timestamp] = []
-
-    for dream in dreams:
-        date = dream_plot_date(dream)
-        if date is None:
-            continue
-        period = date.to_period(freq).to_timestamp()
-        dream_periods.append(period)
-
-        dream_tags = {str(tag) for tag in dream.get("tags", [])}
-        for tag in selected_tags:
-            if tag in dream_tags:
-                rows.append({"period": period, "tag": tag, "count": 1})
-
-    if rows:
-        counts = (
-            pd.DataFrame(rows)
-            .groupby(["period", "tag"])["count"]
-            .sum()
-            .unstack(fill_value=0)
-        )
-    else:
-        counts = pd.DataFrame(columns=selected_tags, dtype=float)
-
-    all_periods = pd.Index(sorted(set(dream_periods)), name="period")
-    counts = counts.reindex(index=all_periods, columns=selected_tags, fill_value=0)
-
-    if normalize:
-        dreams_per_period = pd.Series(dream_periods).value_counts().sort_index()
-        counts = counts.div(dreams_per_period, axis=0).fillna(0) * 100
-
-    return counts
+    trend = TagTrendService(_as_dreams(dreams)).analyze(
+        frequency=freq,
+        tags=tags or None,
+        top_n=top_n,
+        normalize=normalize,
+    )
+    return _trend_dataframe(trend)
 
 
 def dream_counts_over_time(dreams: list[dict[str, Any]], *, freq: str = "M") -> pd.Series:
     if not dreams:
         raise ValueError("No dreams found.")
 
-    periods: list[pd.Timestamp] = []
-    for dream in dreams:
-        date = dream_plot_date(dream)
-        if date is not None:
-            periods.append(date.to_period(freq).to_timestamp())
+    counts = dream_counts_by_period(_as_dreams(dreams), frequency=freq)
+    index = pd.DatetimeIndex(counts, name="period")
+    return pd.Series(list(counts.values()), index=index, dtype="int64")
 
-    all_periods = pd.Index(sorted(set(periods)), name="period")
-    return pd.Series(periods).value_counts().sort_index().reindex(all_periods, fill_value=0)
+
+def _as_dreams(records: list[dict[str, Any]]) -> list[Dream]:
+    return [Dream.from_record(record) for record in records]
+
+
+def _trend_dataframe(trend: dict[str, Any]) -> pd.DataFrame:
+    tags = trend["tags"]
+    periods = trend["periods"]
+    index = pd.DatetimeIndex(
+        [period["period_start"] for period in periods],
+        name="period",
+    )
+    rows = [[period["values"][tag] for tag in tags] for period in periods]
+    return pd.DataFrame(rows, index=index, columns=tags)
 
 
 def plot_tag_counts(
@@ -240,24 +209,21 @@ def make_tag_frequency_plot(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, Any]:
-    all_dreams = load_dreams(dreams_path)
-    excluded_unknown_date_count = sum(
-        1 for dream in all_dreams if dream_plot_date(dream) is None
-    )
-    dreams = filter_dreams_by_date(
-        all_dreams,
+    dreams = DreamRepository(dreams_path).all()
+    trend = TagTrendService(dreams).analyze(
+        frequency=freq,
+        tags=tags or None,
+        top_n=top_n,
+        normalize=normalize,
         start_date=start_date,
         end_date=end_date,
     )
-    selected_tags = tags or top_tags(dreams, top_n=top_n)
-    counts = tag_counts_over_time(
-        dreams,
-        freq=freq,
-        tags=selected_tags,
-        top_n=top_n,
-        normalize=normalize,
+    counts = _trend_dataframe(trend)
+    total_counts = pd.Series(
+        [period["dream_count"] for period in trend["periods"]],
+        index=counts.index,
+        dtype="int64",
     )
-    total_counts = dream_counts_over_time(dreams, freq=freq)
     plot_path = plot_tag_counts(
         counts,
         output_path=output_path,
@@ -268,23 +234,19 @@ def make_tag_frequency_plot(
         show=show,
     )
 
-    available_tags = set(top_tags(dreams, top_n=10_000))
-    missing_tags = [tag for tag in selected_tags if tag not in available_tags]
-
-    dates = pd.Series([dream_plot_date(dream) for dream in dreams])
     return {
         "plot_path": str(plot_path),
-        "tags": selected_tags,
-        "missing_tags": missing_tags,
+        "tags": trend["tags"],
+        "missing_tags": trend["missing_tags"],
         "freq": freq,
         "normalize": normalize,
         "includes_total_dream_bars": not normalize,
-        "dream_count": len(dreams),
-        "excluded_unknown_date_count": excluded_unknown_date_count,
+        "dream_count": trend["dream_count"],
+        "excluded_unknown_date_count": trend["excluded_unknown_date_count"],
         "start_date": start_date,
         "end_date": end_date,
-        "date_min": dates.min().date().isoformat(),
-        "date_max": dates.max().date().isoformat(),
+        "date_min": trend["date_min"],
+        "date_max": trend["date_max"],
     }
 
 

@@ -119,6 +119,13 @@ Ask a RAG question:
 python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
 ```
 
+The deterministic reporting logic is also available independently of the CLI
+and Ollama. `DreamStatisticsService`, `TagTrendService`, and
+`CharacterLookupService` accept validated records and return JSON-compatible
+results. The command-line scripts remain responsible only for loading files,
+plotting, and saving outputs; these service boundaries can later be exposed as
+read-only LLM tools.
+
 Compare the four chat/embedding combinations (qwen3:8b and gemma3:12b for chat, nomic-embed-text and qwen3-embedding for embedding) with a fixed retrieval query:
 
 ```bash

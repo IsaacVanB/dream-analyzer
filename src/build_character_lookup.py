@@ -4,18 +4,22 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from dream_analysis.characters import (
+    LOOKUP_SCHEMA_VERSION,
+    CharacterLookupService,
+    character_id as service_character_id,
+    valid_date as service_valid_date,
+)
+
 
 INPUT_PATH = Path("outputs/structured_dreams/dream_features.jsonl")
 OUTPUT_PATH = Path("data/characters.json")
-LOOKUP_SCHEMA_VERSION = 1
 
 
 def load_structured_dreams(path: Path) -> list[dict[str, Any]]:
@@ -44,24 +48,11 @@ def load_structured_dreams(path: Path) -> list[dict[str, Any]]:
 
 
 def character_id(name: str, used_ids: set[str]) -> str:
-    base = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_") or "character"
-    if base not in used_ids:
-        used_ids.add(base)
-        return base
-    suffix = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
-    candidate = f"{base}_{suffix}"
-    used_ids.add(candidate)
-    return candidate
+    return service_character_id(name, used_ids)
 
 
 def valid_date(value: Any) -> str | None:
-    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-        return None
-    try:
-        datetime.strptime(value, "%Y-%m-%d")
-    except ValueError:
-        return None
-    return value
+    return service_valid_date(value)
 
 
 def aggregate_characters(
@@ -69,59 +60,10 @@ def aggregate_characters(
     *,
     temporal_context: bool,
 ) -> list[dict[str, Any]]:
-    aggregated: dict[str, dict[str, Any]] = {}
-    for record in records:
-        dream_id = record["dream_id"]
-        date_sort = valid_date(record.get("date_sort"))
-        seen_in_dream: set[str] = set()
-        for raw_name in record["named_characters"]:
-            name = re.sub(r"\s+", " ", raw_name.strip())
-            identity = name.casefold()
-            if not name or identity in seen_in_dream:
-                continue
-            seen_in_dream.add(identity)
-            entry = aggregated.setdefault(
-                identity,
-                {
-                    "name": name,
-                    "dream_ids": [],
-                    "dates": [],
-                },
-            )
-            entry["dream_ids"].append(dream_id)
-            if date_sort is not None:
-                entry["dates"].append(date_sort)
-
-    used_ids: set[str] = set()
-    characters: list[dict[str, Any]] = []
-    for identity in sorted(aggregated):
-        entry = aggregated[identity]
-        dates = sorted(set(entry["dates"]))
-        character: dict[str, Any] = {
-            "id": character_id(entry["name"], used_ids),
-            "name": entry["name"],
-            "aliases": [],
-            "mentions": {
-                "count": len(entry["dream_ids"]),
-                "first_date": dates[0] if dates else None,
-                "last_date": dates[-1] if dates else None,
-                "dream_ids": entry["dream_ids"],
-            },
-        }
-        if temporal_context:
-            character["relationship_history"] = [
-                {
-                    "start_date": None,
-                    "end_date": None,
-                    "relationship": "",
-                    "context": "",
-                }
-            ]
-        else:
-            character["relationship"] = ""
-            character["context"] = ""
-        characters.append(character)
-    return characters
+    return CharacterLookupService().aggregate(
+        records,
+        temporal_context=temporal_context,
+    )
 
 
 def build_lookup(
@@ -130,17 +72,12 @@ def build_lookup(
     source_path: Path,
     temporal_context: bool,
 ) -> dict[str, Any]:
-    return {
-        "schema_version": LOOKUP_SCHEMA_VERSION,
-        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "source": str(source_path),
-        "temporal_context": temporal_context,
-        "date_format": "YYYY-MM-DD",
-        "characters": aggregate_characters(
-            records,
-            temporal_context=temporal_context,
-        ),
-    }
+    return CharacterLookupService().build_lookup(
+        records,
+        source=str(source_path),
+        temporal_context=temporal_context,
+        generated_at=datetime.now().astimezone(),
+    )
 
 
 def save_lookup(path: Path, lookup: dict[str, Any], *, overwrite: bool) -> None:
