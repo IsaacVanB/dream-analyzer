@@ -93,6 +93,50 @@ class OllamaGatewayTests(unittest.TestCase):
                 schema={"type": "object"},
             )
 
+    def test_tool_calls_and_assistant_message_are_normalized(self) -> None:
+        response = {
+            "message": {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "hidden room"},
+                        }
+                    }
+                ],
+            }
+        }
+
+        calls = OllamaGateway.tool_calls(response)
+        message = OllamaGateway.assistant_message(response)
+
+        self.assertEqual(calls[0].name, "search_dreams")
+        self.assertEqual(calls[0].arguments, {"query": "hidden room"})
+        self.assertEqual(message["role"], "assistant")
+        self.assertEqual(message["content"], "")
+        self.assertEqual(
+            message["tool_calls"][0]["function"]["name"],
+            "search_dreams",
+        )
+
+    def test_invalid_tool_call_arguments_are_rejected(self) -> None:
+        response = {
+            "message": {
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": "not-an-object",
+                        }
+                    }
+                ]
+            }
+        }
+
+        with self.assertRaisesRegex(OllamaResponseError, "invalid arguments"):
+            OllamaGateway.tool_calls(response)
+
 
 if __name__ == "__main__":
     unittest.main()

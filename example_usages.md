@@ -170,6 +170,33 @@ Arguments:
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
 
+## `src/dream_agent.py`
+
+Answers a question through Ollama's tool-calling loop. The model can call one
+read-only `search_dreams` tool, inspect its bounded results, and then produce a
+grounded answer with dream IDs and dates.
+
+```bash
+python3 src/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+python3 src/dream_agent.py "How do school anxiety dreams appear?" \
+  --top-k 5 \
+  --chat-model qwen3:8b \
+  --embed-model nomic-embed-text
+```
+
+Arguments:
+
+- `question`: required question to answer from the journal.
+- `--top-k`: maximum results returned by each search call. Defaults to `8` and is capped at `20`.
+- `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
+- `--max-chars-per-dream`: maximum journal characters returned per search result. Defaults to `2500`.
+- `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
+- `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
+- `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation.
+
+Requires an existing matching ChromaDB index, a tool-capable chat model, and
+Ollama running locally.
+
 ## `src/analyze_dream.py`
 
 Loads one dream by ID or accepts dream text directly, then asks an Ollama chat model for a close analysis of its events, dynamics, themes, and possible interpretations.

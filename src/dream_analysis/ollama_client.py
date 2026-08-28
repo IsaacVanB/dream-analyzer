@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import ollama
@@ -13,6 +14,14 @@ from dream_analysis.config import OllamaSettings
 
 class OllamaResponseError(RuntimeError):
     """Raised when Ollama returns a response with an unexpected shape."""
+
+
+@dataclass(frozen=True, slots=True)
+class OllamaToolCall:
+    """One normalized function call requested by a chat model."""
+
+    name: str
+    arguments: Mapping[str, Any]
 
 
 class OllamaGateway:
@@ -156,6 +165,59 @@ class OllamaGateway:
         if value is None:
             return None
         return str(value)
+
+    @classmethod
+    def tool_calls(cls, response: Any) -> list[OllamaToolCall]:
+        """Normalize tool calls from mapping or Ollama SDK responses."""
+        message = cls._response_value(response, "message")
+        if message is None:
+            raise OllamaResponseError("Ollama returned no chat message")
+        raw_calls = cls._response_value(message, "tool_calls")
+        if raw_calls is None:
+            return []
+        if not isinstance(raw_calls, Sequence) or isinstance(raw_calls, (str, bytes)):
+            raise OllamaResponseError("Ollama returned invalid tool calls")
+
+        calls: list[OllamaToolCall] = []
+        for raw_call in raw_calls:
+            function = cls._response_value(raw_call, "function")
+            name = cls._response_value(function, "name")
+            arguments = cls._response_value(function, "arguments")
+            if not isinstance(name, str) or not name.strip():
+                raise OllamaResponseError("Ollama returned a tool call without a name")
+            if not isinstance(arguments, Mapping):
+                raise OllamaResponseError(
+                    f"Ollama returned invalid arguments for tool {name!r}"
+                )
+            calls.append(OllamaToolCall(name=name, arguments=dict(arguments)))
+        return calls
+
+    @classmethod
+    def assistant_message(cls, response: Any) -> dict[str, Any]:
+        """Return a response message in the shape accepted by Ollama chat."""
+        message = cls._response_value(response, "message")
+        if message is None:
+            raise OllamaResponseError("Ollama returned no chat message")
+        content = cls._response_value(message, "content")
+        if content is not None and not isinstance(content, str):
+            raise OllamaResponseError("Ollama returned non-text chat content")
+
+        normalized: dict[str, Any] = {
+            "role": "assistant",
+            "content": content or "",
+        }
+        calls = cls.tool_calls(response)
+        if calls:
+            normalized["tool_calls"] = [
+                {
+                    "function": {
+                        "name": call.name,
+                        "arguments": dict(call.arguments),
+                    }
+                }
+                for call in calls
+            ]
+        return normalized
 
     @staticmethod
     def _response_value(response: Any, key: str) -> Any:

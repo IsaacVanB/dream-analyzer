@@ -119,6 +119,17 @@ Ask a RAG question:
 python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
 ```
 
+Or let a tool-capable Ollama model choose the semantic search query and use the
+results in an agent loop:
+
+```bash
+python3 src/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+```
+
+The initial agent exposes only one read-only tool, `search_dreams`. Search
+queries, result counts, and per-dream context are bounded before being returned
+to the model.
+
 The deterministic reporting logic is also available independently of the CLI
 and Ollama. `DreamStatisticsService`, `TagTrendService`, and
 `CharacterLookupService` accept validated records and return JSON-compatible

@@ -1,6 +1,7 @@
 """Reusable services for the dream-analysis project."""
 
 from dream_analysis.analysis import SingleDreamAnalysisService
+from dream_analysis.agent import AgentResponse, DreamRagAgent
 from dream_analysis.characters import CharacterLookupService
 from dream_analysis.config import Settings
 from dream_analysis.dates import (
@@ -23,9 +24,12 @@ from dream_analysis.repository import (
 )
 from dream_analysis.statistics import DreamStatisticsService
 from dream_analysis.trends import TagTrendService
+from dream_analysis.tools import DreamSearchTool
 
 __all__ = [
     "Dream",
+    "DreamRagAgent",
+    "DreamSearchTool",
     "DreamIndex",
     "DreamNotFoundError",
     "DreamRepository",
@@ -46,6 +50,7 @@ __all__ = [
     "Settings",
     "SingleDreamAnalysisService",
     "TagTrendService",
+    "AgentResponse",
     "validate_date_range",
     "CharacterLookupService",
 ]
