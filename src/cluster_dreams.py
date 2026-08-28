@@ -31,6 +31,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import normalize
 
+from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.ollama_client import OllamaGateway
 
 
@@ -342,7 +343,7 @@ def write_report(
             excerpt = " ".join(documents[index].split())[:400]
             lines += [f"- **{ids[index]}** ({metadatas[index].get('date', 'unknown')}): {excerpt}"]
         lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    write_text_atomic(path, "\n".join(lines))
 
 
 def run(args: argparse.Namespace) -> dict[str, Path]:

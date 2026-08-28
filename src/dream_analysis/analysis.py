@@ -7,6 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 import re
 
+from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.dates import validate_date_range
 from dream_analysis.index import DreamIndex
 from dream_analysis.models import Dream, RelatedDream
@@ -96,7 +97,6 @@ def save_analysis(
     timestamp: datetime | None = None,
 ) -> Path:
     """Save an analysis and return its output path."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     datetime_text = (timestamp or datetime.now()).strftime("%Y-%m-%d_%H-%M-%S")
     if dream_id is None:
         filename = f"{datetime_text}.txt"
@@ -104,8 +104,7 @@ def save_analysis(
         safe_id = re.sub(r"[^A-Za-z0-9._-]", "_", dream_id)
         filename = f"{safe_id}_{datetime_text}.txt"
     output_path = output_dir / filename
-    output_path.write_text(analysis.rstrip() + "\n", encoding="utf-8")
-    return output_path
+    return write_text_atomic(output_path, analysis.rstrip() + "\n")
 
 
 class SingleDreamAnalysisService:

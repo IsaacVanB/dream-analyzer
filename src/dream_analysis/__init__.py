@@ -2,6 +2,7 @@
 
 from dream_analysis.analysis import SingleDreamAnalysisService
 from dream_analysis.agent import AgentResponse, DreamRagAgent
+from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 from dream_analysis.characters import CharacterLookupService
 from dream_analysis.config import Settings
 from dream_analysis.dates import (
@@ -53,4 +54,6 @@ __all__ = [
     "AgentResponse",
     "validate_date_range",
     "CharacterLookupService",
+    "write_json_atomic",
+    "write_text_atomic",
 ]

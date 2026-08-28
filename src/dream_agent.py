@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from dream_analysis.agent import AgentResponse, DreamRagAgent, ToolExecution
+from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
@@ -183,11 +183,7 @@ def format_markdown_report(
 
 
 def save_markdown_report(path: Path, report: str) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(f".{path.name}.tmp")
-    temporary_path.write_text(report.rstrip() + "\n", encoding="utf-8")
-    os.replace(temporary_path, path)
-    return path
+    return write_text_atomic(path, report.rstrip() + "\n")
 
 
 def _inline_code(value: Any) -> str:

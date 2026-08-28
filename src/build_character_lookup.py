@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from dream_analysis.characters import (
     character_id as service_character_id,
     valid_date as service_valid_date,
 )
+from dream_analysis.artifacts import write_json_atomic
 
 
 INPUT_PATH = Path("outputs/structured_dreams/dream_features.jsonl")
@@ -86,13 +86,7 @@ def save_lookup(path: Path, lookup: dict[str, Any], *, overwrite: bool) -> None:
             f"Refusing to replace {path}; it may contain user edits. "
             "Use --overwrite to replace it explicitly."
         )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(f".{path.name}.tmp")
-    temporary_path.write_text(
-        json.dumps(lookup, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(temporary_path, path)
+    write_json_atomic(path, lookup)
 
 
 def build_parser() -> argparse.ArgumentParser:

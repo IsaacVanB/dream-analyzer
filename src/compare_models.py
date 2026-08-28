@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 import analyze_dream
 import basic_rag
+from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 
 
 CHAT_MODELS = ("qwen3:8b", "gemma3:12b")
@@ -447,15 +448,11 @@ def main() -> None:
         for model, collection in EMBEDDING_INDEXES
     ]
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{created.strftime('%Y-%m-%d_%H-%M-%S-%f')}_{safe_name(args.mode)}"
     json_path = args.output_dir / f"{stem}.json"
     markdown_path = args.output_dir / f"{stem}.md"
-    json_path.write_text(
-        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    markdown_path.write_text(markdown_report(report), encoding="utf-8")
+    write_json_atomic(json_path, report)
+    write_text_atomic(markdown_path, markdown_report(report))
 
     success_count = sum(item["status"] == "ok" for item in report["results"])
     print(f"\nCompleted {success_count}/{len(report['results'])} combinations.")

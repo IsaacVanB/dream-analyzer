@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from dream_analysis.artifacts import write_json_atomic
 from dream_analysis.config import Settings
 from dream_analysis.dates import (
     filter_records_by_date,
@@ -157,8 +158,7 @@ def compute_dream_stats(
     }
 
     if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(stats, indent=2) + "\n", encoding="utf-8")
+        write_json_atomic(output_path, stats, ensure_ascii=True)
 
     return stats
 

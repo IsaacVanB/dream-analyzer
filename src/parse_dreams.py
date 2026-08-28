@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from dream_analysis.artifacts import write_text_atomic
+
 
 DATE_RE = re.compile(r"^\s*(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})\s*$")
 TAG_LINE_RE = re.compile(r"^\s*(#[A-Za-z0-9_?+-]+(?:\s+#[A-Za-z0-9_?+-]+)*)\s*$")
@@ -203,9 +205,10 @@ def parse_journal(
 
 
 def write_jsonl(dreams: list[dict[str, Any]], output_path: Path) -> None:
-    with output_path.open("w", encoding="utf-8") as output_file:
-        for dream in dreams:
-            output_file.write(json.dumps(dream, ensure_ascii=False) + "\n")
+    content = "".join(
+        json.dumps(dream, ensure_ascii=False) + "\n" for dream in dreams
+    )
+    write_text_atomic(output_path, content)
 
 
 def main() -> None:

@@ -15,6 +15,7 @@ from typing import Any
 
 import analyze_dream
 import basic_rag
+from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 from dream_analysis.ollama_client import OllamaGateway
 
 
@@ -671,15 +672,11 @@ def main() -> None:
     report = run(args)
 
     created = datetime.now().astimezone()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
     stem = created.strftime("%Y-%m-%d_%H-%M-%S-%f")
     json_path = args.output_dir / f"{stem}.json"
     markdown_path = args.output_dir / f"{stem}.md"
-    json_path.write_text(
-        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    markdown_path.write_text(markdown_report(report), encoding="utf-8")
+    write_json_atomic(json_path, report)
+    write_text_atomic(markdown_path, markdown_report(report))
 
     successful = sum(item["status"] == "ok" for item in report["embedding_models"])
     print(f"\nCompleted {successful}/{len(EMBEDDING_INDEXES)} embedding models.")

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from datetime import datetime
@@ -14,6 +13,7 @@ from time import perf_counter
 from typing import Any
 
 from dream_analysis.config import Settings
+from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.repository import DreamRepository
 
@@ -285,12 +285,11 @@ def load_existing_records(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def save_records(path: Path, records: dict[str, dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(f".{path.name}.tmp")
-    with temporary_path.open("w", encoding="utf-8") as destination:
-        for record in records.values():
-            destination.write(json.dumps(record, ensure_ascii=False) + "\n")
-    os.replace(temporary_path, path)
+    content = "".join(
+        json.dumps(record, ensure_ascii=False) + "\n"
+        for record in records.values()
+    )
+    write_text_atomic(path, content)
 
 
 def build_parser() -> argparse.ArgumentParser:
