@@ -68,7 +68,7 @@ The commands currently use two different scoring paths:
 | `src/cli/retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `src/cli/basic_rag.py` | Chroma distance | Lower is closer. |
 | `src/cli/dream_agent.py` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
-| `src/cli/evaluate_retrieval.py` | Chroma distance | Lower is closer; the judge model's 1-5 relevance score is separate. |
+| `src/cli/evaluate_retrieval.py` | Configurable | Chroma distance by default; cosine similarity or both are selectable. |
 | `src/cli/compare_models.py rag` | Chroma distance | Lower is closer. |
 | `src/cli/analyze_dream.py` with related dreams enabled | Cosine similarity | Higher is more similar. |
 | `src/cli/compare_models.py analyze` | Cosine similarity | Higher is more similar. |
@@ -326,12 +326,31 @@ python3 src/cli/evaluate_retrieval.py \
   --top-k 8
 ```
 
+Compare the current Chroma-distance and explicit-cosine retrieval paths for
+both embedding models:
+
+```bash
+python3 src/cli/evaluate_retrieval.py \
+  "hidden room hallway extra room concealed door behind wall" \
+  --retrieval-metric both \
+  --top-k 8
+```
+
+`--retrieval-metric` accepts `chroma`, `cosine`, or `both` and defaults to
+`chroma` for compatibility. In `both` mode the report contains four retrieval
+runs: two metrics for each embedding model. It reports shared top-k count,
+Jaccard overlap, metric-exclusive dream IDs, and the cosine-minus-Chroma change
+in mean LLM-judged relevance. All unique candidates are pooled and judged once,
+blind to retrieval metric and original rank, so shared dreams receive the same
+relevance score in both result lists.
+
 Use the complete text of an existing dream as the retrieval and relevance
 target. The target dream itself is excluded from the results:
 
 ```bash
 python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
+  --retrieval-metric both \
   --top-k 8
 ```
 
@@ -366,8 +385,11 @@ generic overlap is reported separately and does not increase focal relevance.
 The JSON and Markdown reports include the complete target dream near the
 beginning, followed by the complete text of every retrieved dream.
 
-Useful options include `--judge-model`, `--max-chars-per-dream`,
-`--max-target-chars`, `--num-ctx`, `--chroma-path`, and `--output-dir`.
+Unique candidates are judged in batches of 12 by default so a four-run metric
+comparison does not overfill one context window. Use `--judge-batch-size` to
+adjust this. Other useful options include `--retrieval-metric`, `--judge-model`,
+`--max-chars-per-dream`, `--max-target-chars`, `--num-ctx`, `--chroma-path`, and
+`--output-dir`.
 
 ## `src/cli/structure_dreams.py`
 

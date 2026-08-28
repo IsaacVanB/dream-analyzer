@@ -78,7 +78,7 @@ directions and should not be compared directly.
 | `retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `basic_rag.py` | Chroma distance | The generated or supplied retrieval query is ranked by Chroma. |
 | `dream_agent.py` | Chroma distance | `search_dreams` uses Chroma ranking; optional dates filter that ranked search. |
-| `evaluate_retrieval.py` | Chroma distance | Chroma selects candidates; the LLM's later relevance score is a separate evaluation. |
+| `evaluate_retrieval.py` | Configurable | Defaults to Chroma distance; `--retrieval-metric cosine` uses cosine similarity and `both` compares them. |
 | `compare_models.py rag` | Chroma distance | Uses the same retrieval path as `basic_rag.py`. |
 | `analyze_dream.py --related-dreams ...` | Cosine similarity | Higher is more similar; `--similarity-threshold` is a cosine threshold. |
 | `compare_models.py analyze` | Cosine similarity | Uses the same related-dream path as `analyze_dream.py`. |
@@ -194,14 +194,23 @@ Evaluate each embedding model's top retrievals with Gemma:
 ```bash
 python3 src/cli/evaluate_retrieval.py "hidden room hallway concealed door" --top-k 8
 python3 src/cli/evaluate_retrieval.py \
+  "hidden room hallway concealed door" \
+  --top-k 8 \
+  --retrieval-metric both
+python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
   --focus "discovering a hidden room that reveals a disturbing secret" \
+  --retrieval-metric both \
   --top-k 8
 ```
 
 In dream-ID mode, retrieval always embeds the complete target dream. `--focus`
 changes only Gemma's evaluation criterion. Reports include the complete target
-and retrieved dream texts.
+and retrieved dream texts. With `--retrieval-metric both`, each embedding model
+is evaluated once with Chroma distance and once with explicit cosine similarity.
+The report includes shared top-k counts, Jaccard overlap, dreams unique to each
+metric, and the cosine-minus-Chroma difference in mean judged relevance. Unique
+candidates are pooled and judged once without exposing their retrieval source.
 
 Use a manual retrieval query when the question has extra analysis language:
 

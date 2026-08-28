@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Evaluate embedding-model retrieval relevance with an Ollama chat model."""
+"""Evaluate embedding-model and distance-metric retrieval relevance."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import json
+import math
 import statistics
 import sys
 from datetime import datetime
@@ -24,6 +24,19 @@ EMBEDDING_INDEXES = (
 )
 JUDGE_MODEL = "gemma3:12b"
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
+RETRIEVAL_METRICS = ("chroma", "cosine")
+METRIC_DETAILS = {
+    "chroma": {
+        "label": "Chroma distance",
+        "score_key": "distance",
+        "score_direction": "lower_is_better",
+    },
+    "cosine": {
+        "label": "Cosine similarity",
+        "score_key": "similarity",
+        "score_direction": "higher_is_better",
+    },
+}
 
 EVALUATION_SCHEMA = {
     "type": "object",
@@ -226,7 +239,9 @@ guess which retrieval system produced the candidates.
         }
 
     missing = [dream_id for dream_id in expected_ids if dream_id not in evaluated_by_id]
-    unexpected = [dream_id for dream_id in evaluated_by_id if dream_id not in expected_ids]
+    unexpected = [
+        dream_id for dream_id in evaluated_by_id if dream_id not in expected_ids
+    ]
     if missing or unexpected:
         raise ValueError(
             "Judge DREAM_ID mismatch: "
@@ -243,9 +258,41 @@ guess which retrieval system produced the candidates.
     ]
 
 
+def evaluate_in_batches(
+    evaluation_focus: str,
+    retrieved: list[dict[str, Any]],
+    *,
+    batch_size: int,
+    target_text: str | None = None,
+    judge_model: str = JUDGE_MODEL,
+    max_chars_per_dream: int = 2500,
+    num_ctx: int = 16384,
+    gateway: OllamaGateway | None = None,
+) -> list[dict[str, Any]]:
+    """Judge every unique candidate once without overflowing one prompt."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    evaluations: list[dict[str, Any]] = []
+    for offset in range(0, len(retrieved), batch_size):
+        evaluations.extend(
+            evaluate_relevance(
+                evaluation_focus,
+                retrieved[offset : offset + batch_size],
+                target_text=target_text,
+                judge_model=judge_model,
+                max_chars_per_dream=max_chars_per_dream,
+                num_ctx=num_ctx,
+                gateway=gateway,
+            )
+        )
+    return evaluations
+
+
 def evaluated_results(
     retrieved: list[dict[str, Any]],
     evaluations: list[dict[str, Any]],
+    *,
+    score_key: str = "distance",
 ) -> list[dict[str, Any]]:
     evaluations_by_id = {item["dream_id"]: item for item in evaluations}
     return [
@@ -253,7 +300,7 @@ def evaluated_results(
             "rank": rank,
             "dream_id": item["dream_id"],
             "date": item["date"],
-            "distance": item["distance"],
+            score_key: item[score_key],
             "text": analyze_dream.extract_dream_text(item["document"]),
             "relevance": evaluations_by_id[item["dream_id"]]["relevance"],
             "generic_overlap": evaluations_by_id[item["dream_id"]][
@@ -265,14 +312,18 @@ def evaluated_results(
     ]
 
 
-def unevaluated_results(retrieved: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def unevaluated_results(
+    retrieved: list[dict[str, Any]],
+    *,
+    score_key: str = "distance",
+) -> list[dict[str, Any]]:
     """Preserve retrieved content when LLM evaluation fails."""
     return [
         {
             "rank": rank,
             "dream_id": item["dream_id"],
             "date": item["date"],
-            "distance": item["distance"],
+            score_key: item[score_key],
             "text": analyze_dream.extract_dream_text(item["document"]),
             "relevance": None,
             "generic_overlap": None,
@@ -314,6 +365,131 @@ def pooled_candidates(
     )
 
 
+def selected_metrics(value: str) -> tuple[str, ...]:
+    """Expand a CLI metric selection into concrete retrieval paths."""
+    return RETRIEVAL_METRICS if value == "both" else (value,)
+
+
+def retrieve_candidates(
+    retrieval_input: str,
+    *,
+    metric: str,
+    top_k: int,
+    target_dream_id: str | None,
+    chroma_path: str,
+    collection_name: str,
+    embed_model: str,
+) -> list[dict[str, Any]]:
+    """Retrieve comparable candidate records using one current scoring path."""
+    if metric == "chroma":
+        requested = top_k + (1 if target_dream_id is not None else 0)
+        retrieved = basic_rag.retrieve_dreams(
+            retrieval_input,
+            top_k=requested,
+            chroma_path=chroma_path,
+            collection_name=collection_name,
+            embed_model=embed_model,
+        )
+        if target_dream_id is not None:
+            retrieved = [
+                item for item in retrieved if item["dream_id"] != target_dream_id
+            ]
+        return [
+            {
+                **item,
+                "document": analyze_dream.extract_dream_text(item["document"]),
+            }
+            for item in retrieved[:top_k]
+        ]
+
+    if metric == "cosine":
+        related = analyze_dream.retrieve_related_dreams(
+            retrieval_input,
+            n_results=top_k,
+            similarity_threshold=-1.0,
+            target_dream_id=target_dream_id,
+            chroma_path=chroma_path,
+            collection_name=collection_name,
+            embed_model=embed_model,
+        )
+        return [
+            {
+                "dream_id": item["dream_id"],
+                "date": item["date"],
+                "similarity": item["similarity"],
+                "document": item["text"],
+            }
+            for item in related
+        ]
+
+    raise ValueError(f"Unknown retrieval metric: {metric}")
+
+
+def compare_metric_results(
+    retrieval_runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Summarize top-k overlap and judged relevance for each embedding model."""
+    comparisons: list[dict[str, Any]] = []
+    for embed_model, collection_name in EMBEDDING_INDEXES:
+        runs = {
+            item["retrieval_metric"]: item
+            for item in retrieval_runs
+            if item["embed_model"] == embed_model
+        }
+        if not all(metric in runs for metric in RETRIEVAL_METRICS):
+            continue
+        chroma_run = runs["chroma"]
+        cosine_run = runs["cosine"]
+        retrievals_available = all(
+            run["status"] == "ok" or run.get("phase") == "evaluation"
+            for run in (chroma_run, cosine_run)
+        )
+        if not retrievals_available:
+            comparisons.append(
+                {
+                    "embed_model": embed_model,
+                    "collection_name": collection_name,
+                    "status": "error",
+                    "error": "Both metric runs must succeed for comparison.",
+                }
+            )
+            continue
+
+        chroma_ids = [item["dream_id"] for item in chroma_run["results"]]
+        cosine_ids = [item["dream_id"] for item in cosine_run["results"]]
+        chroma_set = set(chroma_ids)
+        cosine_set = set(cosine_ids)
+        shared = chroma_set & cosine_set
+        union = chroma_set | cosine_set
+        chroma_mean = chroma_run.get("summary", {}).get("mean_relevance")
+        cosine_mean = cosine_run.get("summary", {}).get("mean_relevance")
+        comparisons.append(
+            {
+                "embed_model": embed_model,
+                "collection_name": collection_name,
+                "status": (
+                    "ok"
+                    if chroma_run["status"] == cosine_run["status"] == "ok"
+                    else "retrieval_only"
+                ),
+                "chroma_result_count": len(chroma_ids),
+                "cosine_result_count": len(cosine_ids),
+                "shared_at_k": len(shared),
+                "jaccard_overlap": (
+                    round(len(shared) / len(union), 3) if union else None
+                ),
+                "chroma_only": [item for item in chroma_ids if item not in shared],
+                "cosine_only": [item for item in cosine_ids if item not in shared],
+                "mean_relevance_delta_cosine_minus_chroma": (
+                    round(cosine_mean - chroma_mean, 3)
+                    if chroma_mean is not None and cosine_mean is not None
+                    else None
+                ),
+            }
+        )
+    return comparisons
+
+
 def markdown_report(report: dict[str, Any]) -> str:
     target = report["target"]
     if "dream_id" in target:
@@ -349,13 +525,51 @@ def markdown_report(report: dict[str, Any]) -> str:
             ]
         )
 
-    for result in report["embedding_models"]:
+    if report["metric_comparisons"]:
         lines.extend(
             [
                 "",
-                f"## {result['embed_model']}",
+                "## Chroma distance versus cosine similarity",
+                "",
+                "| embedding model | shared at k | Jaccard overlap "
+                "| cosine − Chroma mean relevance |",
+                "|---|---:|---:|---:|",
+            ]
+        )
+        for comparison in report["metric_comparisons"]:
+            if comparison["status"] == "error":
+                lines.append(
+                    f"| {comparison['embed_model']} | error | error | error |"
+                )
+                continue
+            lines.append(
+                f"| {comparison['embed_model']} | {comparison['shared_at_k']} "
+                f"| {comparison['jaccard_overlap']} "
+                f"| {comparison['mean_relevance_delta_cosine_minus_chroma']} |"
+            )
+        for comparison in report["metric_comparisons"]:
+            if comparison["status"] == "error":
+                continue
+            lines.extend(
+                [
+                    "",
+                    f"- `{comparison['embed_model']}` Chroma-only dreams: "
+                    f"{', '.join(comparison['chroma_only']) or 'none'}",
+                    f"- `{comparison['embed_model']}` cosine-only dreams: "
+                    f"{', '.join(comparison['cosine_only']) or 'none'}",
+                ]
+            )
+
+    for result in report["embedding_models"]:
+        metric_label = METRIC_DETAILS[result["retrieval_metric"]]["label"]
+        lines.extend(
+            [
+                "",
+                f"## {result['embed_model']} — {metric_label}",
                 "",
                 f"- Collection: `{result['collection_name']}`",
+                f"- Retrieval metric: `{result['retrieval_metric']}`",
+                f"- Score direction: `{result['score_direction']}`",
                 f"- Status: `{result['status']}`",
                 f"- Retrieval time: `{result['retrieval_seconds']}` seconds",
             ]
@@ -373,7 +587,8 @@ def markdown_report(report: dict[str, Any]) -> str:
                     lines.extend(
                         [
                             "",
-                            f"#### {item['rank']}. {item['dream_id']} — {item['date']}",
+                            f"#### {item['rank']}. {item['dream_id']} "
+                            f"— {item['date']}",
                             "",
                             "````text",
                             item["text"].rstrip(),
@@ -383,13 +598,16 @@ def markdown_report(report: dict[str, Any]) -> str:
             continue
 
         summary = result["summary"]
+        score_key = result["score_key"]
         lines.extend(
             [
                 f"- Mean relevance: `{summary['mean_relevance']}`",
                 f"- Median relevance: `{summary['median_relevance']}`",
-                f"- Scores of 4–5: `{summary['relevant_at_4_or_5']}/{len(result['results'])}`",
+                f"- Scores of 4–5: `{summary['relevant_at_4_or_5']}"
+                f"/{len(result['results'])}`",
                 "",
-                "| rank | dream_id | date | distance | focal relevance | generic overlap | reason |",
+                f"| rank | dream_id | date | {score_key} | focal relevance "
+                "| generic overlap | reason |",
                 "|---:|---|---|---:|---:|---:|---|",
             ]
         )
@@ -397,7 +615,7 @@ def markdown_report(report: dict[str, Any]) -> str:
             reason = item["reason"].replace("|", "\\|").replace("\n", " ")
             lines.append(
                 f"| {item['rank']} | {item['dream_id']} | {item['date']} | "
-                f"{item['distance']:.4f} | {item['relevance']} | "
+                f"{item[score_key]:.4f} | {item['relevance']} | "
                 f"{item['generic_overlap']} | {reason} |"
             )
 
@@ -420,8 +638,8 @@ def markdown_report(report: dict[str, Any]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Retrieve dreams with each embedding model and have Gemma score "
-            "their relevance from 1 to 5."
+            "Retrieve dreams with each embedding model and selected metric, then "
+            "have Gemma score their relevance from 1 to 5."
         )
     )
     parser.add_argument(
@@ -453,10 +671,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Have the judge model generate a distinctive evaluation focus.",
     )
     parser.add_argument("--top-k", type=int, default=8)
+    parser.add_argument(
+        "--retrieval-metric",
+        choices=(*RETRIEVAL_METRICS, "both"),
+        default="chroma",
+        help=(
+            "Retrieval scoring path to evaluate. 'both' compares Chroma distance "
+            "with explicit cosine similarity. Defaults to chroma."
+        ),
+    )
     parser.add_argument("--chroma-path", default=basic_rag.CHROMA_PATH)
     parser.add_argument("--judge-model", default=JUDGE_MODEL)
     parser.add_argument("--max-chars-per-dream", type=int, default=2500)
     parser.add_argument("--max-target-chars", type=int, default=6000)
+    parser.add_argument(
+        "--judge-batch-size",
+        type=int,
+        default=12,
+        help="Maximum unique candidates sent to the judge per call. Defaults to 12.",
+    )
     parser.add_argument("--num-ctx", type=int, default=16384)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     return parser
@@ -482,6 +715,8 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--max-chars-per-dream must be positive")
     if args.max_target_chars < 1:
         parser.error("--max-target-chars must be positive")
+    if args.judge_batch_size < 1:
+        parser.error("--judge-batch-size must be positive")
     if args.num_ctx < 1:
         parser.error("--num-ctx must be positive")
 
@@ -534,45 +769,56 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         focus_source = "prompt"
 
     retrieval_runs: list[dict[str, Any]] = []
+    metrics = selected_metrics(args.retrieval_metric)
     for embed_model, collection_name in EMBEDDING_INDEXES:
-        print(f"Retrieving with {embed_model} from {collection_name} ...")
-        retrieval_started = perf_counter()
-        try:
-            retrieved = basic_rag.retrieve_dreams(
-                retrieval_input,
-                top_k=args.top_k + (1 if args.dream_id is not None else 0),
-                chroma_path=args.chroma_path,
-                collection_name=collection_name,
-                embed_model=embed_model,
+        for metric in metrics:
+            metric_details = METRIC_DETAILS[metric]
+            print(
+                f"Retrieving with {embed_model}, {metric_details['label']} "
+                f"from {collection_name} ..."
             )
-            if args.dream_id is not None:
-                retrieved = [
-                    item for item in retrieved if item["dream_id"] != args.dream_id
-                ][: args.top_k]
-            retrieval_seconds = perf_counter() - retrieval_started
-            retrieval_runs.append(
-                {
-                    "embed_model": embed_model,
-                    "collection_name": collection_name,
-                    "status": "ok",
-                    "retrieval_seconds": round(retrieval_seconds, 3),
-                    "retrieved": retrieved,
-                }
-            )
-        except Exception as exc:  # Save other model results if one model fails.
-            retrieval_runs.append(
-                {
-                    "embed_model": embed_model,
-                    "collection_name": collection_name,
-                    "status": "error",
-                    "phase": "retrieval",
-                    "retrieval_seconds": round(perf_counter() - retrieval_started, 3),
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                    "retrieved": [],
-                }
-            )
-            print(f"ERROR: {exc}", file=sys.stderr)
+            retrieval_started = perf_counter()
+            common = {
+                "embed_model": embed_model,
+                "collection_name": collection_name,
+                "retrieval_metric": metric,
+                "score_key": metric_details["score_key"],
+                "score_direction": metric_details["score_direction"],
+            }
+            try:
+                retrieved = retrieve_candidates(
+                    retrieval_input,
+                    metric=metric,
+                    top_k=args.top_k,
+                    target_dream_id=args.dream_id,
+                    chroma_path=args.chroma_path,
+                    collection_name=collection_name,
+                    embed_model=embed_model,
+                )
+                retrieval_seconds = perf_counter() - retrieval_started
+                retrieval_runs.append(
+                    {
+                        **common,
+                        "status": "ok",
+                        "retrieval_seconds": round(retrieval_seconds, 3),
+                        "retrieved": retrieved,
+                    }
+                )
+            except Exception as exc:  # Preserve other runs if one path fails.
+                retrieval_runs.append(
+                    {
+                        **common,
+                        "status": "error",
+                        "phase": "retrieval",
+                        "retrieval_seconds": round(
+                            perf_counter() - retrieval_started, 3
+                        ),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                        "retrieved": [],
+                    }
+                )
+                print(f"ERROR: {exc}", file=sys.stderr)
 
     successful_retrievals = [
         item["retrieved"] for item in retrieval_runs if item["status"] == "ok"
@@ -585,17 +831,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     evaluation_error: Exception | None = None
     evaluations: list[dict[str, Any]] = []
     if pool:
+        batch_count = math.ceil(len(pool) / args.judge_batch_size)
         print(
-            f"Evaluating {len(pool)} unique dreams once with {args.judge_model} ..."
+            f"Evaluating {len(pool)} unique dreams once in {batch_count} "
+            f"batch(es) with {args.judge_model} ..."
         )
         evaluation_started = perf_counter()
         try:
             judge_target = target_text
             if judge_target is not None and len(judge_target) > args.max_target_chars:
                 judge_target = judge_target[: args.max_target_chars] + "\n[TRUNCATED]"
-            evaluations = evaluate_relevance(
+            evaluations = evaluate_in_batches(
                 evaluation_focus,
                 pool,
+                batch_size=args.judge_batch_size,
                 target_text=judge_target,
                 judge_model=args.judge_model,
                 max_chars_per_dream=args.max_chars_per_dream,
@@ -610,6 +859,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     for retrieval_run in retrieval_runs:
         retrieved = retrieval_run.pop("retrieved")
+        score_key = retrieval_run["score_key"]
         if retrieval_run["status"] == "error":
             retrieval_run["results"] = []
         elif evaluation_error is not None:
@@ -619,11 +869,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "phase": "evaluation",
                     "error_type": type(evaluation_error).__name__,
                     "error": str(evaluation_error),
-                    "results": unevaluated_results(retrieved),
+                    "results": unevaluated_results(
+                        retrieved,
+                        score_key=score_key,
+                    ),
                 }
             )
         else:
-            items = evaluated_results(retrieved, evaluations)
+            items = evaluated_results(
+                retrieved,
+                evaluations,
+                score_key=score_key,
+            )
             retrieval_run.update(
                 {
                     "summary": summarize(items),
@@ -655,11 +912,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "settings": {
             "chroma_path": args.chroma_path,
+            "retrieval_metric": args.retrieval_metric,
             "max_chars_per_dream": args.max_chars_per_dream,
             "max_target_chars": args.max_target_chars,
+            "judge_batch_size": args.judge_batch_size,
             "num_ctx": args.num_ctx,
             "temperature": 0,
         },
+        "metric_comparisons": compare_metric_results(results),
         "embedding_models": results,
     }
 
@@ -678,10 +938,13 @@ def main() -> None:
     write_text_atomic(markdown_path, markdown_report(report))
 
     successful = sum(item["status"] == "ok" for item in report["embedding_models"])
-    print(f"\nCompleted {successful}/{len(EMBEDDING_INDEXES)} embedding models.")
+    expected_runs = len(EMBEDDING_INDEXES) * len(
+        selected_metrics(args.retrieval_metric)
+    )
+    print(f"\nCompleted {successful}/{expected_runs} retrieval runs.")
     print(f"JSON report: {json_path}")
     print(f"Markdown report: {markdown_path}")
-    if successful != len(EMBEDDING_INDEXES):
+    if successful != expected_runs:
         raise SystemExit(1)
 
 
