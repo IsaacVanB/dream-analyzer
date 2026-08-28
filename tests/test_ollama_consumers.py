@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-import cluster_dreams
-import evaluate_retrieval
-import structure_dreams
+from cli import cluster_dreams, evaluate_retrieval, structure_dreams
 
 
 class FakeStructuredGateway:

@@ -11,9 +11,8 @@ requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["dream_analysis*"]
+include = ["dream_analysis*", "cli*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-

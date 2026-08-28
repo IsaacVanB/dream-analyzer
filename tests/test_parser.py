@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-import parse_dreams
+from cli import parse_dreams
 from dream_analysis.parser import (
     JournalParser,
     detect_dream_separator_blank_lines,

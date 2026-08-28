@@ -1,13 +1,16 @@
 # Example Usages
 
-## `src/parse_dreams.py`
+These examples assume the project has been installed in editable mode with
+`pip install -e .` as described in the README.
+
+## `src/cli/parse_dreams.py`
 
 Parses the raw dream journal text file into JSON Lines, one JSON object per dream.
 
 ```bash
-python3 src/parse_dreams.py
-python3 src/parse_dreams.py data/mock_dream_journal.txt data/dreams.jsonl
-python3 src/parse_dreams.py other_journal.txt data/other_dreams.jsonl --dream-separator-blank-lines 2
+python3 src/cli/parse_dreams.py
+python3 src/cli/parse_dreams.py data/mock_dream_journal.txt data/dreams.jsonl
+python3 src/cli/parse_dreams.py other_journal.txt data/other_dreams.jsonl --dream-separator-blank-lines 2
 ```
 
 Arguments:
@@ -18,14 +21,14 @@ Arguments:
 
 Output fields include `dream_id`, `date`, `year`, `month`, `day`, `date_precision`, `date_sort`, `tags`, `text`, and `word_count`.
 
-## `src/check_dates.py`
+## `src/cli/check_dates.py`
 
 Checks parsed dreams for suspicious years, duplicate dates, and duplicate dream IDs. It is helpful for finding human errors in dream journal dates and does not modify the data. Dates containing `0` placeholders are ignored during date checks, but their dream IDs are still checked for duplicates.
 
 ```bash
-python3 src/check_dates.py
-python3 src/check_dates.py --dreams-path data/other_dreams.jsonl
-python3 src/check_dates.py --max-isolated-dates 5 --json
+python3 src/cli/check_dates.py
+python3 src/cli/check_dates.py --dreams-path data/other_dreams.jsonl
+python3 src/cli/check_dates.py --max-isolated-dates 5 --json
 ```
 
 Arguments:
@@ -35,14 +38,14 @@ Arguments:
 - `--max-year-jump`: largest adjacent year change not flagged. Defaults to `1`.
 - `--json`: print machine-readable JSON instead of the text report.
 
-## `src/build_chroma_db.py`
+## `src/cli/build_chroma_db.py`
 
 Embeds only each dream's text with Ollama `nomic-embed-text` and saves the vectors to a persistent ChromaDB collection. Dates, tags, and other metadata remain available for display and filtering but do not affect similarity.
 
 ```bash
-python3 src/build_chroma_db.py
-python3 src/build_chroma_db.py --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
-python3 src/build_chroma_db.py --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
+python3 src/cli/build_chroma_db.py
+python3 src/cli/build_chroma_db.py --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
+python3 src/cli/build_chroma_db.py --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
 ```
 
 Arguments:
@@ -56,15 +59,15 @@ Arguments:
 Requires Ollama running locally at `http://localhost:11434`.
 Run this command again after changing the embedding logic so the existing index is rebuilt with text-only embeddings.
 
-## `src/plot_tags.py`
+## `src/cli/plot_tags.py`
 
 Plots dream tag frequency over time and saves the image to `outputs/plots/`.
 
 ```bash
-python3 src/plot_tags.py
-python3 src/plot_tags.py --tags house recurring school --freq M
-python3 src/plot_tags.py --freq Y --normalize --output outputs/plots/tags_by_year.png
-python3 src/plot_tags.py --start-date 2023-01-01 --end-date 2023-12-31
+python3 src/cli/plot_tags.py
+python3 src/cli/plot_tags.py --tags house recurring school --freq M
+python3 src/cli/plot_tags.py --freq Y --normalize --output outputs/plots/tags_by_year.png
+python3 src/cli/plot_tags.py --start-date 2023-01-01 --end-date 2023-12-31
 ```
 
 Arguments:
@@ -80,15 +83,15 @@ Arguments:
 - `--title`: optional plot title.
 - `--show`: display the plot interactively after saving.
 
-## `src/compute_stats.py`
+## `src/cli/compute_stats.py`
 
 Computes dream counts, tag frequencies, and word-count statistics, then prints and saves JSON.
 
 ```bash
-python3 src/compute_stats.py
-python3 src/compute_stats.py --freq Q --start-date 2023-01-01 --end-date 2023-12-31
-python3 src/compute_stats.py --freq Y --output outputs/stats/yearly_stats.json
-python3 src/compute_stats.py --common-words 50 --stopwords-path data/stopwords.txt
+python3 src/cli/compute_stats.py
+python3 src/cli/compute_stats.py --freq Q --start-date 2023-01-01 --end-date 2023-12-31
+python3 src/cli/compute_stats.py --freq Y --output outputs/stats/yearly_stats.json
+python3 src/cli/compute_stats.py --common-words 50 --stopwords-path data/stopwords.txt
 ```
 
 Arguments:
@@ -102,13 +105,13 @@ Arguments:
 - `--stopwords-path`: optional text file of additional stopwords, one per line.
 - `--min-word-length`: minimum word length for common-word stats. Defaults to `3`.
 
-## `src/retrieve_dreams.py`
+## `src/cli/retrieve_dreams.py`
 
 Embeds a text query and returns the closest dreams from the ChromaDB collection.
 
 ```bash
-python3 src/retrieve_dreams.py "hidden room water"
-python3 src/retrieve_dreams.py "school anxiety" --top-k 5
+python3 src/cli/retrieve_dreams.py "hidden room water"
+python3 src/cli/retrieve_dreams.py "school anxiety" --top-k 5
 ```
 
 Arguments:
@@ -122,17 +125,17 @@ Arguments:
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
 
-## `src/cluster_dreams.py`
+## `src/cli/cluster_dreams.py`
 
 Clusters embeddings already stored in ChromaDB. It writes a per-dream CSV, an
 interactive HTML map, two PNG maps, and a Markdown evidence report under
 `outputs/clusters/`. It does not regenerate embeddings.
 
 ```bash
-python3 src/cluster_dreams.py
-python3 src/cluster_dreams.py --collection-name dreams_qwen3_embedding
-python3 src/cluster_dreams.py --min-cluster-size 7 --n-neighbors 10
-python3 src/cluster_dreams.py --label-clusters --label-model qwen3:8b
+python3 src/cli/cluster_dreams.py
+python3 src/cli/cluster_dreams.py --collection-name dreams_qwen3_embedding
+python3 src/cli/cluster_dreams.py --min-cluster-size 7 --n-neighbors 10
+python3 src/cli/cluster_dreams.py --label-clusters --label-model qwen3:8b
 ```
 
 Important options include `--collection-name`, `--output-dir`,
@@ -144,14 +147,14 @@ automatic evidence-based labels with short labels generated by a local Ollama
 chat model. The report includes representative dreams, distinctive TF-IDF
 terms, overrepresented tags, noise fraction, and non-noise silhouette score.
 
-## `src/basic_rag.py`
+## `src/cli/basic_rag.py`
 
 Retrieves relevant dreams for a question and asks an Ollama chat model to answer using only those entries.
 
 ```bash
-python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
-python3 src/basic_rag.py "What symbols recur in school dreams?" --top-k 5 --chat-model qwen3:8b
-python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?" --retrieval-query "hidden room hidden hallway secret room"
+python3 src/cli/basic_rag.py "What patterns appear in dreams about hidden rooms?"
+python3 src/cli/basic_rag.py "What symbols recur in school dreams?" --top-k 5 --chat-model qwen3:8b
+python3 src/cli/basic_rag.py "What patterns appear in dreams about hidden rooms?" --retrieval-query "hidden room hidden hallway secret room"
 ```
 
 Arguments:
@@ -170,15 +173,15 @@ Arguments:
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
 
-## `src/dream_agent.py`
+## `src/cli/dream_agent.py`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
 read-only `search_dreams` tool, inspect its bounded results, and then produce a
 grounded answer with dream IDs and dates.
 
 ```bash
-python3 src/dream_agent.py "What patterns appear in dreams about hidden rooms?"
-python3 src/dream_agent.py "How do school anxiety dreams appear?" \
+python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \
   --top-k 5 \
   --chat-model qwen3:8b \
   --embed-model nomic-embed-text \
@@ -199,7 +202,7 @@ Arguments:
 Requires an existing matching ChromaDB index, a tool-capable chat model, and
 Ollama running locally.
 
-## `src/analyze_dream.py`
+## `src/cli/analyze_dream.py`
 
 Loads one dream by ID or accepts dream text directly, then asks an Ollama chat model for a close analysis of its events, dynamics, themes, and possible interpretations.
 The analysis is printed and saved under `outputs/analysis/`. Saved files include
@@ -208,11 +211,11 @@ analysis. ID-based filenames use `<dream_id>_<datetime>.txt`; direct-text
 filenames use `<datetime>.txt`.
 
 ```bash
-python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
-python3 src/analyze_dream.py --text "I opened a door and found another kitchen."
-python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --chat-model qwen3:8b
-python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5 --similarity-threshold 0.55
-python3 src/analyze_dream.py --dream-id dream-2022-10-10-0 --related-dreams 5 --start-date 2022-04-10 --end-date 2022-10-10
+python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0
+python3 src/cli/analyze_dream.py --text "I opened a door and found another kitchen."
+python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0 --chat-model qwen3:8b
+python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5 --similarity-threshold 0.55
+python3 src/cli/analyze_dream.py --dream-id dream-2022-10-10-0 --related-dreams 5 --start-date 2022-04-10 --end-date 2022-10-10
 ```
 
 Arguments:
@@ -236,7 +239,7 @@ Arguments:
 
 Related-dream context requires an existing ChromaDB index. Ollama must be running locally.
 
-## `src/compare_models.py`
+## `src/cli/compare_models.py`
 
 Runs the same task across these four combinations:
 
@@ -256,7 +259,7 @@ Compare RAG answers. A fixed retrieval query is required so chat models do not
 generate different search queries:
 
 ```bash
-python3 src/compare_models.py rag \
+python3 src/cli/compare_models.py rag \
   "What patterns appear in dreams about hidden rooms?" \
   --retrieval-query "hidden room hallway extra room concealed door behind wall"
 ```
@@ -264,16 +267,16 @@ python3 src/compare_models.py rag \
 Compare analysis of one dream with five related dreams:
 
 ```bash
-python3 src/compare_models.py analyze \
+python3 src/cli/compare_models.py analyze \
   --dream-id dream-2022-1-22-0 \
   --related-dreams 5
 ```
 
 The runner defaults to temperature `0` for a controlled first comparison. Run
-`python3 src/compare_models.py rag --help` or
-`python3 src/compare_models.py analyze --help` for task-specific options.
+`python3 src/cli/compare_models.py rag --help` or
+`python3 src/cli/compare_models.py analyze --help` for task-specific options.
 
-## `src/evaluate_retrieval.py`
+## `src/cli/evaluate_retrieval.py`
 
 Embeds one retrieval prompt with both `nomic-embed-text` and
 `qwen3-embedding`, retrieves the top-k dreams from their matching collections,
@@ -283,7 +286,7 @@ model name. JSON and Markdown reports are saved under
 `outputs/retrieval_evaluations/`.
 
 ```bash
-python3 src/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval.py \
   "hidden room hallway extra room concealed door behind wall" \
   --top-k 8
 ```
@@ -292,7 +295,7 @@ Use the complete text of an existing dream as the retrieval and relevance
 target. The target dream itself is excluded from the results:
 
 ```bash
-python3 src/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
   --top-k 8
 ```
@@ -301,7 +304,7 @@ For a long or multi-scene dream, specify which part should control the LLM's
 relevance judgment:
 
 ```bash
-python3 src/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
   --focus "discovering a hidden room that reveals a disturbing family secret" \
   --top-k 8
@@ -311,11 +314,11 @@ Alternatively, use an exact passage from the dream or generate an evaluation
 focus:
 
 ```bash
-python3 src/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
   --focus-passage "I opened the concealed door behind the wall"
 
-python3 src/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
   --generate-focus
 ```
@@ -331,21 +334,21 @@ beginning, followed by the complete text of every retrieved dream.
 Useful options include `--judge-model`, `--max-chars-per-dream`,
 `--max-target-chars`, `--num-ctx`, `--chroma-path`, and `--output-dir`.
 
-## `src/structure_dreams.py`
+## `src/cli/structure_dreams.py`
 
 Uses structured Ollama output to extract grounded, descriptive fields from
 every dream and saves one JSON object per line to
 `outputs/structured_dreams/dream_features.jsonl`:
 
 ```bash
-python3 src/structure_dreams.py
+python3 src/cli/structure_dreams.py
 ```
 
 Process or regenerate one dream:
 
 ```bash
-python3 src/structure_dreams.py --dream-id dream-2022-1-22-0
-python3 src/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
+python3 src/cli/structure_dreams.py --dream-id dream-2022-1-22-0
+python3 src/cli/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
 ```
 
 Existing dream IDs with the current schema version are skipped unless
@@ -362,20 +365,20 @@ Social conflict and bizarreness use `none`, `low`, `moderate`, and `high`.
 explicit proper names and preserves their capitalization. Both are produced in
 the same model call.
 
-## `src/build_character_lookup.py`
+## `src/cli/build_character_lookup.py`
 
 Aggregates `named_characters` from structured dream records and creates a
 fillable lookup without making any additional LLM calls:
 
 ```bash
-python3 src/build_character_lookup.py
+python3 src/cli/build_character_lookup.py
 ```
 
 Add date-bounded relationship templates when a relationship may change over
 time:
 
 ```bash
-python3 src/build_character_lookup.py --temporal-context
+python3 src/cli/build_character_lookup.py --temporal-context
 ```
 
 The default output is `data/characters.json`. Each entry includes the detected

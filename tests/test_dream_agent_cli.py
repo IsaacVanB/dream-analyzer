@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import dream_agent
+from cli import dream_agent
 from dream_analysis.agent import AgentResponse, ToolExecution
 
 

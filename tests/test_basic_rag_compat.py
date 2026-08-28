@@ -3,13 +3,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
-import basic_rag
+from cli import basic_rag
 from dream_analysis.config import Settings
 from dream_analysis.models import SearchResult
 
 
 class BasicRagCompatibilityTests(unittest.TestCase):
-    @patch("basic_rag._make_service")
+    @patch("cli.basic_rag._make_service")
     def test_retrieval_keeps_legacy_dictionary_shape(self, make_service) -> None:
         service = Mock()
         service.retrieve.return_value = [

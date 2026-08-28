@@ -4,7 +4,7 @@ import json
 import unittest
 from datetime import datetime, timezone
 
-import build_character_lookup
+from cli import build_character_lookup
 from dream_analysis.characters import CharacterLookupService
 
 

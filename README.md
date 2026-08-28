@@ -9,9 +9,13 @@ The goal is to analyze a private dream journal over time while keeping all raw j
 
 ```bash
 pip install -r requirements.txt
+pip install -e .
 ollama pull nomic-embed-text
 ollama pull qwen3:8b
 ```
+
+The editable install makes both the reusable `dream_analysis` package and the
+commands under `src/cli/` importable while developing from the repository.
 
 At least one embedding model and chat model are needed. Ollama must be running locally at `http://localhost:11434`.
 
@@ -47,19 +51,19 @@ demonstrating this format. It is the default input, so you can run the code
 without supplying your own journal:
 
 ```bash
-python3 src/parse_dreams.py
+python3 src/cli/parse_dreams.py
 ```
 
 To parse your own journal, provide input and output paths:
 
 ```bash
-python3 src/parse_dreams.py path/to/journal.txt data/my_dreams.jsonl
+python3 src/cli/parse_dreams.py path/to/journal.txt data/my_dreams.jsonl
 ```
 
 Build the ChromaDB index:
 
 ```bash
-python3 src/build_chroma_db.py
+python3 src/cli/build_chroma_db.py
 ```
 
 Embeddings are generated from dream text only; metadata is stored separately.
@@ -69,21 +73,21 @@ Embeddings are generated from dream text only; metadata is stored separately.
 Retrieve similar dreams:
 
 ```bash
-python3 src/retrieve_dreams.py "hidden room water" --top-k 5
+python3 src/cli/retrieve_dreams.py "hidden room water" --top-k 5
 ```
 
 Plot tag frequency over time:
 
 ```bash
-python3 src/plot_tags.py --tags house recurring school
+python3 src/cli/plot_tags.py --tags house recurring school
 ```
 
 Cluster the existing dream embeddings and generate theme evidence, static plots,
 an interactive map, and per-dream assignments:
 
 ```bash
-python3 src/cluster_dreams.py
-python3 src/cluster_dreams.py --label-clusters
+python3 src/cli/cluster_dreams.py
+python3 src/cli/cluster_dreams.py --label-clusters
 ```
 
 Cluster labels summarize recurring content and are not psychological diagnoses.
@@ -93,42 +97,42 @@ itself does not require new model calls.
 Compute summary stats:
 
 ```bash
-python3 src/compute_stats.py --freq Y
+python3 src/cli/compute_stats.py --freq Y
 ```
 
 Analyze one dream:
 
 ```bash
-python3 src/analyze_dream.py --dream-id dream-2022-1-22-0
-python3 src/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5
+python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0
+python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5
 ```
 
 Extract structured features for every dream or one dream:
 
 ```bash
-python3 src/structure_dreams.py
-python3 src/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
+python3 src/cli/structure_dreams.py
+python3 src/cli/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
 ```
 
 Build a fillable character lookup from those structured records without more
 LLM calls:
 
 ```bash
-python3 src/build_character_lookup.py --temporal-context
+python3 src/cli/build_character_lookup.py --temporal-context
 ```
 
 Ask a RAG question:
 
 ```bash
-python3 src/basic_rag.py "What patterns appear in dreams about hidden rooms?"
+python3 src/cli/basic_rag.py "What patterns appear in dreams about hidden rooms?"
 ```
 
 Or let a tool-capable Ollama model choose the semantic search query and use the
 results in an agent loop:
 
 ```bash
-python3 src/dream_agent.py "What patterns appear in dreams about hidden rooms?"
-python3 src/dream_agent.py "What patterns recur in school dreams?" \
+python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
   --output outputs/agent/school_patterns.md
 ```
 
@@ -147,7 +151,7 @@ read-only LLM tools.
 Compare the four chat/embedding combinations (qwen3:8b and gemma3:12b for chat, nomic-embed-text and qwen3-embedding for embedding) with a fixed retrieval query:
 
 ```bash
-python3 src/compare_models.py rag \
+python3 src/cli/compare_models.py rag \
   "What patterns appear in dreams about hidden rooms?" \
   --retrieval-query "hidden room hallway extra room concealed door behind wall"
 ```
@@ -155,8 +159,8 @@ python3 src/compare_models.py rag \
 Evaluate each embedding model's top retrievals with Gemma:
 
 ```bash
-python3 src/evaluate_retrieval.py "hidden room hallway concealed door" --top-k 8
-python3 src/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval.py "hidden room hallway concealed door" --top-k 8
+python3 src/cli/evaluate_retrieval.py \
   --dream-id dream-2022-1-22-0 \
   --focus "discovering a hidden room that reveals a disturbing secret" \
   --top-k 8
@@ -169,7 +173,7 @@ and retrieved dream texts.
 Use a manual retrieval query when the question has extra analysis language:
 
 ```bash
-python3 src/basic_rag.py \
+python3 src/cli/basic_rag.py \
   "What patterns appear in dreams about hidden rooms?" \
   --retrieval-query "hidden room hallway extra room concealed door behind wall"
 ```

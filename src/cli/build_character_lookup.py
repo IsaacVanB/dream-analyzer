@@ -41,7 +41,7 @@ def load_structured_dreams(path: Path) -> list[dict[str, Any]]:
             if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
                 raise ValueError(
                     f"Record {dream_id!r} has no valid named_characters array. "
-                    "Rerun src/structure_dreams.py with the current schema."
+                    "Rerun src/cli/structure_dreams.py with the current schema."
                 )
             records.append(record)
     return records

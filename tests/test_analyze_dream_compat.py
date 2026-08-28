@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import analyze_dream
+from cli import analyze_dream
 from dream_analysis.models import RelatedDream
 
 
@@ -34,7 +34,7 @@ class AnalyzeDreamCompatibilityTests(unittest.TestCase):
         self.assertEqual(dream["tags"], ["house"])
         self.assertEqual(dream["text"], "Dream text")
 
-    @patch("analyze_dream._make_service")
+    @patch("cli.analyze_dream._make_service")
     def test_related_retrieval_keeps_legacy_dictionary_shape(self, make_service) -> None:
         service = Mock()
         service.find_related.return_value = [
@@ -75,4 +75,3 @@ class AnalyzeDreamCompatibilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

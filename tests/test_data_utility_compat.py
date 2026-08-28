@@ -5,10 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import check_dates
-import compute_stats
-import plot_tags
-import structure_dreams
+from cli import check_dates, compute_stats, plot_tags, structure_dreams
 
 
 class DataUtilityCompatibilityTests(unittest.TestCase):
@@ -81,4 +78,3 @@ class DataUtilityCompatibilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
