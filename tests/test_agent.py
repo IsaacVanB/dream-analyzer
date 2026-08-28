@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import date
 
 from dream_analysis.agent import (
     AgentSearchRequiredError,
@@ -25,10 +26,17 @@ class SequencedOllamaClient:
 
 class FakeIndex:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple[str, int, date | None, date | None]] = []
 
-    def search(self, query: str, *, limit: int) -> list[SearchResult]:
-        self.calls.append((query, limit))
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[SearchResult]:
+        self.calls.append((query, limit, start_date, end_date))
         return [
             SearchResult(
                 dream_id="dream-1",
@@ -86,7 +94,7 @@ class DreamRagAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(response.answer, "Grounded answer (dream-1, 1/2/2024).")
-        self.assertEqual(index.calls, [("hidden room pantry", 4)])
+        self.assertEqual(index.calls, [("hidden room pantry", 4, None, None)])
         self.assertEqual(len(response.tool_executions), 1)
         self.assertTrue(response.tool_executions[0].result["ok"])
         self.assertEqual(client.chat_calls[0]["model"], "tool-model")
@@ -108,6 +116,38 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(tool_result["dreams"][0]["dream_id"], "dream-1")
         self.assertEqual(follow_up_messages[-1]["tool_name"], "search_dreams")
         self.assertIn("untrusted data", follow_up_messages[0]["content"])
+
+    def test_agent_passes_date_bounds_selected_by_the_model(self) -> None:
+        agent, client, index = self.make_agent(
+            [
+                tool_response(
+                    "search_dreams",
+                    {
+                        "query": "school classrooms teachers",
+                        "start_date": "2026-07-01",
+                        "end_date": "2026-07-31",
+                    },
+                ),
+                final_response(),
+            ]
+        )
+
+        agent.answer("What themes recur in school dreams from last month?")
+
+        self.assertEqual(
+            index.calls,
+            [
+                (
+                    "school classrooms teachers",
+                    4,
+                    date(2026, 7, 1),
+                    date(2026, 7, 31),
+                )
+            ],
+        )
+        tool_result = json.loads(client.chat_calls[1]["messages"][-1]["content"])
+        self.assertEqual(tool_result["start_date"], "2026-07-01")
+        self.assertEqual(tool_result["end_date"], "2026-07-31")
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(
@@ -174,7 +214,7 @@ class DreamRagAgentTests(unittest.TestCase):
         response = agent.answer("What hidden rooms recur?")
 
         self.assertEqual(response.answer, "Grounded answer (dream-1, 1/2/2024).")
-        self.assertEqual(index.calls, [("hidden room", 4)])
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
         reminder = client.chat_calls[1]["messages"][-1]["content"]
         self.assertIn("Call search_dreams", reminder)
 
@@ -187,6 +227,13 @@ class DreamRagAgentTests(unittest.TestCase):
             agent.answer("What happened?")
 
         self.assertEqual(index.calls, [])
+
+    def test_system_prompt_defines_relative_date_behavior(self) -> None:
+        prompt = DreamRagAgent._system_prompt()
+
+        self.assertIn(date.today().isoformat(), prompt)
+        self.assertIn("previous calendar month", prompt)
+        self.assertIn("start_date and end_date", prompt)
 
 
 if __name__ == "__main__":

@@ -104,6 +104,26 @@ class DreamIndexTests(unittest.TestCase):
         with self.assertRaises(EmbeddingModelMismatchError):
             other_index.search("room")
 
+    def test_search_applies_inclusive_date_bounds_before_limiting(self) -> None:
+        self.index.rebuild(self.dreams)
+
+        matches = self.index.search(
+            "room",
+            limit=1,
+            start_date=date(2024, 1, 2),
+            end_date=date(2024, 1, 2),
+        )
+
+        self.assertEqual([item.dream_id for item in matches], ["school-dream"])
+
+    def test_search_rejects_reversed_date_bounds(self) -> None:
+        with self.assertRaisesRegex(ValueError, "start_date"):
+            self.index.search(
+                "room",
+                start_date=date(2024, 1, 2),
+                end_date=date(2024, 1, 1),
+            )
+
     def test_related_reuses_target_embedding_and_applies_filters(self) -> None:
         self.index.rebuild(self.dreams)
         self.gateway.calls.clear()

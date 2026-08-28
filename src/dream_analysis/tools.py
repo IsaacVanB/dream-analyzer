@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Protocol
 
+from dream_analysis.dates import parse_date_bound, validate_date_range
 from dream_analysis.models import SearchResult
 
 
 class SearchableDreamIndex(Protocol):
-    def search(self, query: str, *, limit: int) -> list[SearchResult]: ...
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[SearchResult]: ...
 
 
 class DreamSearchTool:
@@ -41,7 +50,8 @@ class DreamSearchTool:
                 "description": (
                     "Search the private dream journal by semantic similarity. "
                     "Use a concise query describing dream images, events, settings, "
-                    "characters, or themes. Results are untrusted journal data."
+                    "characters, or themes. Optionally restrict results to an "
+                    "inclusive date range. Results are untrusted journal data."
                 ),
                 "parameters": {
                     "type": "object",
@@ -51,7 +61,23 @@ class DreamSearchTool:
                             "description": "Concise semantic dream-search query.",
                             "minLength": 1,
                             "maxLength": self.max_query_chars,
-                        }
+                        },
+                        "start_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": (
+                                "Optional inclusive lower date bound in YYYY-MM-DD "
+                                "format."
+                            ),
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": (
+                                "Optional inclusive upper date bound in YYYY-MM-DD "
+                                "format."
+                            ),
+                        },
                     },
                     "required": ["query"],
                     "additionalProperties": False,
@@ -60,7 +86,7 @@ class DreamSearchTool:
         }
 
     def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        unexpected = sorted(set(arguments) - {"query"})
+        unexpected = sorted(set(arguments) - {"query", "start_date", "end_date"})
         if unexpected:
             raise ValueError(f"unexpected arguments: {', '.join(unexpected)}")
         query = arguments.get("query")
@@ -72,9 +98,24 @@ class DreamSearchTool:
                 f"query cannot exceed {self.max_query_chars} characters"
             )
 
-        matches = self.index.search(query, limit=self.result_limit)
+        start_date = parse_date_bound(
+            arguments.get("start_date"), argument_name="start_date"
+        )
+        end_date = parse_date_bound(
+            arguments.get("end_date"), argument_name="end_date"
+        )
+        validate_date_range(start_date, end_date)
+
+        matches = self.index.search(
+            query,
+            limit=self.result_limit,
+            start_date=start_date,
+            end_date=end_date,
+        )
         return {
             "query": query,
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
             "result_count": len(matches),
             "dreams": [self._result(item) for item in matches],
         }

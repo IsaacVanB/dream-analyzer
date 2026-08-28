@@ -119,6 +119,14 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
     for index, execution in enumerate(executions, start=1):
         result = execution.result
         print(f"\nSearch {index}: {execution.arguments.get('query', '<missing>')}")
+        if execution.arguments.get("start_date") or execution.arguments.get(
+            "end_date"
+        ):
+            print(
+                "  Date range: "
+                f"{execution.arguments.get('start_date', 'earliest')} through "
+                f"{execution.arguments.get('end_date', 'latest')}"
+            )
         if not result.get("ok"):
             print(f"  ERROR: {result.get('error', 'unknown tool error')}")
             continue
@@ -154,7 +162,22 @@ def format_markdown_report(
         lines.extend(["No searches were recorded.", ""])
     for index, execution in enumerate(response.tool_executions, start=1):
         query = execution.arguments.get("query", "<missing>")
-        lines.extend([f"### Search {index}", "", f"Query: `{_inline_code(query)}`", ""])
+        lines.extend(
+            [f"### Search {index}", "", f"Query: `{_inline_code(query)}`", ""]
+        )
+        if execution.arguments.get("start_date") or execution.arguments.get(
+            "end_date"
+        ):
+            start_date = execution.arguments.get("start_date", "earliest")
+            end_date = execution.arguments.get("end_date", "latest")
+            lines.extend(
+                [
+                    "Date range: "
+                    f"`{_inline_code(start_date)}` through "
+                    f"`{_inline_code(end_date)}`",
+                    "",
+                ]
+            )
         result = execution.result
         if not result.get("ok"):
             error = _markdown_text(result.get("error", "unknown tool error"))

@@ -132,14 +132,21 @@ results in an agent loop:
 
 ```bash
 python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
+python3 src/cli/dream_agent.py \
+  "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
   --output outputs/agent/school_patterns.md
 ```
 
-The initial agent exposes only one read-only tool, `search_dreams`. Search
+The agent exposes one read-only tool, `search_dreams`. It accepts optional,
+inclusive `start_date` and `end_date` bounds in `YYYY-MM-DD` format. The agent
+translates relative language into those bounds using the current date; "last
+month" means the previous calendar month. Topic terms such as "school" remain
+part of the semantic query while the date bounds filter the results. Search
 queries, result counts, and per-dream context are bounded before being returned
 to the model. `--output` optionally saves the question, settings, searches,
-retrieved citations, and answer as Markdown.
+selected date ranges, retrieved citations, and answer as Markdown.
 
 The deterministic reporting logic is also available independently of the CLI
 and Ollama. `DreamStatisticsService`, `TagTrendService`, and

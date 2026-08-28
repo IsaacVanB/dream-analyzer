@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import date
 
 from dream_analysis.models import SearchResult
 from dream_analysis.tools import DreamSearchTool
@@ -10,10 +11,17 @@ from dream_analysis.tools import DreamSearchTool
 class FakeIndex:
     def __init__(self, results: list[SearchResult]) -> None:
         self.results = results
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple[str, int, date | None, date | None]] = []
 
-    def search(self, query: str, *, limit: int) -> list[SearchResult]:
-        self.calls.append((query, limit))
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[SearchResult]:
+        self.calls.append((query, limit, start_date, end_date))
         return self.results
 
 
@@ -27,14 +35,18 @@ def result(text: str = "A hidden room appeared.") -> SearchResult:
 
 
 class DreamSearchToolTests(unittest.TestCase):
-    def test_schema_exposes_only_a_bounded_query(self) -> None:
+    def test_schema_exposes_a_bounded_query_and_optional_date_range(self) -> None:
         tool = DreamSearchTool(FakeIndex([]))
 
         parameters = tool.schema["function"]["parameters"]
 
         self.assertEqual(tool.schema["function"]["name"], "search_dreams")
         self.assertEqual(parameters["required"], ["query"])
-        self.assertEqual(set(parameters["properties"]), {"query"})
+        self.assertEqual(
+            set(parameters["properties"]),
+            {"query", "start_date", "end_date"},
+        )
+        self.assertEqual(parameters["properties"]["start_date"]["format"], "date")
         self.assertFalse(parameters["additionalProperties"])
 
     def test_execute_returns_bounded_json_compatible_evidence(self) -> None:
@@ -43,12 +55,33 @@ class DreamSearchToolTests(unittest.TestCase):
 
         output = tool.execute({"query": "  hidden room  "})
 
-        self.assertEqual(index.calls, [("hidden room", 4)])
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
         self.assertEqual(output["result_count"], 1)
+        self.assertIsNone(output["start_date"])
+        self.assertIsNone(output["end_date"])
         self.assertEqual(output["dreams"][0]["text"], "abcd\n[TRUNCATED]")
         self.assertTrue(output["dreams"][0]["truncated"])
         self.assertEqual(output["dreams"][0]["distance"], 0.123457)
         json.dumps(output)
+
+    def test_execute_passes_normalized_inclusive_date_bounds(self) -> None:
+        index = FakeIndex([result()])
+        tool = DreamSearchTool(index, result_limit=4)
+
+        output = tool.execute(
+            {
+                "query": "school",
+                "start_date": "2024-02-01",
+                "end_date": "2024-02-29",
+            }
+        )
+
+        self.assertEqual(
+            index.calls,
+            [("school", 4, date(2024, 2, 1), date(2024, 2, 29))],
+        )
+        self.assertEqual(output["start_date"], "2024-02-01")
+        self.assertEqual(output["end_date"], "2024-02-29")
 
     def test_execute_rejects_empty_queries_and_extra_arguments(self) -> None:
         tool = DreamSearchTool(FakeIndex([]))
@@ -57,6 +90,16 @@ class DreamSearchToolTests(unittest.TestCase):
             tool.execute({"query": " "})
         with self.assertRaisesRegex(ValueError, "unexpected arguments"):
             tool.execute({"query": "house", "path": "/tmp"})
+        with self.assertRaisesRegex(ValueError, "Invalid start_date"):
+            tool.execute({"query": "house", "start_date": "last month"})
+        with self.assertRaisesRegex(ValueError, "start_date"):
+            tool.execute(
+                {
+                    "query": "house",
+                    "start_date": "2024-03-01",
+                    "end_date": "2024-02-01",
+                }
+            )
 
     def test_constructor_bounds_result_and_context_sizes(self) -> None:
         with self.assertRaisesRegex(ValueError, "between 1 and 20"):

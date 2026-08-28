@@ -181,6 +181,9 @@ grounded answer with dream IDs and dates.
 
 ```bash
 python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
+python3 src/cli/dream_agent.py \
+  "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \
   --top-k 5 \
   --chat-model qwen3:8b \
@@ -198,6 +201,12 @@ Arguments:
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation.
+
+The `search_dreams` tool supports optional inclusive `start_date` and `end_date`
+arguments in `YYYY-MM-DD` format. The agent resolves relative wording using the
+current date and treats "last month" as the previous calendar month. Date bounds
+are applied together with semantic terms, so a question about school dreams from
+last month searches for school content only inside that month.
 
 Requires an existing matching ChromaDB index, a tool-capable chat model, and
 Ollama running locally.

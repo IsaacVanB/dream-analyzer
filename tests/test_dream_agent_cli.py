@@ -15,7 +15,11 @@ class DreamAgentCliTests(unittest.TestCase):
             tool_executions=(
                 ToolExecution(
                     name="search_dreams",
-                    arguments={"query": "hidden room"},
+                    arguments={
+                        "query": "hidden room",
+                        "start_date": "2024-01-01",
+                        "end_date": "2024-01-31",
+                    },
                     result={
                         "ok": True,
                         "query": "hidden room",
@@ -52,6 +56,10 @@ class DreamAgentCliTests(unittest.TestCase):
         self.assertIn("> What hidden rooms recur?", report)
         self.assertIn("**Chat model:** `qwen3:8b`", report)
         self.assertIn("Query: `hidden room`", report)
+        self.assertIn(
+            "Date range: `2024-01-01` through `2024-01-31`",
+            report,
+        )
         self.assertIn("dream\\|1", report)
         self.assertIn("A grounded **answer**.", report)
 

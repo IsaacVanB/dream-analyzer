@@ -11,7 +11,7 @@ from typing import Any
 import chromadb
 from chromadb.errors import NotFoundError
 
-from dream_analysis.dates import parse_date_value, validate_date_range
+from dream_analysis.dates import record_date, parse_date_value, validate_date_range
 from dream_analysis.models import Dream, RelatedDream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
 
@@ -163,11 +163,20 @@ class DreamIndex:
             )
         return len(dream_list)
 
-    def search(self, query: str, *, limit: int = 10) -> list[SearchResult]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[SearchResult]:
+        """Return semantic matches inside an optional inclusive date range."""
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query cannot be empty")
         if limit < 1:
             raise ValueError("limit must be positive")
+        validate_date_range(start_date, end_date)
 
         collection = self.client.get_collection(name=self.collection_name)
         validate_collection_embedding_model(
@@ -175,7 +184,15 @@ class DreamIndex:
             collection_name=self.collection_name,
             embedding_model=self.embedding_model,
         )
-        result_count = min(limit, collection.count())
+        collection_count = collection.count()
+        date_filtered = start_date is not None or end_date is not None
+        # Chroma stores date_sort as an ISO string, while its range operators
+        # accept numeric operands. Ask it to rank the full collection when a
+        # date window is present, then apply the exact range locally. The final
+        # result remains bounded by limit and correctly ranked within the range.
+        result_count = (
+            collection_count if date_filtered else min(limit, collection_count)
+        )
         if result_count == 0:
             return []
 
@@ -188,20 +205,33 @@ class DreamIndex:
             n_results=result_count,
             include=["documents", "metadatas", "distances"],
         )
-        return [
-            SearchResult(
-                dream_id=str(dream_id),
-                document=str(document or ""),
-                metadata=dict(metadata or {}),
-                distance=float(distance),
+        matches: list[SearchResult] = []
+        for dream_id, document, metadata, distance in zip(
+            raw["ids"][0],
+            raw["documents"][0],
+            raw["metadatas"][0],
+            raw["distances"][0],
+        ):
+            metadata = dict(metadata or {})
+            if date_filtered:
+                indexed_date = record_date(metadata)
+                if indexed_date is None:
+                    continue
+                if start_date is not None and indexed_date < start_date:
+                    continue
+                if end_date is not None and indexed_date > end_date:
+                    continue
+            matches.append(
+                SearchResult(
+                    dream_id=str(dream_id),
+                    document=str(document or ""),
+                    metadata=metadata,
+                    distance=float(distance),
+                )
             )
-            for dream_id, document, metadata, distance in zip(
-                raw["ids"][0],
-                raw["documents"][0],
-                raw["metadatas"][0],
-                raw["distances"][0],
-            )
-        ]
+            if len(matches) == limit:
+                break
+        return matches
 
     def related(
         self,
