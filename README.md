@@ -68,6 +68,32 @@ python3 src/cli/build_chroma_db.py
 
 Embeddings are generated from dream text only; metadata is stored separately.
 
+## Retrieval scoring
+
+Dream retrieval currently follows two scoring paths. The scores have opposite
+directions and should not be compared directly.
+
+| Command | Retrieval score | Behavior |
+|---|---|---|
+| `retrieve_dreams.py` | Chroma distance | Lower is closer. |
+| `basic_rag.py` | Chroma distance | The generated or supplied retrieval query is ranked by Chroma. |
+| `dream_agent.py` | Chroma distance | `search_dreams` uses Chroma ranking; optional dates filter that ranked search. |
+| `evaluate_retrieval.py` | Chroma distance | Chroma selects candidates; the LLM's later relevance score is a separate evaluation. |
+| `compare_models.py rag` | Chroma distance | Uses the same retrieval path as `basic_rag.py`. |
+| `analyze_dream.py --related-dreams ...` | Cosine similarity | Higher is more similar; `--similarity-threshold` is a cosine threshold. |
+| `compare_models.py analyze` | Cosine similarity | Uses the same related-dream path as `analyze_dream.py`. |
+
+Collections built by this repository do not explicitly configure Chroma's
+distance space, so Chroma's current default applies: squared L2 distance. The
+explicit related-dream path instead loads stored embeddings, calculates cosine
+similarity in Python, filters by the similarity threshold, and sorts from
+highest to lowest. Because the project does not normalize embeddings before
+storage, the two paths can return different rankings for the same input.
+
+`cluster_dreams.py` is not a retrieval command. It L2-normalizes stored vectors,
+uses cosine distance for UMAP, uses cosine similarity for representative
+selection, and uses Euclidean distance for HDBSCAN clustering.
+
 ## Current Tools
 
 Retrieve similar dreams:

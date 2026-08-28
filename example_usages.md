@@ -59,6 +59,32 @@ Arguments:
 Requires Ollama running locally at `http://localhost:11434`.
 Run this command again after changing the embedding logic so the existing index is rebuilt with text-only embeddings.
 
+## Retrieval scoring reference
+
+The commands currently use two different scoring paths:
+
+| Command | Score used for retrieval | Score direction |
+|---|---|---|
+| `src/cli/retrieve_dreams.py` | Chroma distance | Lower is closer. |
+| `src/cli/basic_rag.py` | Chroma distance | Lower is closer. |
+| `src/cli/dream_agent.py` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
+| `src/cli/evaluate_retrieval.py` | Chroma distance | Lower is closer; the judge model's 1-5 relevance score is separate. |
+| `src/cli/compare_models.py rag` | Chroma distance | Lower is closer. |
+| `src/cli/analyze_dream.py` with related dreams enabled | Cosine similarity | Higher is more similar. |
+| `src/cli/compare_models.py analyze` | Cosine similarity | Higher is more similar. |
+
+Collections created by `build_chroma_db.py` do not specify a Chroma distance
+space, so Chroma's current default applies: squared L2 distance. In contrast,
+the related-dream analysis path reads the stored vectors and calculates cosine
+similarity in Python. These rankings and numeric scores are not interchangeable,
+and they can select different dreams because stored embeddings are not
+explicitly normalized.
+
+`cluster_dreams.py` also performs cosine-based calculations, but it does not
+retrieve related dreams: it normalizes vectors, uses cosine distance for UMAP,
+uses cosine similarity for representative selection, and uses Euclidean
+distance for HDBSCAN.
+
 ## `src/cli/plot_tags.py`
 
 Plots dream tag frequency over time and saves the image to `outputs/plots/`.
