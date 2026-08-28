@@ -181,7 +181,8 @@ python3 src/dream_agent.py "What patterns appear in dreams about hidden rooms?"
 python3 src/dream_agent.py "How do school anxiety dreams appear?" \
   --top-k 5 \
   --chat-model qwen3:8b \
-  --embed-model nomic-embed-text
+  --embed-model nomic-embed-text \
+  --output outputs/agent/school_anxiety.md
 ```
 
 Arguments:
@@ -190,6 +191,7 @@ Arguments:
 - `--top-k`: maximum results returned by each search call. Defaults to `8` and is capped at `20`.
 - `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
 - `--max-chars-per-dream`: maximum journal characters returned per search result. Defaults to `2500`.
+- `--output`: optional path for a Markdown report containing the question, settings, searches, citations, and answer.
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation.

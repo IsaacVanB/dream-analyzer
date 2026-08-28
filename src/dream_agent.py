@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import os
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
-from dream_analysis.agent import DreamRagAgent, ToolExecution
+from dream_analysis.agent import AgentResponse, DreamRagAgent, ToolExecution
 from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
@@ -85,6 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="Maximum search calls allowed for one answer.",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional path where a Markdown report should be saved.",
+    )
     parser.add_argument("--num-ctx", type=int, default=4096)
     parser.add_argument("--num-predict", type=int, default=700)
     parser.add_argument("--temperature", type=float, default=0.1)
@@ -121,6 +130,78 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
             )
 
 
+def format_markdown_report(
+    question: str,
+    response: AgentResponse,
+    *,
+    settings: Mapping[str, Any],
+) -> str:
+    lines = [
+        "# Dream Agent Response",
+        "",
+        "## Question",
+        "",
+        *[f"> {line}" if line else ">" for line in question.strip().splitlines()],
+        "",
+        "## Settings",
+        "",
+    ]
+    for name, value in settings.items():
+        lines.append(f"- **{name}:** `{_inline_code(value)}`")
+
+    lines.extend(["", "## Searches", ""])
+    if not response.tool_executions:
+        lines.extend(["No searches were recorded.", ""])
+    for index, execution in enumerate(response.tool_executions, start=1):
+        query = execution.arguments.get("query", "<missing>")
+        lines.extend([f"### Search {index}", "", f"Query: `{_inline_code(query)}`", ""])
+        result = execution.result
+        if not result.get("ok"):
+            error = _markdown_text(result.get("error", "unknown tool error"))
+            lines.extend(
+                [f"Error: {error}", ""]
+            )
+            continue
+        lines.extend(
+            [
+                "| dream_id | date | distance |",
+                "|---|---|---:|",
+            ]
+        )
+        for dream in result.get("dreams", []):
+            lines.append(
+                f"| {_markdown_cell(dream['dream_id'])} "
+                f"| {_markdown_cell(dream['date'])} "
+                f"| {float(dream['distance']):.4f} |"
+            )
+        if not result.get("dreams"):
+            lines.append("| *(no results)* |  |  |")
+        lines.append("")
+
+    lines.extend(["## Answer", "", response.answer.rstrip(), ""])
+    return "\n".join(lines)
+
+
+def save_markdown_report(path: Path, report: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    temporary_path.write_text(report.rstrip() + "\n", encoding="utf-8")
+    os.replace(temporary_path, path)
+    return path
+
+
+def _inline_code(value: Any) -> str:
+    return str(value).replace("`", "'").replace("\n", " ")
+
+
+def _markdown_text(value: Any) -> str:
+    return str(value).replace("\n", " ")
+
+
+def _markdown_cell(value: Any) -> str:
+    return _markdown_text(value).replace("|", "\\|")
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -144,6 +225,21 @@ def main() -> None:
     print_searches(response.tool_executions)
     print("\n--- ANSWER ---\n")
     print(response.answer)
+    if args.output is not None:
+        report = format_markdown_report(
+            args.question,
+            response,
+            settings={
+                "Chat model": args.chat_model,
+                "Embedding model": args.embed_model,
+                "Collection": args.collection_name,
+                "Chroma path": args.chroma_path,
+                "Results per search": args.top_k,
+                "Maximum tool calls": args.max_tool_calls,
+            },
+        )
+        output_path = save_markdown_report(args.output, report)
+        print(f"\nSaved Markdown report to {output_path}")
 
 
 if __name__ == "__main__":

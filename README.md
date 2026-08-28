@@ -124,11 +124,14 @@ results in an agent loop:
 
 ```bash
 python3 src/dream_agent.py "What patterns appear in dreams about hidden rooms?"
+python3 src/dream_agent.py "What patterns recur in school dreams?" \
+  --output outputs/agent/school_patterns.md
 ```
 
 The initial agent exposes only one read-only tool, `search_dreams`. Search
 queries, result counts, and per-dream context are bounded before being returned
-to the model.
+to the model. `--output` optionally saves the question, settings, searches,
+retrieved citations, and answer as Markdown.
 
 The deterministic reporting logic is also available independently of the CLI
 and Ollama. `DreamStatisticsService`, `TagTrendService`, and
