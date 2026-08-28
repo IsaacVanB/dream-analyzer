@@ -38,6 +38,10 @@ The parser automatically detects whether one or two consecutive blank lines
 separate dreams. If a journal uses a different convention, set it explicitly
 with `--dream-separator-blank-lines`.
 
+The same parsing behavior is reusable in Python through
+`dream_analysis.parser.JournalParser`; the CLI only handles file input and
+JSONL output.
+
 The included `data/mock_dream_journal.txt` contains synthetic example data for testing and
 demonstrating this format. It is the default input, so you can run the code
 without supplying your own journal:

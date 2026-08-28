@@ -17,6 +17,7 @@ from dream_analysis.dates import (
 from dream_analysis.index import DreamIndex, EmbeddingModelMismatchError
 from dream_analysis.models import Dream, DreamValidationError, RelatedDream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
+from dream_analysis.parser import JournalParser
 from dream_analysis.rag import DirectRagService
 from dream_analysis.repository import (
     DreamNotFoundError,
@@ -43,6 +44,7 @@ __all__ = [
     "format_period_label",
     "load_jsonl_objects",
     "OllamaGateway",
+    "JournalParser",
     "parse_date_bound",
     "period_start",
     "RelatedDream",
