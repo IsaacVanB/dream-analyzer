@@ -8,6 +8,7 @@ from dream_analysis.agent import (
     AgentEmptyResponseError,
     AgentSearchRequiredError,
     DreamRagAgent,
+    ToolExecution,
 )
 from dream_analysis.models import SearchResult
 from dream_analysis.ollama_client import OllamaGateway
@@ -216,11 +217,22 @@ class DreamRagAgentTests(unittest.TestCase):
             ["school"],
         )
         self.assertIsNone(client.chat_calls[-1]["tools"])
+        forced_messages = client.chat_calls[-1]["messages"]
+        self.assertEqual([item["role"] for item in forced_messages], ["system", "user"])
         self.assertIn(
-            "Tools are disabled",
-            client.chat_calls[-1]["messages"][-1]["content"],
+            "COMPLETED SEARCH EVIDENCE",
+            forced_messages[-1]["content"],
+        )
+        self.assertIn("DREAM_ID: dream-1", forced_messages[-1]["content"])
+        self.assertIn(
+            "A hidden room appeared behind the pantry.",
+            forced_messages[-1]["content"],
         )
         self.assertTrue(response.turn_traces[-1].forced_synthesis)
+        self.assertIn(
+            "COMPLETED SEARCH EVIDENCE",
+            response.turn_traces[-1].request_prompt,
+        )
 
     def test_budget_executes_remaining_capacity_before_forced_answer(self) -> None:
         second_response = {
@@ -282,6 +294,10 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertTrue(response.tool_executions[1].cached)
         self.assertTrue(response.tool_executions[1].result["cached"])
         self.assertTrue(response.forced_synthesis)
+        self.assertIn(
+            "SEARCH 2 [cached duplicate]",
+            response.turn_traces[-1].request_prompt,
+        )
 
     def test_empty_answer_gets_one_forced_synthesis_retry(self) -> None:
         agent, client, index = self.make_agent(
@@ -326,6 +342,43 @@ class DreamRagAgentTests(unittest.TestCase):
             raised.exception.turn_traces[-1].diagnostics["eval_count"],
             700,
         )
+        self.assertIn(
+            "DREAM_ID: dream-1",
+            raised.exception.turn_traces[-1].request_prompt,
+        )
+
+    def test_forced_synthesis_evidence_is_deduplicated_and_bounded(self) -> None:
+        execution = ToolExecution(
+            name="search_dreams",
+            arguments={"query": "hidden room"},
+            result={
+                "ok": True,
+                "dreams": [
+                    {
+                        "dream_id": "dream-1",
+                        "date": "1/2/2024",
+                        "distance": 0.1,
+                        "text": "room " * 1000,
+                    }
+                ],
+            },
+        )
+        duplicate = ToolExecution(
+            name=execution.name,
+            arguments=execution.arguments,
+            result=execution.result,
+            cached=True,
+        )
+
+        evidence = DreamRagAgent._format_synthesis_evidence(
+            [execution, duplicate],
+            max_chars=1200,
+        )
+
+        self.assertLessEqual(len(evidence), 1200)
+        self.assertEqual(evidence.count("DREAM_ID: dream-1"), 1)
+        self.assertIn("SEARCH 2 [cached duplicate]", evidence)
+        self.assertIn("TRUNCATED", evidence)
 
     def test_agent_reminds_model_that_search_is_required(self) -> None:
         agent, client, index = self.make_agent(

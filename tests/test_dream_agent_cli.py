@@ -82,6 +82,10 @@ class DreamAgentCliTests(unittest.TestCase):
                     diagnostics={"done_reason": "stop", "eval_count": 12},
                     tools_enabled=True,
                     forced_synthesis=False,
+                    request_prompt=(
+                        "SYSTEM:\nUse supplied evidence.\n\n"
+                        "USER:\nCOMPLETED SEARCH EVIDENCE:\nDREAM_ID: dream|1"
+                    ),
                 ),
             ),
         )
@@ -141,6 +145,7 @@ class DreamAgentCliTests(unittest.TestCase):
         self.assertIn("## Agent Turn Trace", report)
         self.assertIn("I should search another topic.", report)
         self.assertIn('"eval_count": 12', report)
+        self.assertIn("COMPLETED SEARCH EVIDENCE", report)
         self.assertIn("[No final answer:", report)
 
     def test_main_saves_partial_report_when_limit_is_exceeded(self) -> None:

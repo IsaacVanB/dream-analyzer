@@ -181,6 +181,9 @@ def print_turn_trace(turns: tuple[AgentTurnTrace, ...]) -> None:
     for index, turn in enumerate(turns, start=1):
         phase = "forced synthesis" if turn.forced_synthesis else "tool loop"
         print(f"\nTurn {index} ({phase}, tools_enabled={turn.tools_enabled}):")
+        if turn.request_prompt is not None:
+            print("Request prompt:")
+            print(turn.request_prompt)
         print("Assistant message:")
         print(json.dumps(dict(turn.assistant_message), ensure_ascii=False, indent=2))
         print("Diagnostics:")
@@ -328,6 +331,7 @@ def format_markdown_report(
                     "````json",
                     json.dumps(
                         {
+                            "request_prompt": turn.request_prompt,
                             "assistant_message": dict(turn.assistant_message),
                             "diagnostics": dict(turn.diagnostics),
                         },

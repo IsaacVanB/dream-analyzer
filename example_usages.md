@@ -243,17 +243,22 @@ last month searches for school content only inside that month.
 Exact duplicate calls reuse their cached result without another Chroma query,
 although each model request still consumes one slot in `--max-tool-calls`. Once
 the request budget is exhausted, the agent disables tools for one final turn and
-requires an answer based on the completed results. Any calls beyond the remaining
-budget are recorded as unexecuted.
+requires an answer based on the completed results. The final turn is a fresh
+request containing a deduplicated evidence packet with retrieved dream IDs,
+dates, distances, and text. Its size is derived from `--num-ctx`, so it does not
+depend on earlier tool messages surviving context truncation. Long dream text
+may be marked `[TRUNCATED FOR SYNTHESIS]`. Any calls beyond the remaining budget
+are recorded as unexecuted.
 
 An empty post-search answer receives the same one-time forced synthesis retry.
 If the forced response is also empty, the CLI prints the partial state, saves a
 partial report when `--output` is present, and exits with status 2. `--debug`
 prints and saves a turn-by-turn trace containing normalized assistant messages,
 whether tools were enabled, and Ollama response diagnostics including
-`done_reason`, token counts, durations, and any available thinking content.
-Because that trace can contain private journal details, enable it only when
-needed and protect the saved report accordingly.
+`done_reason`, token counts, durations, any available thinking content, and the
+exact forced prompt with its evidence packet. Because that trace can contain
+private journal details, enable it only when needed and protect the saved report
+accordingly.
 
 Requires an existing matching ChromaDB index, a tool-capable chat model, and
 Ollama running locally.

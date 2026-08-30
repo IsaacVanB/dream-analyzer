@@ -180,17 +180,22 @@ selected date ranges, retrieved citations, and answer as Markdown.
 
 Exact duplicate tool calls reuse the first result instead of querying Chroma
 again, but still count toward `--max-tool-calls`. When that budget is exhausted,
-the agent makes one final synthesis request with tools disabled and instructs
-the model to answer from the completed searches. Calls beyond the remaining
-budget are marked unexecuted and shown in the console and report.
+the agent makes one final synthesis request with tools disabled. This is a fresh
+request with a synthesis-specific system prompt and an explicit evidence packet
+built from completed searches, rather than relying on earlier `tool` messages
+remaining in the model's context. The packet deduplicates dreams and is sized
+from `--num-ctx`; individual dream text may be marked
+`[TRUNCATED FOR SYNTHESIS]`. Calls beyond the remaining budget are marked
+unexecuted and shown in the console and report.
 
 If a model stops searching but returns an empty answer, the agent also makes one
 forced no-tools synthesis attempt. If that attempt is empty, the command saves
 a partial report when `--output` is supplied and exits with status 2. Add
 `--debug` to print and save every normalized assistant message together with
 Ollama diagnostics such as `done_reason`, prompt and generation token counts,
-durations, and available thinking content. Debug tracing is opt-in because model
-messages may contain private journal details.
+durations, available thinking content, and the exact forced-synthesis prompt and
+evidence packet. Debug tracing is opt-in because model messages may contain
+private journal details.
 
 The deterministic reporting logic is also available independently of the CLI
 and Ollama. `DreamStatisticsService`, `TagTrendService`, and
