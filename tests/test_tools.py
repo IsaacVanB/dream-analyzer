@@ -64,6 +64,17 @@ class DreamSearchToolTests(unittest.TestCase):
         self.assertEqual(output["dreams"][0]["distance"], 0.123457)
         json.dumps(output)
 
+    def test_execute_with_report_data_preserves_full_text(self) -> None:
+        index = FakeIndex([result("abcdefgh")])
+        tool = DreamSearchTool(index, result_limit=4, max_chars_per_dream=4)
+
+        bounded, report = tool.execute_with_report_data({"query": "hidden room"})
+
+        self.assertEqual(len(index.calls), 1)
+        self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
+        self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
+        self.assertFalse(report["dreams"][0]["truncated"])
+
     def test_execute_passes_normalized_inclusive_date_bounds(self) -> None:
         index = FakeIndex([result()])
         tool = DreamSearchTool(index, result_limit=4)

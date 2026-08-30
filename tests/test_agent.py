@@ -103,6 +103,13 @@ class DreamRagAgentTests(unittest.TestCase):
             "search_dreams",
         )
         self.assertTrue(response.tool_executions[0].result["ok"])
+        self.assertIsNotNone(response.tool_executions[0].report_result)
+        report_result = response.tool_executions[0].report_result
+        assert report_result is not None
+        self.assertEqual(
+            report_result["dreams"][0]["text"],
+            "A hidden room appeared behind the pantry.",
+        )
         self.assertEqual(client.chat_calls[0]["model"], "tool-model")
         self.assertEqual(
             client.chat_calls[0]["options"],

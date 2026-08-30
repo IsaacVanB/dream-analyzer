@@ -21,6 +21,7 @@ class ToolExecution:
     arguments: Mapping[str, Any]
     result: Mapping[str, Any]
     cached: bool = False
+    report_result: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +139,10 @@ class DreamRagAgent:
         assistant_messages: list[dict[str, Any]] = []
         turn_traces: list[AgentTurnTrace] = []
         unexecuted_calls: list[ToolRequest] = []
-        cached_results: dict[str, dict[str, Any]] = {}
+        cached_results: dict[
+            str,
+            tuple[dict[str, Any], dict[str, Any]],
+        ] = {}
         search_reminder_sent = False
         force_reason: str | None = None
 
@@ -246,23 +250,33 @@ class DreamRagAgent:
                 cache_key = self._tool_cache_key(call)
                 cached = cache_key in cached_results
                 if cached:
+                    cached_result, cached_report_result = cached_results[cache_key]
                     result = {
-                        **cached_results[cache_key],
+                        **cached_result,
                         "cached": True,
                         "note": (
                             "Duplicate tool call; reused the previous result without "
                             "searching again."
                         ),
                     }
+                    report_result = {
+                        **cached_report_result,
+                        "cached": True,
+                        "note": result["note"],
+                    }
                 else:
-                    result = self._execute(call)
-                    cached_results[cache_key] = dict(result)
+                    result, report_result = self._execute(call)
+                    cached_results[cache_key] = (
+                        dict(result),
+                        dict(report_result),
+                    )
                 executions.append(
                     ToolExecution(
                         name=call.name,
                         arguments=dict(call.arguments),
                         result=result,
                         cached=cached,
+                        report_result=report_result,
                     )
                 )
                 messages.append(
@@ -301,20 +315,30 @@ class DreamRagAgent:
                     "Do not request or wait for more searches."
                 )
 
-    def _execute(self, call: OllamaToolCall) -> dict[str, Any]:
+    def _execute(
+        self,
+        call: OllamaToolCall,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if call.name != self.search_tool.name:
-            return {
+            result = {
                 "ok": False,
                 "error": f"Unknown tool: {call.name}",
             }
+            return result, result
         try:
-            result = self.search_tool.execute(dict(call.arguments))
+            result, report_result = self.search_tool.execute_with_report_data(
+                dict(call.arguments)
+            )
         except Exception as exc:
-            return {
+            error_result = {
                 "ok": False,
                 "error": str(exc),
             }
-        return {"ok": True, **result}
+            return error_result, error_result
+        return (
+            {"ok": True, **result},
+            {"ok": True, **report_result},
+        )
 
     @staticmethod
     def _tool_cache_key(call: OllamaToolCall) -> str:

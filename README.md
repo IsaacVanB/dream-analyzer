@@ -176,7 +176,9 @@ month" means the previous calendar month. Topic terms such as "school" remain
 part of the semantic query while the date bounds filter the results. Search
 queries, result counts, and per-dream context are bounded before being returned
 to the model. `--output` optionally saves the question, settings, searches,
-selected date ranges, retrieved citations, and answer as Markdown.
+selected date ranges, retrieved citations, the full text of every dream returned
+by each search, and the answer as Markdown. The full report text is captured from
+the same search but is not added to the model's bounded context.
 
 Exact duplicate tool calls reuse the first result instead of querying Chroma
 again, but still count toward `--max-tool-calls`. When that budget is exhausted,

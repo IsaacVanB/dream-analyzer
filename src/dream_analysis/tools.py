@@ -86,6 +86,14 @@ class DreamSearchTool:
         }
 
     def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        result, _ = self.execute_with_report_data(arguments)
+        return result
+
+    def execute_with_report_data(
+        self,
+        arguments: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return bounded model data and full-text data from one index search."""
         unexpected = sorted(set(arguments) - {"query", "start_date", "end_date"})
         if unexpected:
             raise ValueError(f"unexpected arguments: {', '.join(unexpected)}")
@@ -112,17 +120,25 @@ class DreamSearchTool:
             start_date=start_date,
             end_date=end_date,
         )
-        return {
+        common = {
             "query": query,
             "start_date": start_date.isoformat() if start_date else None,
             "end_date": end_date.isoformat() if end_date else None,
             "result_count": len(matches),
-            "dreams": [self._result(item) for item in matches],
         }
+        bounded_result = {
+            **common,
+            "dreams": [self._result(item, truncate=True) for item in matches],
+        }
+        report_result = {
+            **common,
+            "dreams": [self._result(item, truncate=False) for item in matches],
+        }
+        return bounded_result, report_result
 
-    def _result(self, item: SearchResult) -> dict[str, Any]:
+    def _result(self, item: SearchResult, *, truncate: bool) -> dict[str, Any]:
         text = item.document
-        truncated = len(text) > self.max_chars_per_dream
+        truncated = truncate and len(text) > self.max_chars_per_dream
         if truncated:
             text = text[: self.max_chars_per_dream] + "\n[TRUNCATED]"
         return {

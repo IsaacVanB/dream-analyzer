@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-chars-per-dream",
         type=int,
         default=2500,
-        help="Maximum characters returned for each retrieved dream.",
+        help="Maximum characters per retrieved dream returned to the model.",
     )
     parser.add_argument(
         "--max-tool-calls",
@@ -275,7 +275,7 @@ def format_markdown_report(
                     "",
                 ]
             )
-        result = execution.result
+        result = execution.report_result or execution.result
         if not result.get("ok"):
             error = _markdown_text(result.get("error", "unknown tool error"))
             lines.extend(
@@ -297,6 +297,25 @@ def format_markdown_report(
         if not result.get("dreams"):
             lines.append("| *(no results)* |  |  |")
         lines.append("")
+
+        dreams = result.get("dreams", [])
+        if dreams:
+            lines.extend(["#### Full Retrieved Dream Text", ""])
+        for dream_index, dream in enumerate(dreams, start=1):
+            lines.extend(
+                [
+                    (
+                        f"##### {dream_index}. Dream "
+                        f"`{_inline_code(dream['dream_id'])}`"
+                    ),
+                    "",
+                    f"- Date: `{_inline_code(dream['date'])}`",
+                    f"- Distance: `{float(dream['distance']):.4f}`",
+                    "",
+                    _markdown_code_block(dream.get("text", "")),
+                    "",
+                ]
+            )
 
     if pending_calls:
         lines.extend(["## Unexecuted Tool Calls", ""])
@@ -363,6 +382,20 @@ def _markdown_cell(value: Any) -> str:
     return _markdown_text(value).replace("|", "\\|")
 
 
+def _markdown_code_block(value: Any) -> str:
+    text = str(value)
+    longest_run = 0
+    current_run = 0
+    for character in text:
+        if character == "`":
+            current_run += 1
+            longest_run = max(longest_run, current_run)
+        else:
+            current_run = 0
+    fence = "`" * max(4, longest_run + 1)
+    return f"{fence}text\n{text}\n{fence}"
+
+
 def report_settings(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "Chat model": args.chat_model,
@@ -370,6 +403,7 @@ def report_settings(args: argparse.Namespace) -> dict[str, Any]:
         "Collection": args.collection_name,
         "Chroma path": args.chroma_path,
         "Results per search": args.top_k,
+        "Maximum model characters per dream": args.max_chars_per_dream,
         "Maximum tool calls": args.max_tool_calls,
         "Debug trace": args.debug,
     }

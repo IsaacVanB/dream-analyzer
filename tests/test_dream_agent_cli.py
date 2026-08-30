@@ -44,6 +44,20 @@ class DreamAgentCliTests(unittest.TestCase):
                             }
                         ],
                     },
+                    report_result={
+                        "ok": True,
+                        "query": "hidden room",
+                        "result_count": 1,
+                        "dreams": [
+                            {
+                                "dream_id": "dream|1",
+                                "date": "1/2/2024",
+                                "distance": 0.125,
+                                "text": "A hidden room.\nThen I woke up.",
+                                "truncated": False,
+                            }
+                        ],
+                    },
                 ),
             ),
         )
@@ -118,6 +132,8 @@ class DreamAgentCliTests(unittest.TestCase):
             report,
         )
         self.assertIn("dream\\|1", report)
+        self.assertIn("#### Full Retrieved Dream Text", report)
+        self.assertIn("A hidden room.\nThen I woke up.", report)
         self.assertIn("A grounded **answer**.", report)
 
     def test_partial_markdown_contains_limit_trace(self) -> None:
