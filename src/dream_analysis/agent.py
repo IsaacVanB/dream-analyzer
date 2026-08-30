@@ -11,9 +11,6 @@ from dream_analysis.ollama_client import OllamaGateway, OllamaToolCall
 from dream_analysis.tools import DreamSearchTool
 
 
-NO_AGENT_ANSWER = "[No answer returned by chat model.]"
-
-
 class AgentSearchRequiredError(RuntimeError):
     """Raised when a model repeatedly answers without searching."""
 
@@ -23,6 +20,7 @@ class ToolExecution:
     name: str
     arguments: Mapping[str, Any]
     result: Mapping[str, Any]
+    cached: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,13 +32,46 @@ class ToolRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentTurnTrace:
+    """One normalized Ollama response and its generation diagnostics."""
+
+    assistant_message: Mapping[str, Any]
+    diagnostics: Mapping[str, Any]
+    tools_enabled: bool
+    forced_synthesis: bool
+
+
+@dataclass(frozen=True, slots=True)
 class AgentResponse:
     answer: str
     tool_executions: tuple[ToolExecution, ...]
     assistant_messages: tuple[Mapping[str, Any], ...] = ()
+    turn_traces: tuple[AgentTurnTrace, ...] = ()
+    unexecuted_tool_calls: tuple[ToolRequest, ...] = ()
+    forced_synthesis: bool = False
+    forced_synthesis_reason: str | None = None
 
 
-class AgentToolLimitError(RuntimeError):
+class AgentTraceError(RuntimeError):
+    """Base error retaining the agent state needed for a partial report."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        completed_executions: tuple[ToolExecution, ...],
+        pending_tool_calls: tuple[ToolRequest, ...],
+        assistant_messages: tuple[Mapping[str, Any], ...],
+        turn_traces: tuple[AgentTurnTrace, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.completed_executions = completed_executions
+        self.pending_tool_calls = pending_tool_calls
+        self.assistant_messages = assistant_messages
+        self.turn_traces = turn_traces
+
+
+class AgentToolLimitError(AgentTraceError):
     """Retain a partial trace when a model exceeds its tool-call budget."""
 
     def __init__(
@@ -51,12 +82,20 @@ class AgentToolLimitError(RuntimeError):
         completed_executions: tuple[ToolExecution, ...],
         pending_tool_calls: tuple[ToolRequest, ...],
         assistant_messages: tuple[Mapping[str, Any], ...],
+        turn_traces: tuple[AgentTurnTrace, ...] = (),
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            message,
+            completed_executions=completed_executions,
+            pending_tool_calls=pending_tool_calls,
+            assistant_messages=assistant_messages,
+            turn_traces=turn_traces,
+        )
         self.max_tool_calls = max_tool_calls
-        self.completed_executions = completed_executions
-        self.pending_tool_calls = pending_tool_calls
-        self.assistant_messages = assistant_messages
+
+
+class AgentEmptyResponseError(AgentTraceError):
+    """Raised when the forced no-tools synthesis response is empty."""
 
 
 class DreamRagAgent:
@@ -96,13 +135,25 @@ class DreamRagAgent:
         ]
         executions: list[ToolExecution] = []
         assistant_messages: list[dict[str, Any]] = []
+        turn_traces: list[AgentTurnTrace] = []
+        unexecuted_calls: list[ToolRequest] = []
+        cached_results: dict[str, dict[str, Any]] = {}
         search_reminder_sent = False
+        force_reason: str | None = None
 
         while True:
+            forced_synthesis = force_reason is not None
+            if forced_synthesis:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": self._forced_synthesis_prompt(force_reason),
+                    }
+                )
             response = self.ollama.chat(
                 messages,
                 model=chat_model,
-                tools=[self.search_tool.schema],
+                tools=None if forced_synthesis else [self.search_tool.schema],
                 think=False,
                 options={
                     "temperature": temperature,
@@ -114,6 +165,42 @@ class DreamRagAgent:
             assistant_message = self.ollama.assistant_message(response)
             messages.append(assistant_message)
             assistant_messages.append(assistant_message)
+            turn_traces.append(
+                AgentTurnTrace(
+                    assistant_message=assistant_message,
+                    diagnostics=self.ollama.response_diagnostics(response),
+                    tools_enabled=not forced_synthesis,
+                    forced_synthesis=forced_synthesis,
+                )
+            )
+
+            if forced_synthesis:
+                unexecuted_calls.extend(
+                    ToolRequest(name=call.name, arguments=dict(call.arguments))
+                    for call in tool_calls
+                )
+                answer = self.ollama.message_content(response).strip()
+                if answer:
+                    return AgentResponse(
+                        answer=answer,
+                        tool_executions=tuple(executions),
+                        assistant_messages=tuple(assistant_messages),
+                        turn_traces=tuple(turn_traces),
+                        unexecuted_tool_calls=tuple(unexecuted_calls),
+                        forced_synthesis=True,
+                        forced_synthesis_reason=force_reason,
+                    )
+                diagnostics = turn_traces[-1].diagnostics
+                done_reason = diagnostics.get("done_reason", "unknown")
+                raise AgentEmptyResponseError(
+                    "Ollama returned an empty answer after forced synthesis "
+                    f"(done_reason={done_reason!r})",
+                    completed_executions=tuple(executions),
+                    pending_tool_calls=tuple(unexecuted_calls),
+                    assistant_messages=tuple(assistant_messages),
+                    turn_traces=tuple(turn_traces),
+                )
+
             if not tool_calls:
                 if not executions:
                     if search_reminder_sent:
@@ -132,34 +219,44 @@ class DreamRagAgent:
                     search_reminder_sent = True
                     continue
                 answer = self.ollama.message_content(response).strip()
-                return AgentResponse(
-                    answer=answer or NO_AGENT_ANSWER,
-                    tool_executions=tuple(executions),
-                    assistant_messages=tuple(assistant_messages),
+                if answer:
+                    return AgentResponse(
+                        answer=answer,
+                        tool_executions=tuple(executions),
+                        assistant_messages=tuple(assistant_messages),
+                        turn_traces=tuple(turn_traces),
+                        unexecuted_tool_calls=tuple(unexecuted_calls),
+                    )
+                force_reason = (
+                    "The previous response stopped requesting tools but returned "
+                    "no answer. Synthesize the completed search results now."
                 )
+                continue
 
-            if len(executions) + len(tool_calls) > max_tool_calls:
-                raise AgentToolLimitError(
-                    f"Ollama exceeded the limit of {max_tool_calls} tool calls",
-                    max_tool_calls=max_tool_calls,
-                    completed_executions=tuple(executions),
-                    pending_tool_calls=tuple(
-                        ToolRequest(
-                            name=call.name,
-                            arguments=dict(call.arguments),
-                        )
-                        for call in tool_calls
-                    ),
-                    assistant_messages=tuple(assistant_messages),
-                )
-
-            for call in tool_calls:
-                result = self._execute(call)
+            remaining_calls = max_tool_calls - len(executions)
+            accepted_calls = tool_calls[:remaining_calls]
+            overflow_calls = tool_calls[remaining_calls:]
+            for call in accepted_calls:
+                cache_key = self._tool_cache_key(call)
+                cached = cache_key in cached_results
+                if cached:
+                    result = {
+                        **cached_results[cache_key],
+                        "cached": True,
+                        "note": (
+                            "Duplicate tool call; reused the previous result without "
+                            "searching again."
+                        ),
+                    }
+                else:
+                    result = self._execute(call)
+                    cached_results[cache_key] = dict(result)
                 executions.append(
                     ToolExecution(
                         name=call.name,
                         arguments=dict(call.arguments),
                         result=result,
+                        cached=cached,
                     )
                 )
                 messages.append(
@@ -168,6 +265,34 @@ class DreamRagAgent:
                         "tool_name": call.name,
                         "content": json.dumps(result, ensure_ascii=False),
                     }
+                )
+
+            for call in overflow_calls:
+                request = ToolRequest(
+                    name=call.name,
+                    arguments=dict(call.arguments),
+                )
+                unexecuted_calls.append(request)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_name": call.name,
+                        "content": json.dumps(
+                            {
+                                "ok": False,
+                                "error": (
+                                    "Tool call was not executed because the search "
+                                    "budget was exhausted."
+                                ),
+                            }
+                        ),
+                    }
+                )
+
+            if overflow_calls or len(executions) >= max_tool_calls:
+                force_reason = (
+                    f"The budget of {max_tool_calls} tool calls is exhausted. "
+                    "Do not request or wait for more searches."
                 )
 
     def _execute(self, call: OllamaToolCall) -> dict[str, Any]:
@@ -184,6 +309,27 @@ class DreamRagAgent:
                 "error": str(exc),
             }
         return {"ok": True, **result}
+
+    @staticmethod
+    def _tool_cache_key(call: OllamaToolCall) -> str:
+        return json.dumps(
+            {
+                "name": call.name,
+                "arguments": dict(call.arguments),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+
+    @staticmethod
+    def _forced_synthesis_prompt(reason: str) -> str:
+        return (
+            f"{reason} Tools are disabled for this final turn. Answer the original "
+            "question now using only the completed tool results already in the "
+            "conversation. If the evidence is insufficient, say so. Do not emit a "
+            "tool call or leave the answer blank."
+        )
 
     @staticmethod
     def _system_prompt() -> str:

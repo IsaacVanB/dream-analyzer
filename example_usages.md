@@ -229,7 +229,7 @@ Arguments:
 - `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
 - `--max-chars-per-dream`: maximum journal characters returned per search result. Defaults to `2500`.
 - `--output`: optional path for a Markdown report containing the question, settings, searches, citations, and answer.
-- `--debug`: print normalized assistant messages and include them in the Markdown report.
+- `--debug`: print assistant messages and Ollama response diagnostics and include them in the Markdown report.
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation.
@@ -240,14 +240,20 @@ current date and treats "last month" as the previous calendar month. Date bounds
 are applied together with semantic terms, so a question about school dreams from
 last month searches for school content only inside that month.
 
-When a model exceeds `--max-tool-calls`, the exception retains all completed
-searches, the complete new batch that was not executed, and the normalized
-assistant messages received so far. The CLI always prints the completed and
-unexecuted calls. If `--output` is present, it saves them in a partial Markdown
-report and exits with status 2. `--debug` additionally prints and saves the
-assistant-message trace on both successful and partial runs. Because that trace
-can contain private journal details, enable it only when needed and protect the
-saved report accordingly.
+Exact duplicate calls reuse their cached result without another Chroma query,
+although each model request still consumes one slot in `--max-tool-calls`. Once
+the request budget is exhausted, the agent disables tools for one final turn and
+requires an answer based on the completed results. Any calls beyond the remaining
+budget are recorded as unexecuted.
+
+An empty post-search answer receives the same one-time forced synthesis retry.
+If the forced response is also empty, the CLI prints the partial state, saves a
+partial report when `--output` is present, and exits with status 2. `--debug`
+prints and saves a turn-by-turn trace containing normalized assistant messages,
+whether tools were enabled, and Ollama response diagnostics including
+`done_reason`, token counts, durations, and any available thinking content.
+Because that trace can contain private journal details, enable it only when
+needed and protect the saved report accordingly.
 
 Requires an existing matching ChromaDB index, a tool-capable chat model, and
 Ollama running locally.

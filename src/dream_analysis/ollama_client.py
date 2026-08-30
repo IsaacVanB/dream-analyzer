@@ -167,6 +167,32 @@ class OllamaGateway:
         return str(value)
 
     @classmethod
+    def response_diagnostics(cls, response: Any) -> dict[str, Any]:
+        """Return JSON-compatible response metadata useful for agent tracing."""
+        diagnostics: dict[str, Any] = {}
+        for key in (
+            "model",
+            "created_at",
+            "done",
+            "done_reason",
+            "total_duration",
+            "load_duration",
+            "prompt_eval_count",
+            "prompt_eval_duration",
+            "eval_count",
+            "eval_duration",
+        ):
+            value = cls._response_value(response, key)
+            if value is not None:
+                diagnostics[key] = cls._json_safe(value)
+
+        message = cls._response_value(response, "message")
+        thinking = cls._response_value(message, "thinking")
+        if thinking is not None:
+            diagnostics["thinking"] = cls._json_safe(thinking)
+        return diagnostics
+
+    @classmethod
     def tool_calls(cls, response: Any) -> list[OllamaToolCall]:
         """Normalize tool calls from mapping or Ollama SDK responses."""
         message = cls._response_value(response, "message")
@@ -224,3 +250,16 @@ class OllamaGateway:
         if isinstance(response, Mapping):
             return response.get(key)
         return getattr(response, key, None)
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, Mapping):
+            return {
+                str(key): OllamaGateway._json_safe(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return [OllamaGateway._json_safe(item) for item in value]
+        return str(value)

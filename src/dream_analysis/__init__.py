@@ -2,7 +2,10 @@
 
 from dream_analysis.analysis import SingleDreamAnalysisService
 from dream_analysis.agent import (
+    AgentEmptyResponseError,
     AgentResponse,
+    AgentTraceError,
+    AgentTurnTrace,
     AgentToolLimitError,
     DreamRagAgent,
     ToolExecution,
@@ -60,6 +63,9 @@ __all__ = [
     "SingleDreamAnalysisService",
     "TagTrendService",
     "AgentResponse",
+    "AgentEmptyResponseError",
+    "AgentTraceError",
+    "AgentTurnTrace",
     "AgentToolLimitError",
     "ToolExecution",
     "ToolRequest",

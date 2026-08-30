@@ -5,8 +5,8 @@ import unittest
 from datetime import date
 
 from dream_analysis.agent import (
+    AgentEmptyResponseError,
     AgentSearchRequiredError,
-    AgentToolLimitError,
     DreamRagAgent,
 )
 from dream_analysis.models import SearchResult
@@ -179,7 +179,7 @@ class DreamRagAgentTests(unittest.TestCase):
             "Unknown tool: delete_dreams",
         )
 
-    def test_total_tool_calls_are_bounded(self) -> None:
+    def test_tool_budget_forces_answer_and_retains_overflow_calls(self) -> None:
         first_response = {
             "message": {
                 "role": "assistant",
@@ -200,22 +200,29 @@ class DreamRagAgentTests(unittest.TestCase):
                 ],
             }
         }
-        agent, _, index = self.make_agent([first_response])
-
-        with self.assertRaisesRegex(AgentToolLimitError, "limit of 1") as raised:
-            agent.answer("Compare houses and schools", max_tool_calls=1)
-
-        self.assertEqual(index.calls, [])
-        error = raised.exception
-        self.assertEqual(error.max_tool_calls, 1)
-        self.assertEqual(error.completed_executions, ())
-        self.assertEqual(
-            [call.arguments["query"] for call in error.pending_tool_calls],
-            ["house", "school"],
+        agent, client, index = self.make_agent(
+            [first_response, final_response("Forced grounded answer.")]
         )
-        self.assertEqual(len(error.assistant_messages), 1)
 
-    def test_limit_error_retains_completed_searches_and_new_call_batch(self) -> None:
+        response = agent.answer("Compare houses and schools", max_tool_calls=1)
+
+        self.assertEqual(response.answer, "Forced grounded answer.")
+        self.assertTrue(response.forced_synthesis)
+        self.assertIn("budget", response.forced_synthesis_reason)
+        self.assertEqual(index.calls, [("house", 4, None, None)])
+        self.assertEqual(len(response.tool_executions), 1)
+        self.assertEqual(
+            [call.arguments["query"] for call in response.unexecuted_tool_calls],
+            ["school"],
+        )
+        self.assertIsNone(client.chat_calls[-1]["tools"])
+        self.assertIn(
+            "Tools are disabled",
+            client.chat_calls[-1]["messages"][-1]["content"],
+        )
+        self.assertTrue(response.turn_traces[-1].forced_synthesis)
+
+    def test_budget_executes_remaining_capacity_before_forced_answer(self) -> None:
         second_response = {
             "message": {
                 "role": "assistant",
@@ -240,23 +247,85 @@ class DreamRagAgentTests(unittest.TestCase):
             [
                 tool_response("search_dreams", {"query": "house"}),
                 second_response,
+                final_response("Forced comparison."),
             ]
         )
 
-        with self.assertRaises(AgentToolLimitError) as raised:
-            agent.answer("Compare houses and schools", max_tool_calls=2)
+        response = agent.answer("Compare houses and schools", max_tool_calls=2)
 
-        error = raised.exception
-        self.assertEqual(index.calls, [("house", 4, None, None)])
         self.assertEqual(
-            [item.arguments["query"] for item in error.completed_executions],
-            ["house"],
+            index.calls,
+            [("house", 4, None, None), ("school", 4, None, None)],
         )
         self.assertEqual(
-            [item.arguments["query"] for item in error.pending_tool_calls],
-            ["school", "exam"],
+            [item.arguments["query"] for item in response.tool_executions],
+            ["house", "school"],
         )
-        self.assertEqual(len(error.assistant_messages), 2)
+        self.assertEqual(
+            [item.arguments["query"] for item in response.unexecuted_tool_calls],
+            ["exam"],
+        )
+
+    def test_duplicate_search_reuses_cached_result_then_forces_answer(self) -> None:
+        agent, _, index = self.make_agent(
+            [
+                tool_response("search_dreams", {"query": "hidden room"}),
+                tool_response("search_dreams", {"query": "hidden room"}),
+                final_response("The retrieved dream contains a hidden room."),
+            ]
+        )
+
+        response = agent.answer("What hidden rooms recur?", max_tool_calls=2)
+
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+        self.assertFalse(response.tool_executions[0].cached)
+        self.assertTrue(response.tool_executions[1].cached)
+        self.assertTrue(response.tool_executions[1].result["cached"])
+        self.assertTrue(response.forced_synthesis)
+
+    def test_empty_answer_gets_one_forced_synthesis_retry(self) -> None:
+        agent, client, index = self.make_agent(
+            [
+                tool_response("search_dreams", {"query": "hidden room"}),
+                final_response(""),
+                final_response("A forced answer with evidence."),
+            ]
+        )
+
+        response = agent.answer("What hidden rooms recur?", max_tool_calls=3)
+
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+        self.assertEqual(response.answer, "A forced answer with evidence.")
+        self.assertTrue(response.forced_synthesis)
+        self.assertIn("returned no answer", response.forced_synthesis_reason)
+        self.assertIsNone(client.chat_calls[-1]["tools"])
+
+    def test_empty_forced_answer_raises_with_response_diagnostics(self) -> None:
+        empty_forced_response = {
+            "done_reason": "length",
+            "eval_count": 700,
+            "message": {"role": "assistant", "content": ""},
+        }
+        agent, _, index = self.make_agent(
+            [
+                tool_response("search_dreams", {"query": "hidden room"}),
+                final_response(""),
+                empty_forced_response,
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            AgentEmptyResponseError,
+            "done_reason='length'",
+        ) as raised:
+            agent.answer("What hidden rooms recur?", max_tool_calls=3)
+
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+        self.assertEqual(len(raised.exception.turn_traces), 3)
+        self.assertEqual(
+            raised.exception.turn_traces[-1].diagnostics["eval_count"],
+            700,
+        )
 
     def test_agent_reminds_model_that_search_is_required(self) -> None:
         agent, client, index = self.make_agent(

@@ -12,7 +12,8 @@ from typing import Any
 
 from dream_analysis.agent import (
     AgentResponse,
-    AgentToolLimitError,
+    AgentTraceError,
+    AgentTurnTrace,
     DreamRagAgent,
     ToolExecution,
     ToolRequest,
@@ -106,8 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help=(
-            "Print normalized Ollama assistant messages and include them in the "
-            "Markdown report."
+            "Print assistant messages and Ollama response diagnostics, and include "
+            "them in the Markdown report."
         ),
     )
     parser.add_argument("--num-ctx", type=int, default=4096)
@@ -134,7 +135,11 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
 def print_searches(executions: tuple[ToolExecution, ...]) -> None:
     for index, execution in enumerate(executions, start=1):
         result = execution.result
-        print(f"\nSearch {index}: {execution.arguments.get('query', '<missing>')}")
+        cached = " [CACHED DUPLICATE]" if execution.cached else ""
+        print(
+            f"\nSearch {index}{cached}: "
+            f"{execution.arguments.get('query', '<missing>')}"
+        )
         if execution.arguments.get("start_date") or execution.arguments.get(
             "end_date"
         ):
@@ -168,14 +173,18 @@ def print_pending_tool_calls(calls: tuple[ToolRequest, ...]) -> None:
         print(f"{index}. {call.name}: {arguments}")
 
 
-def print_assistant_trace(messages: tuple[Mapping[str, Any], ...]) -> None:
-    print("\n--- ASSISTANT TRACE ---")
-    if not messages:
-        print("No assistant messages were recorded.")
+def print_turn_trace(turns: tuple[AgentTurnTrace, ...]) -> None:
+    print("\n--- AGENT TURN TRACE ---")
+    if not turns:
+        print("No agent turns were recorded.")
         return
-    for index, message in enumerate(messages, start=1):
-        print(f"\nAssistant message {index}:")
-        print(json.dumps(dict(message), ensure_ascii=False, indent=2))
+    for index, turn in enumerate(turns, start=1):
+        phase = "forced synthesis" if turn.forced_synthesis else "tool loop"
+        print(f"\nTurn {index} ({phase}, tools_enabled={turn.tools_enabled}):")
+        print("Assistant message:")
+        print(json.dumps(dict(turn.assistant_message), ensure_ascii=False, indent=2))
+        print("Diagnostics:")
+        print(json.dumps(dict(turn.diagnostics), ensure_ascii=False, indent=2))
 
 
 def format_markdown_report(
@@ -183,13 +192,18 @@ def format_markdown_report(
     response: AgentResponse,
     *,
     settings: Mapping[str, Any],
-    limit_error: AgentToolLimitError | None = None,
+    trace_error: AgentTraceError | None = None,
     include_debug: bool = False,
 ) -> str:
+    pending_calls = (
+        trace_error.pending_tool_calls
+        if trace_error is not None
+        else response.unexecuted_tool_calls
+    )
     lines = [
         (
             "# Dream Agent Partial Response"
-            if limit_error is not None
+            if trace_error is not None
             else "# Dream Agent Response"
         ),
         "",
@@ -203,17 +217,31 @@ def format_markdown_report(
     for name, value in settings.items():
         lines.append(f"- **{name}:** `{_inline_code(value)}`")
 
-    if limit_error is not None:
+    if trace_error is not None:
         lines.extend(
             [
                 "",
                 "## Status",
                 "",
-                f"Error: {_markdown_text(limit_error)}",
+                f"Error: {_markdown_text(trace_error)}",
                 "",
-                f"- Completed tool calls: `{len(limit_error.completed_executions)}`",
-                f"- Unexecuted tool calls: `{len(limit_error.pending_tool_calls)}`",
-                f"- Configured limit: `{limit_error.max_tool_calls}`",
+                f"- Completed tool calls: `{len(trace_error.completed_executions)}`",
+                f"- Unexecuted tool calls: `{len(pending_calls)}`",
+            ]
+        )
+        max_tool_calls = getattr(trace_error, "max_tool_calls", None)
+        if max_tool_calls is not None:
+            lines.append(f"- Configured limit: `{max_tool_calls}`")
+    elif response.forced_synthesis:
+        lines.extend(
+            [
+                "",
+                "## Status",
+                "",
+                "- Forced synthesis: `True`",
+                "- Reason: "
+                f"{_markdown_text(response.forced_synthesis_reason or 'unknown')}",
+                f"- Unexecuted tool calls: `{len(pending_calls)}`",
             ]
         )
 
@@ -222,8 +250,14 @@ def format_markdown_report(
         lines.extend(["No searches were recorded.", ""])
     for index, execution in enumerate(response.tool_executions, start=1):
         query = execution.arguments.get("query", "<missing>")
+        cached = " — Cached Duplicate" if execution.cached else ""
         lines.extend(
-            [f"### Search {index}", "", f"Query: `{_inline_code(query)}`", ""]
+            [
+                f"### Search {index}{cached}",
+                "",
+                f"Query: `{_inline_code(query)}`",
+                "",
+            ]
         )
         if execution.arguments.get("start_date") or execution.arguments.get(
             "end_date"
@@ -261,11 +295,9 @@ def format_markdown_report(
             lines.append("| *(no results)* |  |  |")
         lines.append("")
 
-    if limit_error is not None:
+    if pending_calls:
         lines.extend(["## Unexecuted Tool Calls", ""])
-        if not limit_error.pending_tool_calls:
-            lines.extend(["No unexecuted tool calls were recorded.", ""])
-        for index, call in enumerate(limit_error.pending_tool_calls, start=1):
+        for index, call in enumerate(pending_calls, start=1):
             lines.extend(
                 [
                     f"### Tool Call {index}: `{_inline_code(call.name)}`",
@@ -282,16 +314,26 @@ def format_markdown_report(
             )
 
     if include_debug:
-        lines.extend(["## Assistant Trace", ""])
-        if not response.assistant_messages:
-            lines.extend(["No assistant messages were recorded.", ""])
-        for index, message in enumerate(response.assistant_messages, start=1):
+        lines.extend(["## Agent Turn Trace", ""])
+        if not response.turn_traces:
+            lines.extend(["No agent turns were recorded.", ""])
+        for index, turn in enumerate(response.turn_traces, start=1):
+            phase = "Forced Synthesis" if turn.forced_synthesis else "Tool Loop"
             lines.extend(
                 [
-                    f"### Assistant Message {index}",
+                    f"### Turn {index}: {phase}",
+                    "",
+                    f"- Tools enabled: `{turn.tools_enabled}`",
                     "",
                     "````json",
-                    json.dumps(dict(message), ensure_ascii=False, indent=2),
+                    json.dumps(
+                        {
+                            "assistant_message": dict(turn.assistant_message),
+                            "diagnostics": dict(turn.diagnostics),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
                     "````",
                     "",
                 ]
@@ -350,23 +392,25 @@ def main() -> None:
             temperature=args.temperature,
             max_tool_calls=args.max_tool_calls,
         )
-    except AgentToolLimitError as exc:
+    except AgentTraceError as exc:
         print(f"\nERROR: {exc}", file=sys.stderr)
         print_searches(exc.completed_executions)
         print_pending_tool_calls(exc.pending_tool_calls)
         if args.debug:
-            print_assistant_trace(exc.assistant_messages)
+            print_turn_trace(exc.turn_traces)
         partial_response = AgentResponse(
             answer=f"[No final answer: {exc}]",
             tool_executions=exc.completed_executions,
             assistant_messages=exc.assistant_messages,
+            turn_traces=exc.turn_traces,
+            unexecuted_tool_calls=exc.pending_tool_calls,
         )
         if args.output is not None:
             report = format_markdown_report(
                 args.question,
                 partial_response,
                 settings=report_settings(args),
-                limit_error=exc,
+                trace_error=exc,
                 include_debug=args.debug,
             )
             output_path = save_markdown_report(args.output, report)
@@ -374,8 +418,13 @@ def main() -> None:
         raise SystemExit(2) from None
 
     print_searches(response.tool_executions)
+    if response.unexecuted_tool_calls:
+        print_pending_tool_calls(response.unexecuted_tool_calls)
+    if response.forced_synthesis:
+        print("\nForced final synthesis.")
+        print(f"Reason: {response.forced_synthesis_reason or 'unknown'}")
     if args.debug:
-        print_assistant_trace(response.assistant_messages)
+        print_turn_trace(response.turn_traces)
     print("\n--- ANSWER ---\n")
     print(response.answer)
     if args.output is not None:

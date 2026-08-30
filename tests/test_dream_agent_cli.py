@@ -12,6 +12,7 @@ from cli import dream_agent
 from dream_analysis.agent import (
     AgentResponse,
     AgentToolLimitError,
+    AgentTurnTrace,
     ToolExecution,
     ToolRequest,
 )
@@ -72,6 +73,17 @@ class DreamAgentCliTests(unittest.TestCase):
                     ],
                 },
             ),
+            turn_traces=(
+                AgentTurnTrace(
+                    assistant_message={
+                        "role": "assistant",
+                        "content": "I should search another topic.",
+                    },
+                    diagnostics={"done_reason": "stop", "eval_count": 12},
+                    tools_enabled=True,
+                    forced_synthesis=False,
+                ),
+            ),
         )
 
     def test_parser_accepts_an_optional_output_path(self) -> None:
@@ -110,13 +122,15 @@ class DreamAgentCliTests(unittest.TestCase):
             answer=f"[No final answer: {error}]",
             tool_executions=error.completed_executions,
             assistant_messages=error.assistant_messages,
+            turn_traces=error.turn_traces,
+            unexecuted_tool_calls=error.pending_tool_calls,
         )
 
         report = dream_agent.format_markdown_report(
             "Compare hidden rooms and schools",
             response,
             settings={"Maximum tool calls": 1},
-            limit_error=error,
+            trace_error=error,
             include_debug=True,
         )
 
@@ -124,8 +138,9 @@ class DreamAgentCliTests(unittest.TestCase):
         self.assertIn("Completed tool calls: `1`", report)
         self.assertIn("## Unexecuted Tool Calls", report)
         self.assertIn('"query": "school"', report)
-        self.assertIn("## Assistant Trace", report)
+        self.assertIn("## Agent Turn Trace", report)
         self.assertIn("I should search another topic.", report)
+        self.assertIn('"eval_count": 12', report)
         self.assertIn("[No final answer:", report)
 
     def test_main_saves_partial_report_when_limit_is_exceeded(self) -> None:
@@ -160,7 +175,7 @@ class DreamAgentCliTests(unittest.TestCase):
 
             self.assertEqual(raised.exception.code, 2)
             self.assertIn("UNEXECUTED TOOL CALLS", stdout.getvalue())
-            self.assertIn("ASSISTANT TRACE", stdout.getvalue())
+            self.assertIn("AGENT TURN TRACE", stdout.getvalue())
             self.assertIn("exceeded the limit", stderr.getvalue())
             self.assertIn("Partial Response", output_path.read_text(encoding="utf-8"))
 

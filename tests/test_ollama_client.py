@@ -137,6 +137,29 @@ class OllamaGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(OllamaResponseError, "invalid arguments"):
             OllamaGateway.tool_calls(response)
 
+    def test_response_diagnostics_normalize_generation_metadata(self) -> None:
+        diagnostics = OllamaGateway.response_diagnostics(
+            {
+                "model": "qwen3:8b",
+                "done": True,
+                "done_reason": "length",
+                "prompt_eval_count": 128,
+                "eval_count": 64,
+                "message": {
+                    "content": "",
+                    "thinking": "I should synthesize the searches.",
+                },
+            }
+        )
+
+        self.assertEqual(diagnostics["model"], "qwen3:8b")
+        self.assertEqual(diagnostics["done_reason"], "length")
+        self.assertEqual(diagnostics["eval_count"], 64)
+        self.assertEqual(
+            diagnostics["thinking"],
+            "I should synthesize the searches.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
