@@ -96,6 +96,11 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(response.answer, "Grounded answer (dream-1, 1/2/2024).")
         self.assertEqual(index.calls, [("hidden room pantry", 4, None, None)])
         self.assertEqual(len(response.tool_executions), 1)
+        self.assertEqual(len(response.assistant_messages), 2)
+        self.assertEqual(
+            response.assistant_messages[0]["tool_calls"][0]["function"]["name"],
+            "search_dreams",
+        )
         self.assertTrue(response.tool_executions[0].result["ok"])
         self.assertEqual(client.chat_calls[0]["model"], "tool-model")
         self.assertEqual(
@@ -197,10 +202,61 @@ class DreamRagAgentTests(unittest.TestCase):
         }
         agent, _, index = self.make_agent([first_response])
 
-        with self.assertRaisesRegex(AgentToolLimitError, "limit of 1"):
+        with self.assertRaisesRegex(AgentToolLimitError, "limit of 1") as raised:
             agent.answer("Compare houses and schools", max_tool_calls=1)
 
         self.assertEqual(index.calls, [])
+        error = raised.exception
+        self.assertEqual(error.max_tool_calls, 1)
+        self.assertEqual(error.completed_executions, ())
+        self.assertEqual(
+            [call.arguments["query"] for call in error.pending_tool_calls],
+            ["house", "school"],
+        )
+        self.assertEqual(len(error.assistant_messages), 1)
+
+    def test_limit_error_retains_completed_searches_and_new_call_batch(self) -> None:
+        second_response = {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "school"},
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "exam"},
+                        }
+                    },
+                ],
+            }
+        }
+        agent, _, index = self.make_agent(
+            [
+                tool_response("search_dreams", {"query": "house"}),
+                second_response,
+            ]
+        )
+
+        with self.assertRaises(AgentToolLimitError) as raised:
+            agent.answer("Compare houses and schools", max_tool_calls=2)
+
+        error = raised.exception
+        self.assertEqual(index.calls, [("house", 4, None, None)])
+        self.assertEqual(
+            [item.arguments["query"] for item in error.completed_executions],
+            ["house"],
+        )
+        self.assertEqual(
+            [item.arguments["query"] for item in error.pending_tool_calls],
+            ["school", "exam"],
+        )
+        self.assertEqual(len(error.assistant_messages), 2)
 
     def test_agent_reminds_model_that_search_is_required(self) -> None:
         agent, client, index = self.make_agent(

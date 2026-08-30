@@ -14,10 +14,6 @@ from dream_analysis.tools import DreamSearchTool
 NO_AGENT_ANSWER = "[No answer returned by chat model.]"
 
 
-class AgentToolLimitError(RuntimeError):
-    """Raised when a model exceeds the configured tool-call budget."""
-
-
 class AgentSearchRequiredError(RuntimeError):
     """Raised when a model repeatedly answers without searching."""
 
@@ -30,9 +26,37 @@ class ToolExecution:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolRequest:
+    """One tool call requested by the model but not executed."""
+
+    name: str
+    arguments: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class AgentResponse:
     answer: str
     tool_executions: tuple[ToolExecution, ...]
+    assistant_messages: tuple[Mapping[str, Any], ...] = ()
+
+
+class AgentToolLimitError(RuntimeError):
+    """Retain a partial trace when a model exceeds its tool-call budget."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        max_tool_calls: int,
+        completed_executions: tuple[ToolExecution, ...],
+        pending_tool_calls: tuple[ToolRequest, ...],
+        assistant_messages: tuple[Mapping[str, Any], ...],
+    ) -> None:
+        super().__init__(message)
+        self.max_tool_calls = max_tool_calls
+        self.completed_executions = completed_executions
+        self.pending_tool_calls = pending_tool_calls
+        self.assistant_messages = assistant_messages
 
 
 class DreamRagAgent:
@@ -71,6 +95,7 @@ class DreamRagAgent:
             {"role": "user", "content": question.strip()},
         ]
         executions: list[ToolExecution] = []
+        assistant_messages: list[dict[str, Any]] = []
         search_reminder_sent = False
 
         while True:
@@ -86,7 +111,9 @@ class DreamRagAgent:
                 },
             )
             tool_calls = self.ollama.tool_calls(response)
-            messages.append(self.ollama.assistant_message(response))
+            assistant_message = self.ollama.assistant_message(response)
+            messages.append(assistant_message)
+            assistant_messages.append(assistant_message)
             if not tool_calls:
                 if not executions:
                     if search_reminder_sent:
@@ -108,11 +135,22 @@ class DreamRagAgent:
                 return AgentResponse(
                     answer=answer or NO_AGENT_ANSWER,
                     tool_executions=tuple(executions),
+                    assistant_messages=tuple(assistant_messages),
                 )
 
             if len(executions) + len(tool_calls) > max_tool_calls:
                 raise AgentToolLimitError(
-                    f"Ollama exceeded the limit of {max_tool_calls} tool calls"
+                    f"Ollama exceeded the limit of {max_tool_calls} tool calls",
+                    max_tool_calls=max_tool_calls,
+                    completed_executions=tuple(executions),
+                    pending_tool_calls=tuple(
+                        ToolRequest(
+                            name=call.name,
+                            arguments=dict(call.arguments),
+                        )
+                        for call in tool_calls
+                    ),
+                    assistant_messages=tuple(assistant_messages),
                 )
 
             for call in tool_calls:

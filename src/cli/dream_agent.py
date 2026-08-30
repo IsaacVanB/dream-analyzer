@@ -4,11 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from dream_analysis.agent import AgentResponse, DreamRagAgent, ToolExecution
+from dream_analysis.agent import (
+    AgentResponse,
+    AgentToolLimitError,
+    DreamRagAgent,
+    ToolExecution,
+    ToolRequest,
+)
 from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
@@ -94,6 +102,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional path where a Markdown report should be saved.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help=(
+            "Print normalized Ollama assistant messages and include them in the "
+            "Markdown report."
+        ),
+    )
     parser.add_argument("--num-ctx", type=int, default=4096)
     parser.add_argument("--num-predict", type=int, default=700)
     parser.add_argument("--temperature", type=float, default=0.1)
@@ -138,14 +154,44 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
             )
 
 
+def print_pending_tool_calls(calls: tuple[ToolRequest, ...]) -> None:
+    print("\n--- UNEXECUTED TOOL CALLS ---")
+    if not calls:
+        print("None")
+        return
+    for index, call in enumerate(calls, start=1):
+        arguments = json.dumps(
+            dict(call.arguments),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        print(f"{index}. {call.name}: {arguments}")
+
+
+def print_assistant_trace(messages: tuple[Mapping[str, Any], ...]) -> None:
+    print("\n--- ASSISTANT TRACE ---")
+    if not messages:
+        print("No assistant messages were recorded.")
+        return
+    for index, message in enumerate(messages, start=1):
+        print(f"\nAssistant message {index}:")
+        print(json.dumps(dict(message), ensure_ascii=False, indent=2))
+
+
 def format_markdown_report(
     question: str,
     response: AgentResponse,
     *,
     settings: Mapping[str, Any],
+    limit_error: AgentToolLimitError | None = None,
+    include_debug: bool = False,
 ) -> str:
     lines = [
-        "# Dream Agent Response",
+        (
+            "# Dream Agent Partial Response"
+            if limit_error is not None
+            else "# Dream Agent Response"
+        ),
         "",
         "## Question",
         "",
@@ -156,6 +202,20 @@ def format_markdown_report(
     ]
     for name, value in settings.items():
         lines.append(f"- **{name}:** `{_inline_code(value)}`")
+
+    if limit_error is not None:
+        lines.extend(
+            [
+                "",
+                "## Status",
+                "",
+                f"Error: {_markdown_text(limit_error)}",
+                "",
+                f"- Completed tool calls: `{len(limit_error.completed_executions)}`",
+                f"- Unexecuted tool calls: `{len(limit_error.pending_tool_calls)}`",
+                f"- Configured limit: `{limit_error.max_tool_calls}`",
+            ]
+        )
 
     lines.extend(["", "## Searches", ""])
     if not response.tool_executions:
@@ -201,6 +261,42 @@ def format_markdown_report(
             lines.append("| *(no results)* |  |  |")
         lines.append("")
 
+    if limit_error is not None:
+        lines.extend(["## Unexecuted Tool Calls", ""])
+        if not limit_error.pending_tool_calls:
+            lines.extend(["No unexecuted tool calls were recorded.", ""])
+        for index, call in enumerate(limit_error.pending_tool_calls, start=1):
+            lines.extend(
+                [
+                    f"### Tool Call {index}: `{_inline_code(call.name)}`",
+                    "",
+                    "````json",
+                    json.dumps(
+                        dict(call.arguments),
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    "````",
+                    "",
+                ]
+            )
+
+    if include_debug:
+        lines.extend(["## Assistant Trace", ""])
+        if not response.assistant_messages:
+            lines.extend(["No assistant messages were recorded.", ""])
+        for index, message in enumerate(response.assistant_messages, start=1):
+            lines.extend(
+                [
+                    f"### Assistant Message {index}",
+                    "",
+                    "````json",
+                    json.dumps(dict(message), ensure_ascii=False, indent=2),
+                    "````",
+                    "",
+                ]
+            )
+
     lines.extend(["## Answer", "", response.answer.rstrip(), ""])
     return "\n".join(lines)
 
@@ -221,6 +317,18 @@ def _markdown_cell(value: Any) -> str:
     return _markdown_text(value).replace("|", "\\|")
 
 
+def report_settings(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "Chat model": args.chat_model,
+        "Embedding model": args.embed_model,
+        "Collection": args.collection_name,
+        "Chroma path": args.chroma_path,
+        "Results per search": args.top_k,
+        "Maximum tool calls": args.max_tool_calls,
+        "Debug trace": args.debug,
+    }
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -233,29 +341,49 @@ def main() -> None:
         top_k=args.top_k,
         max_chars_per_dream=args.max_chars_per_dream,
     )
-    response = agent.answer(
-        args.question,
-        chat_model=args.chat_model,
-        num_ctx=args.num_ctx,
-        num_predict=args.num_predict,
-        temperature=args.temperature,
-        max_tool_calls=args.max_tool_calls,
-    )
+    try:
+        response = agent.answer(
+            args.question,
+            chat_model=args.chat_model,
+            num_ctx=args.num_ctx,
+            num_predict=args.num_predict,
+            temperature=args.temperature,
+            max_tool_calls=args.max_tool_calls,
+        )
+    except AgentToolLimitError as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        print_searches(exc.completed_executions)
+        print_pending_tool_calls(exc.pending_tool_calls)
+        if args.debug:
+            print_assistant_trace(exc.assistant_messages)
+        partial_response = AgentResponse(
+            answer=f"[No final answer: {exc}]",
+            tool_executions=exc.completed_executions,
+            assistant_messages=exc.assistant_messages,
+        )
+        if args.output is not None:
+            report = format_markdown_report(
+                args.question,
+                partial_response,
+                settings=report_settings(args),
+                limit_error=exc,
+                include_debug=args.debug,
+            )
+            output_path = save_markdown_report(args.output, report)
+            print(f"\nSaved partial Markdown report to {output_path}")
+        raise SystemExit(2) from None
+
     print_searches(response.tool_executions)
+    if args.debug:
+        print_assistant_trace(response.assistant_messages)
     print("\n--- ANSWER ---\n")
     print(response.answer)
     if args.output is not None:
         report = format_markdown_report(
             args.question,
             response,
-            settings={
-                "Chat model": args.chat_model,
-                "Embedding model": args.embed_model,
-                "Collection": args.collection_name,
-                "Chroma path": args.chroma_path,
-                "Results per search": args.top_k,
-                "Maximum tool calls": args.max_tool_calls,
-            },
+            settings=report_settings(args),
+            include_debug=args.debug,
         )
         output_path = save_markdown_report(args.output, report)
         print(f"\nSaved Markdown report to {output_path}")

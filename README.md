@@ -163,6 +163,10 @@ python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
   --output outputs/agent/school_patterns.md
+python3 src/cli/dream_agent.py "Compare house and school dreams" \
+  --max-tool-calls 3 \
+  --debug \
+  --output outputs/agent/comparison_trace.md
 ```
 
 The agent exposes one read-only tool, `search_dreams`. It accepts optional,
@@ -173,6 +177,14 @@ part of the semantic query while the date bounds filter the results. Search
 queries, result counts, and per-dream context are bounded before being returned
 to the model. `--output` optionally saves the question, settings, searches,
 selected date ranges, retrieved citations, and answer as Markdown.
+
+If Ollama requests more calls than `--max-tool-calls` permits, the command now
+prints completed searches and the entire unexecuted tool-call batch instead of
+discarding them. When `--output` is supplied, it saves a partial Markdown report
+before exiting with status 2. Add `--debug` to also print normalized Ollama
+assistant messages and include them in either the complete or partial report.
+Assistant tracing is opt-in because model messages may contain private journal
+details.
 
 The deterministic reporting logic is also available independently of the CLI
 and Ollama. `DreamStatisticsService`, `TagTrendService`, and

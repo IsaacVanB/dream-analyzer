@@ -1,7 +1,13 @@
 """Reusable services for the dream-analysis project."""
 
 from dream_analysis.analysis import SingleDreamAnalysisService
-from dream_analysis.agent import AgentResponse, DreamRagAgent
+from dream_analysis.agent import (
+    AgentResponse,
+    AgentToolLimitError,
+    DreamRagAgent,
+    ToolExecution,
+    ToolRequest,
+)
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 from dream_analysis.characters import CharacterLookupService
 from dream_analysis.config import Settings
@@ -54,6 +60,9 @@ __all__ = [
     "SingleDreamAnalysisService",
     "TagTrendService",
     "AgentResponse",
+    "AgentToolLimitError",
+    "ToolExecution",
+    "ToolRequest",
     "validate_date_range",
     "CharacterLookupService",
     "write_json_atomic",

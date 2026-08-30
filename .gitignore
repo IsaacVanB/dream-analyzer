@@ -9,3 +9,4 @@ data/chroma_db
 .codex
 __pycache__/
 *.py[cod]
+*.egg-info/

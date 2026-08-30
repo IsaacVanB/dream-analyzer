@@ -215,6 +215,11 @@ python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \
   --chat-model qwen3:8b \
   --embed-model nomic-embed-text \
   --output outputs/agent/school_anxiety.md
+
+python3 src/cli/dream_agent.py "Compare house and school dreams" \
+  --max-tool-calls 3 \
+  --debug \
+  --output outputs/agent/comparison_trace.md
 ```
 
 Arguments:
@@ -224,6 +229,7 @@ Arguments:
 - `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
 - `--max-chars-per-dream`: maximum journal characters returned per search result. Defaults to `2500`.
 - `--output`: optional path for a Markdown report containing the question, settings, searches, citations, and answer.
+- `--debug`: print normalized assistant messages and include them in the Markdown report.
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation.
@@ -233,6 +239,15 @@ arguments in `YYYY-MM-DD` format. The agent resolves relative wording using the
 current date and treats "last month" as the previous calendar month. Date bounds
 are applied together with semantic terms, so a question about school dreams from
 last month searches for school content only inside that month.
+
+When a model exceeds `--max-tool-calls`, the exception retains all completed
+searches, the complete new batch that was not executed, and the normalized
+assistant messages received so far. The CLI always prints the completed and
+unexecuted calls. If `--output` is present, it saves them in a partial Markdown
+report and exits with status 2. `--debug` additionally prints and saves the
+assistant-message trace on both successful and partial runs. Because that trace
+can contain private journal details, enable it only when needed and protect the
+saved report accordingly.
 
 Requires an existing matching ChromaDB index, a tool-capable chat model, and
 Ollama running locally.
