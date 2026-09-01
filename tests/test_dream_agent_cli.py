@@ -132,9 +132,30 @@ class DreamAgentCliTests(unittest.TestCase):
             report,
         )
         self.assertIn("dream\\|1", report)
-        self.assertIn("#### Full Retrieved Dream Text", report)
+        self.assertIn("## Full Retrieved Dream Text", report)
         self.assertIn("A hidden room.\nThen I woke up.", report)
         self.assertIn("A grounded **answer**.", report)
+
+    def test_markdown_includes_retrieved_dream_text_only_once(self) -> None:
+        response = self.response()
+        repeated_response = AgentResponse(
+            answer=response.answer,
+            tool_executions=(
+                response.tool_executions[0],
+                response.tool_executions[0],
+            ),
+        )
+
+        report = dream_agent.format_markdown_report(
+            "What hidden rooms recur?",
+            repeated_response,
+            settings={},
+        )
+
+        self.assertIn("### Search 1", report)
+        self.assertIn("### Search 2", report)
+        self.assertIn("Retrieved by searches: `1, 2`", report)
+        self.assertEqual(report.count("A hidden room.\nThen I woke up."), 1)
 
     def test_partial_markdown_contains_limit_trace(self) -> None:
         error = self.limit_error()

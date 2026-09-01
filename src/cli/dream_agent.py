@@ -251,6 +251,7 @@ def format_markdown_report(
     lines.extend(["", "## Searches", ""])
     if not response.tool_executions:
         lines.extend(["No searches were recorded.", ""])
+    retrieved_dreams: dict[str, dict[str, Any]] = {}
     for index, execution in enumerate(response.tool_executions, start=1):
         query = execution.arguments.get("query", "<missing>")
         cached = " — Cached Duplicate" if execution.cached else ""
@@ -298,24 +299,35 @@ def format_markdown_report(
             lines.append("| *(no results)* |  |  |")
         lines.append("")
 
-        dreams = result.get("dreams", [])
-        if dreams:
-            lines.extend(["#### Full Retrieved Dream Text", ""])
-        for dream_index, dream in enumerate(dreams, start=1):
-            lines.extend(
-                [
-                    (
-                        f"##### {dream_index}. Dream "
-                        f"`{_inline_code(dream['dream_id'])}`"
-                    ),
-                    "",
-                    f"- Date: `{_inline_code(dream['date'])}`",
-                    f"- Distance: `{float(dream['distance']):.4f}`",
-                    "",
-                    _markdown_code_block(dream.get("text", "")),
-                    "",
-                ]
-            )
+        for dream in result.get("dreams", []):
+            dream_id = str(dream["dream_id"])
+            if dream_id not in retrieved_dreams:
+                retrieved_dreams[dream_id] = {
+                    "dream": dream,
+                    "searches": [index],
+                }
+            else:
+                retrieved_dreams[dream_id]["searches"].append(index)
+
+    if retrieved_dreams:
+        lines.extend(["## Full Retrieved Dream Text", ""])
+    for dream_index, item in enumerate(retrieved_dreams.values(), start=1):
+        dream = item["dream"]
+        search_numbers = ", ".join(str(value) for value in item["searches"])
+        lines.extend(
+            [
+                (
+                    f"### {dream_index}. Dream "
+                    f"`{_inline_code(dream['dream_id'])}`"
+                ),
+                "",
+                f"- Date: `{_inline_code(dream['date'])}`",
+                f"- Retrieved by searches: `{search_numbers}`",
+                "",
+                _markdown_code_block(dream.get("text", "")),
+                "",
+            ]
+        )
 
     if pending_calls:
         lines.extend(["## Unexecuted Tool Calls", ""])

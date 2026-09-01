@@ -228,7 +228,7 @@ Arguments:
 - `--top-k`: maximum results returned by each search call. Defaults to `8` and is capped at `20`.
 - `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
 - `--max-chars-per-dream`: maximum journal characters per search result returned to the model. The Markdown report still contains the full text. Defaults to `2500`.
-- `--output`: optional path for a Markdown report containing the question, settings, searches, citations, full text of every retrieved dream, and answer. Full report text is not added to the model's bounded context.
+- `--output`: optional path for a Markdown report containing the question, settings, searches, citations, full text of every unique retrieved dream, and answer. Repeated dreams are listed in each applicable search table, but their full text appears once and is not added to the model's bounded context.
 - `--debug`: print assistant messages and Ollama response diagnostics and include them in the Markdown report.
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
