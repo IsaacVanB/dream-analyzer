@@ -42,6 +42,12 @@ The parser automatically detects whether one or two consecutive blank lines
 separate dreams. If a journal uses a different convention, set it explicitly
 with `--dream-separator-blank-lines`.
 
+Calendar dates are validated before any output is written. Impossible dates,
+such as `4/32/2021`, stop parsing with an error containing the original date and
+journal line number so the source can be corrected manually. The supported
+partial-date placeholders remain `0/0/YYYY` (year only), `M/0/YYYY` (month
+only), and `0/0/00` or `0/0/0000` (unknown date).
+
 The same parsing behavior is reusable in Python through
 `dream_analysis.parser.JournalParser`; the CLI only handles file input and
 JSONL output.

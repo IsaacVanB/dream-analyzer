@@ -21,6 +21,11 @@ Arguments:
 
 Output fields include `dream_id`, `date`, `year`, `month`, `day`, `date_precision`, `date_sort`, `tags`, `text`, and `word_count`.
 
+The parser validates calendar dates before writing the JSONL file. An impossible
+date stops the command and identifies the original value and journal line number
+for manual correction. Zero placeholders remain valid for supported partial or
+unknown dates: `0/0/YYYY`, `M/0/YYYY`, and `0/0/00` or `0/0/0000`.
+
 ## `src/cli/check_dates.py`
 
 Checks parsed dreams for suspicious years, duplicate dates, and duplicate dream IDs. It is helpful for finding human errors in dream journal dates and does not modify the data. Dates containing `0` placeholders are ignored during date checks, but their dream IDs are still checked for duplicates.

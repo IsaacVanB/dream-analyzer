@@ -20,6 +20,7 @@ from dream_analysis.parser import (
     normalize_year,
     parse_journal,
     parse_tag_line,
+    validate_date_parts,
     word_count,
 )
 
@@ -35,6 +36,7 @@ __all__ = [
     "normalize_year",
     "parse_journal",
     "parse_tag_line",
+    "validate_date_parts",
     "word_count",
     "write_jsonl",
 ]
@@ -77,11 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    argument_parser = build_parser()
+    args = argument_parser.parse_args()
     journal_text = args.input.read_text(encoding="utf-8")
-    dreams = JournalParser(
-        dream_separator_blank_lines=args.dream_separator_blank_lines
-    ).parse(journal_text)
+    try:
+        dreams = JournalParser(
+            dream_separator_blank_lines=args.dream_separator_blank_lines
+        ).parse(journal_text)
+    except ValueError as exc:
+        argument_parser.error(str(exc))
     write_jsonl(dreams, args.output)
     print(f"Wrote {len(dreams)} dreams to {args.output}")
 

@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import io
+import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr
+from pathlib import Path
+from unittest.mock import patch
 
 from cli import parse_dreams
 from dream_analysis.parser import (
@@ -83,6 +89,46 @@ class JournalParserTests(unittest.TestCase):
             JournalParser(dream_separator_blank_lines=0)
         with self.assertRaisesRegex(TypeError, "journal_text"):
             JournalParser().parse(None)  # type: ignore[arg-type]
+
+    def test_impossible_dates_report_the_original_value_and_line(self) -> None:
+        journal = "4/30/2021\nValid dream\n\n4/32/2021\nImpossible dream\n"
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Invalid journal date '4/32/2021' on line 4: day is out of range",
+        ):
+            JournalParser().parse(journal)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Invalid journal date '0/2/2024'.*month is 0",
+        ):
+            JournalParser().parse("0/2/2024\nImpossible dream\n")
+
+    def test_cli_rejects_an_impossible_date_without_writing_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            input_path = Path(temporary_directory) / "journal.txt"
+            output_path = Path(temporary_directory) / "dreams.jsonl"
+            input_path.write_text("3/35/2024\nImpossible dream\n", encoding="utf-8")
+            stderr = io.StringIO()
+
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    ["parse_dreams.py", str(input_path), str(output_path)],
+                ),
+                redirect_stderr(stderr),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                parse_dreams.main()
+
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn(
+                "Invalid journal date '3/35/2024' on line 1",
+                stderr.getvalue(),
+            )
+            self.assertFalse(output_path.exists())
 
     def test_year_pivot_and_cli_compatibility_entry_point(self) -> None:
         journal = "1/2/69\nFuture\n1/2/70\nPast\n"

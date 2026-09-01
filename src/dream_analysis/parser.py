@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any
 
 
@@ -19,6 +20,27 @@ def normalize_year(year_text: str) -> int:
     return year
 
 
+def validate_date_parts(
+    *,
+    month: int,
+    day: int,
+    year: int,
+    year_text: str,
+) -> None:
+    """Reject impossible dates while allowing the journal's zero placeholders."""
+    if month == 0 and day == 0 and year_text in {"0", "00", "0000"}:
+        return
+    if month == 0:
+        if day != 0:
+            raise ValueError("a day cannot be specified when the month is 0")
+        date(year, 1, 1)
+        return
+    if day == 0:
+        date(year, month, 1)
+        return
+    date(year, month, day)
+
+
 def normalize_date_parts(
     *,
     month: int,
@@ -27,6 +49,12 @@ def normalize_date_parts(
     year_text: str,
 ) -> dict[str, Any]:
     """Represent exact, month-only, year-only, and unknown journal dates."""
+    validate_date_parts(
+        month=month,
+        day=day,
+        year=year,
+        year_text=year_text,
+    )
     parsed_year: int | None = year
     parsed_month: int | None = month
     parsed_day: int | None = day
@@ -171,18 +199,33 @@ class JournalParser:
             current_date_dream_index += 1
             current_dream_lines = []
 
-        for raw_line in journal_text.splitlines():
+        for line_number, raw_line in enumerate(journal_text.splitlines(), start=1):
             line = _clean_line(raw_line)
             date_match = DATE_RE.match(line)
 
             if date_match:
+                month_text, day_text, year_text = date_match.groups()
+                month = int(month_text)
+                day = int(day_text)
+                year = normalize_year(year_text)
+                try:
+                    validate_date_parts(
+                        month=month,
+                        day=day,
+                        year=year,
+                        year_text=year_text,
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid journal date {line.strip()!r} on line "
+                        f"{line_number}: {exc}"
+                    ) from exc
                 pending_blank_lines = 0
                 flush_dream()
-                month_text, day_text, year_text = date_match.groups()
                 current_date = (
-                    int(month_text),
-                    int(day_text),
-                    normalize_year(year_text),
+                    month,
+                    day,
+                    year,
                     year_text,
                 )
                 current_date_dream_index = 0
