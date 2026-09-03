@@ -116,6 +116,13 @@ class DreamAgentCliTests(unittest.TestCase):
 
         self.assertTrue(args.debug)
 
+    def test_parser_accepts_a_synthesis_dream_limit(self) -> None:
+        args = dream_agent.build_parser().parse_args(
+            ["What happened?", "--max-synthesis-dreams", "7"]
+        )
+
+        self.assertEqual(args.max_synthesis_dreams, 7)
+
     def test_markdown_report_contains_expected_sections(self) -> None:
         report = dream_agent.format_markdown_report(
             "What hidden rooms recur?",

@@ -189,21 +189,26 @@ report text is captured from the same search but is not added to the model's
 bounded context.
 
 Exact duplicate tool calls reuse the first result instead of querying Chroma
-again, but still count toward `--max-tool-calls`. When that budget is exhausted,
-the agent makes one final synthesis request with tools disabled. This is a fresh
-request with a synthesis-specific system prompt and an explicit evidence packet
-built from completed searches, rather than relying on earlier `tool` messages
-remaining in the model's context. The packet deduplicates dreams and is sized
-from `--num-ctx`; individual dream text may be marked
-`[TRUNCATED FOR SYNTHESIS]`. Calls beyond the remaining budget are marked
-unexecuted and shown in the console and report.
+again, but still count toward `--max-tool-calls`. Every answer is produced by a
+fresh final request with tools disabled, rather than allowing all accumulated
+tool results to clog the answer prompt. Results from distinct searches are
+deduplicated and ranked with reciprocal-rank fusion; duplicate queries do not
+increase a dream's score. At most `--max-synthesis-dreams` unique dreams
+(default `10`) enter the final prompt. The evidence builder preserves at least
+105 words from every included dream, includes complete text where space permits,
+and drops lower-ranked dreams rather than shrinking included evidence below that
+minimum. Its context budget is derived from `--num-ctx`, now `8192` by default.
+Calls beyond the remaining tool budget are marked unexecuted and shown in the
+console and report.
 
-If a model stops searching but returns an empty answer, the agent also makes one
-forced no-tools synthesis attempt. If that attempt is empty, the command saves
+The retrieval prompt asks the model to return `SEARCH_COMPLETE` rather than
+drafting an answer when it has enough searches. Any other content that ends the
+search phase is discarded, and the ranked no-tools synthesis is used for the
+final answer. If synthesis is empty, the command saves
 a partial report when `--output` is supplied and exits with status 2. Add
 `--debug` to print and save every normalized assistant message together with
 Ollama diagnostics such as `done_reason`, prompt and generation token counts,
-durations, available thinking content, and the exact forced-synthesis prompt and
+durations, available thinking content, and the exact final-synthesis prompt and
 evidence packet. Debug tracing is opt-in because model messages may contain
 private journal details.
 

@@ -232,12 +232,13 @@ Arguments:
 - `question`: required question to answer from the journal.
 - `--top-k`: maximum results returned by each search call. Defaults to `8` and is capped at `20`.
 - `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
+- `--max-synthesis-dreams`: maximum unique dreams included in the final answer prompt. Defaults to `10` and is capped at `20`.
 - `--max-chars-per-dream`: maximum journal characters per search result returned to the model. The Markdown report still contains the full text. Defaults to `2500`.
 - `--output`: optional path for a Markdown report containing the question, settings, searches, citations, full text of every unique retrieved dream, and answer. Repeated dreams are listed in each applicable search table, but their full text appears once and is not added to the model's bounded context.
 - `--debug`: print assistant messages and Ollama response diagnostics and include them in the Markdown report.
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
-- `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation.
+- `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation. `--num-ctx` defaults to `8192` so ten average-length dreams fit comfortably.
 
 The `search_dreams` tool supports optional inclusive `start_date` and `end_date`
 arguments in `YYYY-MM-DD` format. The agent resolves relative wording using the
@@ -246,17 +247,20 @@ are applied together with semantic terms, so a question about school dreams from
 last month searches for school content only inside that month.
 
 Exact duplicate calls reuse their cached result without another Chroma query,
-although each model request still consumes one slot in `--max-tool-calls`. Once
-the request budget is exhausted, the agent disables tools for one final turn and
-requires an answer based on the completed results. The final turn is a fresh
-request containing a deduplicated evidence packet with retrieved dream IDs,
-dates, distances, and text. Its size is derived from `--num-ctx`, so it does not
-depend on earlier tool messages surviving context truncation. Long dream text
-may be marked `[TRUNCATED FOR SYNTHESIS]`. Any calls beyond the remaining budget
-are recorded as unexecuted.
+although each model request still consumes one slot in `--max-tool-calls`. Every
+answer uses a fresh tools-disabled final request. The agent deduplicates the
+candidate pool and combines rankings from distinct queries with reciprocal-rank
+fusion, while repeated queries do not add ranking weight. Only the highest-ranked
+`--max-synthesis-dreams` entries are eligible for the final prompt. At least 105
+words are retained for every included dream (or its complete text when shorter),
+and lower-ranked dreams are omitted when the context cannot preserve that
+minimum. Remaining space is assigned to higher-ranked dreams first. Any calls
+beyond the tool budget are recorded as unexecuted.
 
-An empty post-search answer receives the same one-time forced synthesis retry.
-If the forced response is also empty, the CLI prints the partial state, saves a
+The retrieval prompt asks the model to return `SEARCH_COMPLETE` when it has
+enough evidence. That response is treated only as a signal to start ranked
+synthesis; any draft answer is discarded. If the final
+synthesis response is empty, the CLI prints the partial state, saves a
 partial report when `--output` is present, and exits with status 2. `--debug`
 prints and saves a turn-by-turn trace containing normalized assistant messages,
 whether tools were enabled, and Ollama response diagnostics including

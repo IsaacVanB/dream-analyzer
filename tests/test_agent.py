@@ -82,6 +82,7 @@ class DreamRagAgentTests(unittest.TestCase):
         agent, client, index = self.make_agent(
             [
                 tool_response("search_dreams", {"query": "hidden room pantry"}),
+                final_response("Discarded draft answer."),
                 final_response(),
             ]
         )
@@ -97,7 +98,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(response.answer, "Grounded answer (dream-1, 1/2/2024).")
         self.assertEqual(index.calls, [("hidden room pantry", 4, None, None)])
         self.assertEqual(len(response.tool_executions), 1)
-        self.assertEqual(len(response.assistant_messages), 2)
+        self.assertEqual(len(response.assistant_messages), 3)
         self.assertEqual(
             response.assistant_messages[0]["tool_calls"][0]["function"]["name"],
             "search_dreams",
@@ -129,6 +130,12 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(tool_result["dreams"][0]["dream_id"], "dream-1")
         self.assertEqual(follow_up_messages[-1]["tool_name"], "search_dreams")
         self.assertIn("untrusted data", follow_up_messages[0]["content"])
+        final_messages = client.chat_calls[2]["messages"]
+        self.assertEqual(
+            [message["role"] for message in final_messages],
+            ["system", "user"],
+        )
+        self.assertIn("RRF_SCORE", final_messages[-1]["content"])
 
     def test_agent_passes_date_bounds_selected_by_the_model(self) -> None:
         agent, client, index = self.make_agent(
@@ -141,6 +148,7 @@ class DreamRagAgentTests(unittest.TestCase):
                         "end_date": "2026-07-31",
                     },
                 ),
+                final_response("Discarded draft answer."),
                 final_response(),
             ]
         )
@@ -164,7 +172,11 @@ class DreamRagAgentTests(unittest.TestCase):
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(
-            [tool_response("search_dreams", {}), final_response("Insufficient data.")]
+            [
+                tool_response("search_dreams", {}),
+                final_response("Discarded draft answer."),
+                final_response("Insufficient data."),
+            ]
         )
 
         response = agent.answer("What happened?")
@@ -176,7 +188,11 @@ class DreamRagAgentTests(unittest.TestCase):
 
     def test_unknown_tools_are_not_dispatched(self) -> None:
         agent, _, index = self.make_agent(
-            [tool_response("delete_dreams", {"query": "all"}), final_response()]
+            [
+                tool_response("delete_dreams", {"query": "all"}),
+                final_response("Discarded draft answer."),
+                final_response(),
+            ]
         )
 
         response = agent.answer("Delete everything")
@@ -320,7 +336,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(index.calls, [("hidden room", 4, None, None)])
         self.assertEqual(response.answer, "A forced answer with evidence.")
         self.assertTrue(response.forced_synthesis)
-        self.assertIn("returned no answer", response.forced_synthesis_reason)
+        self.assertIn("finished requesting searches", response.forced_synthesis_reason)
         self.assertIsNone(client.chat_calls[-1]["tools"])
 
     def test_empty_forced_answer_raises_with_response_diagnostics(self) -> None:
@@ -385,13 +401,77 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertLessEqual(len(evidence), 1200)
         self.assertEqual(evidence.count("DREAM_ID: dream-1"), 1)
         self.assertIn("SEARCH 2 [cached duplicate]", evidence)
+        self.assertIn("Distinct searches used for ranking: 1", evidence)
         self.assertIn("TRUNCATED", evidence)
+
+    def test_synthesis_uses_rrf_and_limits_unique_dreams(self) -> None:
+        def execution(query: str, dream_ids: list[str]) -> ToolExecution:
+            dreams = [
+                {
+                    "dream_id": dream_id,
+                    "date": "1/2/2024",
+                    "distance": rank / 10,
+                    "text": f"Full text for {dream_id}.",
+                }
+                for rank, dream_id in enumerate(dream_ids, start=1)
+            ]
+            result = {"ok": True, "dreams": dreams}
+            return ToolExecution(
+                name="search_dreams",
+                arguments={"query": query},
+                result=result,
+                report_result=result,
+            )
+
+        evidence = DreamRagAgent._format_synthesis_evidence(
+            [
+                execution("rooms", ["dream-a", "dream-shared"]),
+                execution("doors", ["dream-b", "dream-shared"]),
+            ],
+            max_chars=4000,
+            max_dreams=1,
+        )
+
+        self.assertIn("DREAM_ID: dream-shared", evidence)
+        self.assertNotIn("DREAM_ID: dream-a", evidence)
+        self.assertNotIn("DREAM_ID: dream-b", evidence)
+        self.assertIn("Dreams omitted by synthesis limit: 2", evidence)
+
+    def test_synthesis_preserves_105_words_or_drops_lower_ranked_dreams(self) -> None:
+        dreams = [
+            {
+                "dream_id": f"dream-{index}",
+                "date": "1/2/2024",
+                "distance": index / 10,
+                "text": " ".join(f"dream{index}word{word}" for word in range(200)),
+            }
+            for index in range(1, 3)
+        ]
+        result = {"ok": True, "dreams": dreams}
+        execution = ToolExecution(
+            name="search_dreams",
+            arguments={"query": "rooms"},
+            result=result,
+            report_result=result,
+        )
+
+        evidence = DreamRagAgent._format_synthesis_evidence(
+            [execution],
+            max_chars=2200,
+            max_dreams=2,
+        )
+
+        self.assertIn("dream1word104", evidence)
+        self.assertNotIn("DREAM_ID: dream-2", evidence)
+        self.assertIn("Dreams omitted for context limit: 1", evidence)
+        self.assertLessEqual(len(evidence), 2200)
 
     def test_agent_reminds_model_that_search_is_required(self) -> None:
         agent, client, index = self.make_agent(
             [
                 final_response("I can answer directly."),
                 tool_response("search_dreams", {"query": "hidden room"}),
+                final_response("Discarded draft answer."),
                 final_response(),
             ]
         )
@@ -419,6 +499,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn(date.today().isoformat(), prompt)
         self.assertIn("previous calendar month", prompt)
         self.assertIn("start_date and end_date", prompt)
+        self.assertIn("SEARCH_COMPLETE", prompt)
 
 
 if __name__ == "__main__":

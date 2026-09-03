@@ -99,6 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum search calls allowed for one answer.",
     )
     parser.add_argument(
+        "--max-synthesis-dreams",
+        type=int,
+        default=10,
+        help="Maximum unique dreams included in the final synthesis prompt.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="Optional path where a Markdown report should be saved.",
@@ -111,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
             "them in the Markdown report."
         ),
     )
-    parser.add_argument("--num-ctx", type=int, default=4096)
+    parser.add_argument("--num-ctx", type=int, default=8192)
     parser.add_argument("--num-predict", type=int, default=700)
     parser.add_argument("--temperature", type=float, default=0.1)
     return parser
@@ -126,6 +132,8 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--max-chars-per-dream must be positive")
     if args.max_tool_calls < 1:
         parser.error("--max-tool-calls must be positive")
+    if not 1 <= args.max_synthesis_dreams <= 20:
+        parser.error("--max-synthesis-dreams must be between 1 and 20")
     if args.num_ctx < 1:
         parser.error("--num-ctx must be positive")
     if args.num_predict < 1:
@@ -179,7 +187,7 @@ def print_turn_trace(turns: tuple[AgentTurnTrace, ...]) -> None:
         print("No agent turns were recorded.")
         return
     for index, turn in enumerate(turns, start=1):
-        phase = "forced synthesis" if turn.forced_synthesis else "tool loop"
+        phase = "final synthesis" if turn.forced_synthesis else "tool loop"
         print(f"\nTurn {index} ({phase}, tools_enabled={turn.tools_enabled}):")
         if turn.request_prompt is not None:
             print("Request prompt:")
@@ -241,7 +249,7 @@ def format_markdown_report(
                 "",
                 "## Status",
                 "",
-                "- Forced synthesis: `True`",
+                "- Ranked final synthesis: `True`",
                 "- Reason: "
                 f"{_markdown_text(response.forced_synthesis_reason or 'unknown')}",
                 f"- Unexecuted tool calls: `{len(pending_calls)}`",
@@ -352,7 +360,7 @@ def format_markdown_report(
         if not response.turn_traces:
             lines.extend(["No agent turns were recorded.", ""])
         for index, turn in enumerate(response.turn_traces, start=1):
-            phase = "Forced Synthesis" if turn.forced_synthesis else "Tool Loop"
+            phase = "Final Synthesis" if turn.forced_synthesis else "Tool Loop"
             lines.extend(
                 [
                     f"### Turn {index}: {phase}",
@@ -417,6 +425,7 @@ def report_settings(args: argparse.Namespace) -> dict[str, Any]:
         "Results per search": args.top_k,
         "Maximum model characters per dream": args.max_chars_per_dream,
         "Maximum tool calls": args.max_tool_calls,
+        "Maximum synthesis dreams": args.max_synthesis_dreams,
         "Debug trace": args.debug,
     }
 
@@ -441,6 +450,7 @@ def main() -> None:
             num_predict=args.num_predict,
             temperature=args.temperature,
             max_tool_calls=args.max_tool_calls,
+            max_synthesis_dreams=args.max_synthesis_dreams,
         )
     except AgentTraceError as exc:
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -471,7 +481,7 @@ def main() -> None:
     if response.unexecuted_tool_calls:
         print_pending_tool_calls(response.unexecuted_tool_calls)
     if response.forced_synthesis:
-        print("\nForced final synthesis.")
+        print("\nFinal ranked synthesis.")
         print(f"Reason: {response.forced_synthesis_reason or 'unknown'}")
     if args.debug:
         print_turn_trace(response.turn_traces)
