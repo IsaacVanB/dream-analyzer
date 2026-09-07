@@ -175,11 +175,13 @@ python3 src/cli/dream_agent.py "Compare house and school dreams" \
   --output outputs/agent/comparison_trace.md
 ```
 
-The agent exposes two read-only tools. `search_dreams` performs semantic
-retrieval. `get_dreams_by_tags` returns every dream containing all requested
-exact tags; matching is case-insensitive, preserves punctuation such as
-`lucid?`, and treats multiple tags as an AND combination. Both tools accept
-optional, inclusive `start_date` and `end_date` bounds in `YYYY-MM-DD` format. The agent
+The agent exposes three read-only tools. `search_dreams` performs semantic
+retrieval. `get_dream_by_id` retrieves one exact dream for requests such as
+`Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
+containing all requested exact tags; matching is case-insensitive, preserves
+punctuation such as `lucid?`, and treats multiple tags as an AND combination.
+The semantic and tag tools accept optional, inclusive `start_date` and
+`end_date` bounds in `YYYY-MM-DD` format. The agent
 translates relative language into those bounds using the current date; "last
 month" means the previous calendar month. Topic terms such as "school" remain
 part of the semantic query while the date bounds filter the results. Search

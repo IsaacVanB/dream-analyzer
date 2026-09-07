@@ -9,7 +9,7 @@ from datetime import date
 from typing import Any, Mapping
 
 from dream_analysis.ollama_client import OllamaGateway, OllamaToolCall
-from dream_analysis.tools import DreamSearchTool, DreamTagTool
+from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
 
 
 class AgentSearchRequiredError(RuntimeError):
@@ -113,10 +113,12 @@ class DreamRagAgent:
         ollama_gateway: OllamaGateway,
         search_tool: DreamSearchTool,
         tag_tool: DreamTagTool | None = None,
+        dream_by_id_tool: DreamByIdTool | None = None,
     ) -> None:
         self.ollama = ollama_gateway
         self.search_tool = search_tool
         self.tag_tool = tag_tool
+        self.dream_by_id_tool = dream_by_id_tool
 
     def answer(
         self,
@@ -231,7 +233,8 @@ class DreamRagAgent:
                         {
                             "role": "user",
                             "content": (
-                                "Call search_dreams for semantic requests or "
+                                "Call search_dreams for semantic requests, "
+                                "get_dream_by_id for a supplied dream ID, or "
                                 "get_dreams_by_tags for exact tag requests before "
                                 "answering."
                             ),
@@ -324,6 +327,8 @@ class DreamRagAgent:
         tools = {self.search_tool.name: self.search_tool}
         if self.tag_tool is not None:
             tools[self.tag_tool.name] = self.tag_tool
+        if self.dream_by_id_tool is not None:
+            tools[self.dream_by_id_tool.name] = self.dream_by_id_tool
         tool = tools.get(call.name)
         if tool is None:
             result = {
@@ -350,6 +355,8 @@ class DreamRagAgent:
         schemas = [self.search_tool.schema]
         if self.tag_tool is not None:
             schemas.append(self.tag_tool.schema)
+        if self.dream_by_id_tool is not None:
+            schemas.append(self.dream_by_id_tool.schema)
         return schemas
 
     @staticmethod
@@ -616,7 +623,9 @@ class DreamRagAgent:
         today = date.today().isoformat()
         return (
             "You plan retrieval for questions about a private dream journal. You "
-            "must call a retrieval tool before finishing. Use get_dreams_by_tags "
+            "must call a retrieval tool before finishing. Use get_dream_by_id "
+            "whenever the user supplies a specific dream_id, including requests "
+            "to analyze that dream. Use get_dreams_by_tags "
             "when the user explicitly asks for dreams with a tag or an AND "
             "combination of tags; pass every requested tag in one tags array. Use "
             "search_dreams for semantic topics and choose a concise query focused "

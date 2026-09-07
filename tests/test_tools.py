@@ -5,7 +5,7 @@ import unittest
 from datetime import date
 
 from dream_analysis.models import Dream, SearchResult
-from dream_analysis.tools import DreamSearchTool, DreamTagTool
+from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
 
 
 class FakeIndex:
@@ -128,6 +128,10 @@ class FakeRepository:
         self.calls.append((tags, start, end))
         return self.dreams
 
+    def get(self, dream_id):
+        self.calls.append(dream_id)
+        return self.dreams[0]
+
 
 class DreamTagToolTests(unittest.TestCase):
     def test_schema_defines_an_exact_and_tag_lookup(self) -> None:
@@ -179,6 +183,48 @@ class DreamTagToolTests(unittest.TestCase):
             tool.execute({"tags": ["school"], "match": "any"})
         with self.assertRaisesRegex(ValueError, "Invalid start_date"):
             tool.execute({"tags": ["school"], "start_date": "yesterday"})
+
+
+class DreamByIdToolTests(unittest.TestCase):
+    def test_schema_requires_only_an_exact_dream_id(self) -> None:
+        tool = DreamByIdTool(FakeRepository([]))
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(tool.schema["function"]["name"], "get_dream_by_id")
+        self.assertEqual(parameters["required"], ["dream_id"])
+        self.assertEqual(set(parameters["properties"]), {"dream_id"})
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_returns_bounded_and_full_text_from_one_lookup(self) -> None:
+        dream = Dream(
+            dream_id="dream-2025-1-9-0",
+            date="1/9/2025",
+            tags=("school",),
+            text="abcdefgh",
+        )
+        repository = FakeRepository([dream])
+        tool = DreamByIdTool(repository, max_chars_per_dream=4)
+
+        bounded, report = tool.execute_with_report_data(
+            {"dream_id": "  dream-2025-1-9-0  "}
+        )
+
+        self.assertEqual(repository.calls, ["dream-2025-1-9-0"])
+        self.assertEqual(bounded["requested_dream_id"], "dream-2025-1-9-0")
+        self.assertEqual(bounded["result_count"], 1)
+        self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
+        self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
+        json.dumps(bounded)
+
+    def test_execute_rejects_invalid_arguments(self) -> None:
+        tool = DreamByIdTool(FakeRepository([]))
+
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            tool.execute({"dream_id": " "})
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"dream_id": "one", "path": "/tmp"})
+        with self.assertRaisesRegex(ValueError, "cannot exceed"):
+            tool.execute({"dream_id": "x" * 201})
 
 
 if __name__ == "__main__":

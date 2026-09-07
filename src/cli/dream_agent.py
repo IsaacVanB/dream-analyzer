@@ -23,7 +23,7 @@ from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.repository import DreamRepository
-from dream_analysis.tools import DreamSearchTool, DreamTagTool
+from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
 
 
 DEFAULT_SETTINGS = Settings()
@@ -39,6 +39,7 @@ def build_agent(
     dreams_path: str | Path = DEFAULT_SETTINGS.dreams_path,
 ) -> DreamRagAgent:
     gateway = OllamaGateway()
+    repository = DreamRepository(dreams_path)
     index = DreamIndex(
         path=chroma_path,
         collection_name=collection_name,
@@ -53,7 +54,11 @@ def build_agent(
             max_chars_per_dream=max_chars_per_dream,
         ),
         tag_tool=DreamTagTool(
-            DreamRepository(dreams_path),
+            repository,
+            max_chars_per_dream=max_chars_per_dream,
+        ),
+        dream_by_id_tool=DreamByIdTool(
+            repository,
             max_chars_per_dream=max_chars_per_dream,
         ),
     )
@@ -157,7 +162,9 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
         result = execution.result
         cached = " [CACHED DUPLICATE]" if execution.cached else ""
         request = execution.arguments.get("query")
-        if request is None:
+        if "dream_id" in execution.arguments:
+            request = f"dream_id={execution.arguments['dream_id']}"
+        elif request is None:
             request = "tags=" + json.dumps(
                 execution.arguments.get("tags", []), ensure_ascii=False
             )
@@ -275,12 +282,17 @@ def format_markdown_report(
     retrieved_dreams: dict[str, dict[str, Any]] = {}
     for index, execution in enumerate(response.tool_executions, start=1):
         query = execution.arguments.get("query")
-        request_label = "Query" if query is not None else "Tags (all required)"
-        request_value = (
-            query
-            if query is not None
-            else ", ".join(str(tag) for tag in execution.arguments.get("tags", []))
-        )
+        if "dream_id" in execution.arguments:
+            request_label = "Dream ID"
+            request_value = execution.arguments["dream_id"]
+        elif query is not None:
+            request_label = "Query"
+            request_value = query
+        else:
+            request_label = "Tags (all required)"
+            request_value = ", ".join(
+                str(tag) for tag in execution.arguments.get("tags", [])
+            )
         cached = " — Cached Duplicate" if execution.cached else ""
         lines.extend(
             [

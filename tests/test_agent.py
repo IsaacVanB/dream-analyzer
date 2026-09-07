@@ -12,7 +12,7 @@ from dream_analysis.agent import (
 )
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
-from dream_analysis.tools import DreamSearchTool, DreamTagTool
+from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
 
 
 class SequencedOllamaClient:
@@ -62,6 +62,15 @@ class FakeTagRepository:
                 text="I became lucid in a classroom.",
             )
         ]
+
+    def get(self, dream_id):
+        self.calls.append(dream_id)
+        return Dream(
+            dream_id=dream_id,
+            date="1/9/2025",
+            tags=("school",),
+            text="I was taking an exam in an unfamiliar classroom.",
+        )
 
 
 def tool_response(name: str, arguments: dict) -> dict:
@@ -220,6 +229,41 @@ class DreamRagAgentTests(unittest.TestCase):
             response.turn_traces[-1].request_prompt,
         )
         self.assertIn("TAGS: school, lucid?", response.turn_traces[-1].request_prompt)
+
+    def test_agent_exposes_and_dispatches_exact_dream_id_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "get_dream_by_id",
+                    {"dream_id": "dream-2025-1-9-0"},
+                ),
+                final_response("Discarded draft answer."),
+                final_response("The dream centers on exam anxiety."),
+            ]
+        )
+        gateway = OllamaGateway(client=client)
+        index = FakeIndex()
+        repository = FakeTagRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=gateway,
+            search_tool=DreamSearchTool(index),
+            tag_tool=DreamTagTool(repository),
+            dream_by_id_tool=DreamByIdTool(repository),
+        )
+
+        response = agent.answer("Get dream-2025-1-9-0 and analyze it.")
+
+        self.assertEqual(repository.calls, ["dream-2025-1-9-0"])
+        self.assertEqual(index.calls, [])
+        self.assertEqual(
+            [schema["function"]["name"] for schema in client.chat_calls[0]["tools"]],
+            ["search_dreams", "get_dreams_by_tags", "get_dream_by_id"],
+        )
+        self.assertEqual(response.tool_executions[0].name, "get_dream_by_id")
+        self.assertIn(
+            "I was taking an exam in an unfamiliar classroom.",
+            response.turn_traces[-1].request_prompt,
+        )
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(
@@ -552,6 +596,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn("start_date and end_date", prompt)
         self.assertIn("SEARCH_COMPLETE", prompt)
         self.assertIn("get_dreams_by_tags", prompt)
+        self.assertIn("get_dream_by_id", prompt)
         self.assertIn("AND combination", prompt)
 
 

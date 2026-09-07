@@ -30,6 +30,10 @@ class TaggedDreamRepository(Protocol):
     ) -> list[Dream]: ...
 
 
+class DreamByIdRepository(Protocol):
+    def get(self, dream_id: str) -> Dream: ...
+
+
 class DreamSearchTool:
     """Expose bounded semantic dream retrieval as one read-only tool."""
 
@@ -279,6 +283,99 @@ class DreamTagTool:
             {
                 **common,
                 "dreams": [self._result(dream, truncate=False) for dream in matches],
+            },
+        )
+
+    def _result(self, dream: Dream, *, truncate: bool) -> dict[str, Any]:
+        text = dream.text
+        truncated = truncate and len(text) > self.max_chars_per_dream
+        if truncated:
+            text = text[: self.max_chars_per_dream] + "\n[TRUNCATED]"
+        return {
+            "dream_id": dream.dream_id,
+            "date": dream.date,
+            "tags": list(dream.tags),
+            "text": text,
+            "truncated": truncated,
+        }
+
+
+class DreamByIdTool:
+    """Expose exact retrieval of one dream by its stable ID."""
+
+    name = "get_dream_by_id"
+    max_id_chars = 200
+
+    def __init__(
+        self,
+        repository: DreamByIdRepository,
+        *,
+        max_chars_per_dream: int = 2500,
+    ) -> None:
+        if max_chars_per_dream < 1:
+            raise ValueError("max_chars_per_dream must be positive")
+        self.repository = repository
+        self.max_chars_per_dream = max_chars_per_dream
+
+    @property
+    def schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": (
+                    "Get one dream by its exact dream_id. Use this whenever the "
+                    "user supplies a specific ID, including when they ask to "
+                    "retrieve, summarize, or analyze that dream."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dream_id": {
+                            "type": "string",
+                            "description": (
+                                "Exact stable dream ID, such as dream-2025-1-9-0."
+                            ),
+                            "minLength": 1,
+                            "maxLength": self.max_id_chars,
+                        }
+                    },
+                    "required": ["dream_id"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        result, _ = self.execute_with_report_data(arguments)
+        return result
+
+    def execute_with_report_data(
+        self,
+        arguments: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        unexpected = sorted(set(arguments) - {"dream_id"})
+        if unexpected:
+            raise ValueError(f"unexpected arguments: {', '.join(unexpected)}")
+        dream_id = arguments.get("dream_id")
+        if not isinstance(dream_id, str) or not dream_id.strip():
+            raise ValueError("dream_id must be a non-empty string")
+        dream_id = dream_id.strip()
+        if len(dream_id) > self.max_id_chars:
+            raise ValueError(
+                f"dream_id cannot exceed {self.max_id_chars} characters"
+            )
+
+        dream = self.repository.get(dream_id)
+        common = {"requested_dream_id": dream_id, "result_count": 1}
+        return (
+            {
+                **common,
+                "dreams": [self._result(dream, truncate=True)],
+            },
+            {
+                **common,
+                "dreams": [self._result(dream, truncate=False)],
             },
         )
 
