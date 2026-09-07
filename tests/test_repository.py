@@ -95,6 +95,40 @@ class DreamRepositoryTests(unittest.TestCase):
         self.assertEqual(record["tags"], ["house"])
         self.assertEqual(record["word_count"], 2)
 
+    def test_tagged_requires_every_exact_tag_case_insensitively(self) -> None:
+        self.write_records(
+            [
+                {
+                    "dream_id": "school-only",
+                    "date": "1/1/2024",
+                    "tags": ["school"],
+                    "text": "School",
+                },
+                {
+                    "dream_id": "both",
+                    "date": "1/2/2024",
+                    "tags": ["School", "lucid?"],
+                    "text": "Both",
+                },
+                {
+                    "dream_id": "different-punctuation",
+                    "date": "1/3/2024",
+                    "tags": ["school", "lucid"],
+                    "text": "Not an exact match",
+                },
+            ]
+        )
+
+        repository = DreamRepository(self.path)
+        school_matches = repository.tagged(["SCHOOL"])
+        matches = repository.tagged(["SCHOOL", "lucid?"])
+
+        self.assertEqual(
+            [dream.dream_id for dream in school_matches],
+            ["school-only", "both", "different-punctuation"],
+        )
+        self.assertEqual([dream.dream_id for dream in matches], ["both"])
+
     def test_line_aware_loader_preserves_blank_line_offsets_and_duplicates(self) -> None:
         record = {"dream_id": "same", "date": "1/1/2024", "text": "Dream"}
         self.path.write_text(

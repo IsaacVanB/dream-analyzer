@@ -99,3 +99,27 @@ class DreamRepository:
                 continue
             selected.append(dream)
         return selected
+
+    def tagged(
+        self,
+        tags: list[str] | tuple[str, ...],
+        *,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> list[Dream]:
+        """Return dreams containing every requested tag.
+
+        Matching is case-insensitive but otherwise exact, so punctuation remains
+        significant (for example, ``lucid?`` is distinct from ``lucid``).
+        """
+        if not tags:
+            raise ValueError("tags must contain at least one tag")
+        if any(not isinstance(tag, str) or not tag.strip() for tag in tags):
+            raise ValueError("tags must contain non-empty strings")
+
+        requested = {tag.strip().casefold() for tag in tags}
+        return [
+            dream
+            for dream in self.between(start, end)
+            if requested.issubset({tag.casefold() for tag in dream.tags})
+        ]

@@ -22,7 +22,8 @@ from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
-from dream_analysis.tools import DreamSearchTool
+from dream_analysis.repository import DreamRepository
+from dream_analysis.tools import DreamSearchTool, DreamTagTool
 
 
 DEFAULT_SETTINGS = Settings()
@@ -35,6 +36,7 @@ def build_agent(
     embed_model: str,
     top_k: int,
     max_chars_per_dream: int,
+    dreams_path: str | Path = DEFAULT_SETTINGS.dreams_path,
 ) -> DreamRagAgent:
     gateway = OllamaGateway()
     index = DreamIndex(
@@ -50,6 +52,10 @@ def build_agent(
             result_limit=top_k,
             max_chars_per_dream=max_chars_per_dream,
         ),
+        tag_tool=DreamTagTool(
+            DreamRepository(dreams_path),
+            max_chars_per_dream=max_chars_per_dream,
+        ),
     )
 
 
@@ -60,6 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("question", help="Question to answer from the dream journal.")
+    parser.add_argument(
+        "--dreams-path",
+        type=Path,
+        default=DEFAULT_SETTINGS.dreams_path,
+        help="Path to parsed dream JSONL used for exact tag retrieval.",
+    )
     parser.add_argument(
         "--chroma-path",
         default=str(DEFAULT_SETTINGS.index.path),
@@ -144,10 +156,12 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
     for index, execution in enumerate(executions, start=1):
         result = execution.result
         cached = " [CACHED DUPLICATE]" if execution.cached else ""
-        print(
-            f"\nSearch {index}{cached}: "
-            f"{execution.arguments.get('query', '<missing>')}"
-        )
+        request = execution.arguments.get("query")
+        if request is None:
+            request = "tags=" + json.dumps(
+                execution.arguments.get("tags", []), ensure_ascii=False
+            )
+        print(f"\nSearch {index}{cached} ({execution.name}): {request}")
         if execution.arguments.get("start_date") or execution.arguments.get(
             "end_date"
         ):
@@ -161,10 +175,9 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
             continue
         dreams = result.get("dreams", [])
         for item in dreams:
-            print(
-                f"  - {item['dream_id']} | {item['date']} | "
-                f"distance={item['distance']:.4f}"
-            )
+            distance = item.get("distance")
+            suffix = "" if distance is None else f" | distance={distance:.4f}"
+            print(f"  - {item['dream_id']} | {item['date']}{suffix}")
 
 
 def print_pending_tool_calls(calls: tuple[ToolRequest, ...]) -> None:
@@ -261,13 +274,21 @@ def format_markdown_report(
         lines.extend(["No searches were recorded.", ""])
     retrieved_dreams: dict[str, dict[str, Any]] = {}
     for index, execution in enumerate(response.tool_executions, start=1):
-        query = execution.arguments.get("query", "<missing>")
+        query = execution.arguments.get("query")
+        request_label = "Query" if query is not None else "Tags (all required)"
+        request_value = (
+            query
+            if query is not None
+            else ", ".join(str(tag) for tag in execution.arguments.get("tags", []))
+        )
         cached = " — Cached Duplicate" if execution.cached else ""
         lines.extend(
             [
                 f"### Search {index}{cached}",
                 "",
-                f"Query: `{_inline_code(query)}`",
+                f"Tool: `{_inline_code(execution.name)}`",
+                "",
+                f"{request_label}: `{_inline_code(request_value)}`",
                 "",
             ]
         )
@@ -291,17 +312,21 @@ def format_markdown_report(
                 [f"Error: {error}", ""]
             )
             continue
-        lines.extend(
-            [
-                "| dream_id | date | distance |",
-                "|---|---|---:|",
-            ]
-        )
+        has_distance = any("distance" in dream for dream in result.get("dreams", []))
+        if has_distance:
+            lines.extend(
+                ["| dream_id | date | distance |", "|---|---|---:|"]
+            )
+        else:
+            lines.extend(["| dream_id | date | tags |", "|---|---|---|"])
         for dream in result.get("dreams", []):
+            if has_distance:
+                value = f"{float(dream['distance']):.4f}"
+            else:
+                value = ", ".join(str(tag) for tag in dream.get("tags", []))
             lines.append(
                 f"| {_markdown_cell(dream['dream_id'])} "
-                f"| {_markdown_cell(dream['date'])} "
-                f"| {float(dream['distance']):.4f} |"
+                f"| {_markdown_cell(dream['date'])} | {_markdown_cell(value)} |"
             )
         if not result.get("dreams"):
             lines.append("| *(no results)* |  |  |")
@@ -422,6 +447,7 @@ def report_settings(args: argparse.Namespace) -> dict[str, Any]:
         "Embedding model": args.embed_model,
         "Collection": args.collection_name,
         "Chroma path": args.chroma_path,
+        "Dreams path": args.dreams_path,
         "Results per search": args.top_k,
         "Maximum model characters per dream": args.max_chars_per_dream,
         "Maximum tool calls": args.max_tool_calls,
@@ -441,6 +467,7 @@ def main() -> None:
         embed_model=args.embed_model,
         top_k=args.top_k,
         max_chars_per_dream=args.max_chars_per_dream,
+        dreams_path=args.dreams_path,
     )
     try:
         response = agent.answer(

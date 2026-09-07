@@ -207,7 +207,11 @@ Requires an existing ChromaDB index and Ollama running locally at `http://localh
 ## `src/cli/dream_agent.py`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
-read-only `search_dreams` tool, inspect its bounded results, and then produce a
+of two read-only tools: semantic `search_dreams` or exact
+`get_dreams_by_tags`. The tag tool returns dreams containing every supplied tag
+(AND matching), so prompts such as `Get all dreams tagged school` and
+`Get all dreams tagged school and lucid?` use exact journal tags. The model
+inspects bounded results and then produces a
 grounded answer with dream IDs and dates.
 
 ```bash

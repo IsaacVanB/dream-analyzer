@@ -4,8 +4,8 @@ import json
 import unittest
 from datetime import date
 
-from dream_analysis.models import SearchResult
-from dream_analysis.tools import DreamSearchTool
+from dream_analysis.models import Dream, SearchResult
+from dream_analysis.tools import DreamSearchTool, DreamTagTool
 
 
 class FakeIndex:
@@ -117,6 +117,68 @@ class DreamSearchToolTests(unittest.TestCase):
             DreamSearchTool(FakeIndex([]), result_limit=21)
         with self.assertRaisesRegex(ValueError, "positive"):
             DreamSearchTool(FakeIndex([]), max_chars_per_dream=0)
+
+
+class FakeRepository:
+    def __init__(self, dreams: list[Dream]) -> None:
+        self.dreams = dreams
+        self.calls = []
+
+    def tagged(self, tags, *, start=None, end=None):
+        self.calls.append((tags, start, end))
+        return self.dreams
+
+
+class DreamTagToolTests(unittest.TestCase):
+    def test_schema_defines_an_exact_and_tag_lookup(self) -> None:
+        tool = DreamTagTool(FakeRepository([]))
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(tool.schema["function"]["name"], "get_dreams_by_tags")
+        self.assertEqual(parameters["required"], ["tags"])
+        self.assertEqual(parameters["properties"]["tags"]["minItems"], 1)
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_returns_all_matches_with_bounded_model_text(self) -> None:
+        dreams = [
+            Dream(
+                dream_id="one",
+                date="1/1/2024",
+                tags=("school", "lucid?"),
+                text="abcdefgh",
+            ),
+            Dream(
+                dream_id="two",
+                date="1/2/2024",
+                tags=("school", "lucid?", "late"),
+                text="ijklmnop",
+            ),
+        ]
+        repository = FakeRepository(dreams)
+        tool = DreamTagTool(repository, max_chars_per_dream=4)
+
+        bounded, report = tool.execute_with_report_data(
+            {"tags": ["school", "lucid?"]}
+        )
+
+        self.assertEqual(repository.calls, [(["school", "lucid?"], None, None)])
+        self.assertEqual(bounded["result_count"], 2)
+        self.assertEqual(bounded["match"], "all")
+        self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
+        self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
+        json.dumps(bounded)
+
+    def test_execute_validates_tags_and_dates(self) -> None:
+        tool = DreamTagTool(FakeRepository([]))
+
+        with self.assertRaisesRegex(ValueError, "non-empty array"):
+            tool.execute({"tags": []})
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            tool.execute({"tags": ["school", "SCHOOL"]})
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"tags": ["school"], "match": "any"})
+        with self.assertRaisesRegex(ValueError, "Invalid start_date"):
+            tool.execute({"tags": ["school"], "start_date": "yesterday"})
 
 
 if __name__ == "__main__":

@@ -10,9 +10,9 @@ from dream_analysis.agent import (
     DreamRagAgent,
     ToolExecution,
 )
-from dream_analysis.models import SearchResult
+from dream_analysis.models import Dream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
-from dream_analysis.tools import DreamSearchTool
+from dream_analysis.tools import DreamSearchTool, DreamTagTool
 
 
 class SequencedOllamaClient:
@@ -44,6 +44,22 @@ class FakeIndex:
                 document="A hidden room appeared behind the pantry.",
                 metadata={"date": "1/2/2024"},
                 distance=0.125,
+            )
+        ]
+
+
+class FakeTagRepository:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def tagged(self, tags, *, start=None, end=None):
+        self.calls.append((tags, start, end))
+        return [
+            Dream(
+                dream_id="tagged-1",
+                date="2/3/2024",
+                tags=("school", "lucid?"),
+                text="I became lucid in a classroom.",
             )
         ]
 
@@ -169,6 +185,41 @@ class DreamRagAgentTests(unittest.TestCase):
         tool_result = json.loads(client.chat_calls[1]["messages"][-1]["content"])
         self.assertEqual(tool_result["start_date"], "2026-07-01")
         self.assertEqual(tool_result["end_date"], "2026-07-31")
+
+    def test_agent_exposes_and_dispatches_exact_tag_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "get_dreams_by_tags",
+                    {"tags": ["school", "lucid?"]},
+                ),
+                final_response("Discarded draft answer."),
+                final_response("One dream has both tags."),
+            ]
+        )
+        gateway = OllamaGateway(client=client)
+        index = FakeIndex()
+        repository = FakeTagRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=gateway,
+            search_tool=DreamSearchTool(index),
+            tag_tool=DreamTagTool(repository),
+        )
+
+        response = agent.answer("Get all dreams tagged school and lucid?")
+
+        self.assertEqual(repository.calls, [(["school", "lucid?"], None, None)])
+        self.assertEqual(index.calls, [])
+        self.assertEqual(
+            [schema["function"]["name"] for schema in client.chat_calls[0]["tools"]],
+            ["search_dreams", "get_dreams_by_tags"],
+        )
+        self.assertEqual(response.tool_executions[0].name, "get_dreams_by_tags")
+        self.assertIn(
+            "All exact tag matches",
+            response.turn_traces[-1].request_prompt,
+        )
+        self.assertIn("TAGS: school, lucid?", response.turn_traces[-1].request_prompt)
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(
@@ -500,6 +551,8 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn("previous calendar month", prompt)
         self.assertIn("start_date and end_date", prompt)
         self.assertIn("SEARCH_COMPLETE", prompt)
+        self.assertIn("get_dreams_by_tags", prompt)
+        self.assertIn("AND combination", prompt)
 
 
 if __name__ == "__main__":

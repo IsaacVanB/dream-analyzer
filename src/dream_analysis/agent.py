@@ -9,7 +9,7 @@ from datetime import date
 from typing import Any, Mapping
 
 from dream_analysis.ollama_client import OllamaGateway, OllamaToolCall
-from dream_analysis.tools import DreamSearchTool
+from dream_analysis.tools import DreamSearchTool, DreamTagTool
 
 
 class AgentSearchRequiredError(RuntimeError):
@@ -112,9 +112,11 @@ class DreamRagAgent:
         *,
         ollama_gateway: OllamaGateway,
         search_tool: DreamSearchTool,
+        tag_tool: DreamTagTool | None = None,
     ) -> None:
         self.ollama = ollama_gateway
         self.search_tool = search_tool
+        self.tag_tool = tag_tool
 
     def answer(
         self,
@@ -170,7 +172,7 @@ class DreamRagAgent:
             response = self.ollama.chat(
                 request_messages,
                 model=chat_model,
-                tools=None if forced_synthesis else [self.search_tool.schema],
+                tools=None if forced_synthesis else self._tool_schemas(),
                 think=False,
                 options={
                     "temperature": temperature,
@@ -223,14 +225,15 @@ class DreamRagAgent:
                 if not executions:
                     if search_reminder_sent:
                         raise AgentSearchRequiredError(
-                            "Ollama answered twice without calling search_dreams"
+                            "Ollama answered twice without calling a retrieval tool"
                         )
                     messages.append(
                         {
                             "role": "user",
                             "content": (
-                                "Call search_dreams before answering. Do not answer "
-                                "from general knowledge."
+                                "Call search_dreams for semantic requests or "
+                                "get_dreams_by_tags for exact tag requests before "
+                                "answering."
                             ),
                         }
                     )
@@ -318,14 +321,18 @@ class DreamRagAgent:
         self,
         call: OllamaToolCall,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if call.name != self.search_tool.name:
+        tools = {self.search_tool.name: self.search_tool}
+        if self.tag_tool is not None:
+            tools[self.tag_tool.name] = self.tag_tool
+        tool = tools.get(call.name)
+        if tool is None:
             result = {
                 "ok": False,
                 "error": f"Unknown tool: {call.name}",
             }
             return result, result
         try:
-            result, report_result = self.search_tool.execute_with_report_data(
+            result, report_result = tool.execute_with_report_data(
                 dict(call.arguments)
             )
         except Exception as exc:
@@ -338,6 +345,12 @@ class DreamRagAgent:
             {"ok": True, **result},
             {"ok": True, **report_result},
         )
+
+    def _tool_schemas(self) -> list[dict[str, Any]]:
+        schemas = [self.search_tool.schema]
+        if self.tag_tool is not None:
+            schemas.append(self.tag_tool.schema)
+        return schemas
 
     @staticmethod
     def _tool_cache_key(call: OllamaToolCall) -> str:
@@ -480,6 +493,29 @@ class DreamRagAgent:
             *search_lines,
             *errors,
         ]
+        tag_catalog: list[str] = []
+        cataloged: set[str] = set()
+        for execution in executions:
+            if execution.name != DreamTagTool.name or not execution.result.get("ok"):
+                continue
+            full_result = execution.report_result or execution.result
+            for dream in full_result.get("dreams", []) or []:
+                dream_id = str(dream.get("dream_id", "unknown"))
+                if dream_id in cataloged:
+                    continue
+                cataloged.add(dream_id)
+                tags = ", ".join(str(tag) for tag in dream.get("tags", []))
+                tag_catalog.append(
+                    f"DREAM_ID: {dream_id} | DATE: {dream.get('date', 'unknown')} "
+                    f"| TAGS: {tags}"
+                )
+        if tag_catalog:
+            prefix_lines.extend(
+                [
+                    "All exact tag matches (include every item when answering):",
+                    *tag_catalog,
+                ]
+            )
         prefix = "\n".join(prefix_lines)
         if not ranked_dreams:
             return f"{prefix}\nNo dream records were returned by completed searches."
@@ -580,8 +616,11 @@ class DreamRagAgent:
         today = date.today().isoformat()
         return (
             "You plan retrieval for questions about a private dream journal. You "
-            "must call search_dreams before finishing. Choose a concise semantic retrieval "
-            "query focused on dream content rather than analysis instructions. "
+            "must call a retrieval tool before finishing. Use get_dreams_by_tags "
+            "when the user explicitly asks for dreams with a tag or an AND "
+            "combination of tags; pass every requested tag in one tags array. Use "
+            "search_dreams for semantic topics and choose a concise query focused "
+            "on dream content rather than analysis instructions. "
             f"Today's date is {today}. When the question restricts dates, pass "
             "inclusive start_date and end_date values to every relevant search "
             "using YYYY-MM-DD. Interpret 'last month' as the previous calendar "
