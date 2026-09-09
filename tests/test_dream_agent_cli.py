@@ -147,6 +147,17 @@ class DreamAgentCliTests(unittest.TestCase):
 
         self.assertEqual(args.structured_dreams_path, Path("data/features.jsonl"))
 
+    def test_parser_accepts_a_character_dictionary_path(self) -> None:
+        args = dream_agent.build_parser().parse_args(
+            [
+                "Who is Maya?",
+                "--characters-path",
+                "data/people.json",
+            ]
+        )
+
+        self.assertEqual(args.characters_path, Path("data/people.json"))
+
     def test_parser_accepts_debug_tracing(self) -> None:
         args = dream_agent.build_parser().parse_args(["What happened?", "--debug"])
 

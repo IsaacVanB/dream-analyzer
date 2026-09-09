@@ -1,0 +1,148 @@
+[
+  {
+    "id": "maya",
+    "name": "Maya",
+    "aliases": [],
+    "relationship": "close friend",
+    "context": "A recurring friend who often accompanies the dreamer through strange situations. Maya is usually calm, curious, and willing to investigate impossible rooms, confusing schools, unusual transit systems, and other recurring dream environments.",
+    "mentions": {
+      "count": 13,
+      "first_date": "2022-02-18",
+      "last_date": "2026-08-16",
+      "dream_ids": [
+        "dream-2022-2-18-2",
+        "dream-2022-5-15-2",
+        "dream-2022-11-4-0",
+        "dream-2023-6-1-2",
+        "dream-2023-9-12-0",
+        "dream-2024-2-14-0",
+        "dream-2024-7-21-0",
+        "dream-2024-11-17-0",
+        "dream-2025-1-26-0",
+        "dream-2025-5-18-0",
+        "dream-2025-9-28-0",
+        "dream-2026-1-11-0",
+        "dream-2026-8-16-0"
+      ]
+    }
+  },
+  {
+    "id": "theo",
+    "name": "Theo",
+    "aliases": [],
+    "relationship": "friend",
+    "context": "A recurring friend who often approaches surreal situations with humor or practical problem-solving. Theo frequently appears in dreams involving technology, travel, navigation, or attempts to investigate how an impossible system works.",
+    "mentions": {
+      "count": 9,
+      "first_date": "2022-08-26",
+      "last_date": "2026-08-16",
+      "dream_ids": [
+        "dream-2022-8-26-0",
+        "dream-2023-1-17-0",
+        "dream-2023-9-12-0",
+        "dream-2024-5-9-0",
+        "dream-2025-3-30-2",
+        "dream-2025-9-28-0",
+        "dream-2025-11-22-2",
+        "dream-2026-3-8-2",
+        "dream-2026-8-16-0"
+      ]
+    }
+  },
+  {
+    "id": "lena",
+    "name": "Lena",
+    "aliases": [],
+    "relationship": "friend",
+    "context": "A recurring friend who tends to appear in exploratory or unsettling dreams involving houses, water, technology, family settings, and school. Lena is often more cautious than the dreamer and sometimes questions whether they should continue investigating.",
+    "mentions": {
+      "count": 6,
+      "first_date": "2023-04-02",
+      "last_date": "2026-08-16",
+      "dream_ids": [
+        "dream-2023-4-2-0",
+        "dream-2023-12-3-2",
+        "dream-2024-11-17-0",
+        "dream-2025-7-4-2",
+        "dream-2026-4-19-0",
+        "dream-2026-8-16-0"
+      ]
+    }
+  },
+  {
+    "id": "marcus",
+    "name": "Marcus",
+    "aliases": [],
+    "relationship": "friend",
+    "context": "An occasional friend who appears primarily in dreams involving getting lost or navigating confusing spaces. He tends to look for practical routes or solutions even when the environment does not follow normal spatial rules.",
+    "mentions": {
+      "count": 2,
+      "first_date": "2024-10-05",
+      "last_date": "2025-09-28",
+      "dream_ids": [
+        "dream-2024-10-5-0",
+        "dream-2025-9-28-0"
+      ]
+    }
+  },
+  {
+    "id": "priya",
+    "name": "Priya",
+    "aliases": [],
+    "relationship": "coworker",
+    "context": "A coworker who appears in a laboratory dream where sounds are stored and cataloged in glass jars. She understands the strange workplace rules and warns the dreamer about potentially dangerous samples.",
+    "mentions": {
+      "count": 1,
+      "first_date": "2025-01-26",
+      "last_date": "2025-01-26",
+      "dream_ids": [
+        "dream-2025-1-26-0"
+      ]
+    }
+  },
+  {
+    "id": "evan",
+    "name": "Evan",
+    "aliases": [],
+    "relationship": "family acquaintance",
+    "context": "A mysterious person who appears at a family reunion and seems to have been inserted into the dreamer's family history. He knows relatives and family stories despite nobody being able to explain exactly how he is related.",
+    "mentions": {
+      "count": 1,
+      "first_date": "2026-06-27",
+      "last_date": "2026-06-27",
+      "dream_ids": [
+        "dream-2026-6-27-0"
+      ]
+    }
+  },
+  {
+    "id": "arthur",
+    "name": "Arthur",
+    "aliases": [],
+    "relationship": "zoo gorilla",
+    "context": "A gorilla encountered at a zoo who reads maps and repair manuals and appears unusually intelligent. Arthur seems capable of understanding diagrams and using them to navigate hidden maintenance areas.",
+    "mentions": {
+      "count": 1,
+      "first_date": "2023-06-01",
+      "last_date": "2023-06-01",
+      "dream_ids": [
+        "dream-2023-6-1-2"
+      ]
+    }
+  },
+  {
+    "id": "pepper",
+    "name": "Pepper",
+    "aliases": [],
+    "relationship": "dog",
+    "context": "A dog who accompanies the dreamer and Theo through a looping neighborhood. Pepper seems to know the environment better than the humans and eventually leads them through an impossible route back to the dreamer's kitchen.",
+    "mentions": {
+      "count": 1,
+      "first_date": "2022-08-26",
+      "last_date": "2022-08-26",
+      "dream_ids": [
+        "dream-2022-8-26-0"
+      ]
+    }
+  }
+]

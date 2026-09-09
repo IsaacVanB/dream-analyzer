@@ -29,6 +29,7 @@ from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.parser import JournalParser
 from dream_analysis.rag import DirectRagService
 from dream_analysis.repository import (
+    CharacterDictionaryRepository,
     DreamNotFoundError,
     DreamRepository,
     StructuredDreamRepository,
@@ -40,6 +41,7 @@ from dream_analysis.trends import TagTrendService
 from dream_analysis.tools import (
     AgentTool,
     AnalyticalToolResult,
+    CharacterContextTool,
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
@@ -60,7 +62,9 @@ __all__ = [
     "DreamDateRangeTool",
     "AgentTool",
     "AnalyticalToolResult",
+    "CharacterContextTool",
     "CharacterMentionsTool",
+    "CharacterDictionaryRepository",
     "DreamIndex",
     "DreamNotFoundError",
     "DreamRepository",

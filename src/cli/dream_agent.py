@@ -22,8 +22,13 @@ from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
-from dream_analysis.repository import DreamRepository, StructuredDreamRepository
+from dream_analysis.repository import (
+    CharacterDictionaryRepository,
+    DreamRepository,
+    StructuredDreamRepository,
+)
 from dream_analysis.tools import (
+    CharacterContextTool,
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
@@ -38,6 +43,7 @@ DEFAULT_SETTINGS = Settings()
 STRUCTURED_DREAMS_PATH = (
     DEFAULT_SETTINGS.output_path / "structured_dreams/dream_features.jsonl"
 )
+CHARACTERS_PATH = Path("data/characters.json")
 
 
 def build_agent(
@@ -49,10 +55,12 @@ def build_agent(
     max_chars_per_dream: int,
     dreams_path: str | Path = DEFAULT_SETTINGS.dreams_path,
     structured_dreams_path: str | Path = STRUCTURED_DREAMS_PATH,
+    characters_path: str | Path = CHARACTERS_PATH,
 ) -> DreamRagAgent:
     gateway = OllamaGateway()
     repository = DreamRepository(dreams_path)
     structured_repository = StructuredDreamRepository(structured_dreams_path)
+    character_repository = CharacterDictionaryRepository(characters_path)
     index = DreamIndex(
         path=chroma_path,
         collection_name=collection_name,
@@ -73,6 +81,7 @@ def build_agent(
             ),
             DreamStatisticsTool(repository),
             TagTrendTool(repository),
+            CharacterContextTool(character_repository),
             CharacterMentionsTool(repository, structured_repository),
             DreamTagTool(
                 repository,
@@ -104,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=STRUCTURED_DREAMS_PATH,
         help="Path to structured dream JSONL used for character mentions.",
+    )
+    parser.add_argument(
+        "--characters-path",
+        type=Path,
+        default=CHARACTERS_PATH,
+        help="Path to the manually curated character context JSON.",
     )
     parser.add_argument(
         "--chroma-path",
@@ -548,6 +563,7 @@ def report_settings(args: argparse.Namespace) -> dict[str, Any]:
         "Chroma path": args.chroma_path,
         "Dreams path": args.dreams_path,
         "Structured dreams path": args.structured_dreams_path,
+        "Characters path": args.characters_path,
         "Results per search": args.top_k,
         "Maximum model characters per dream": args.max_chars_per_dream,
         "Maximum tool calls": args.max_tool_calls,
@@ -569,6 +585,7 @@ def main() -> None:
         max_chars_per_dream=args.max_chars_per_dream,
         dreams_path=args.dreams_path,
         structured_dreams_path=args.structured_dreams_path,
+        characters_path=args.characters_path,
     )
     try:
         response = agent.answer(

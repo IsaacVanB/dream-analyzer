@@ -235,9 +235,10 @@ Requires an existing ChromaDB index and Ollama running locally at `http://localh
 ## `src/cli/dream_agent.py`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
-of seven read-only tools: semantic `search_dreams`, exhaustive
+of eight read-only tools: semantic `search_dreams`, exhaustive
 `get_dreams_by_date_range`, deterministic `get_dream_statistics`, deterministic
-`analyze_tag_trends`, structured `get_character_mentions`, exact
+`analyze_tag_trends`, dictionary-backed `get_character_context`, structured
+`get_character_mentions`, exact
 `get_dream_by_id`, or exact
 `get_dreams_by_tags`. The date-range tool is intended for questions about all
 dreams or common patterns within a period and requires inclusive `start_date`
@@ -260,6 +261,7 @@ python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
 python3 src/cli/dream_agent.py "What words occurred most often last year?"
 python3 src/cli/dream_agent.py "Did school-tagged dreams become more common during 2025?"
 python3 src/cli/dream_agent.py "Who appears most often in my structured dreams?"
+python3 src/cli/dream_agent.py "Who is Maya?"
 python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \
@@ -289,6 +291,8 @@ Arguments:
 - `--structured-dreams-path`: structured feature JSONL used by
   `get_character_mentions`. Defaults to
   `outputs/structured_dreams/dream_features.jsonl`.
+- `--characters-path`: manually curated character dictionary used by
+  `get_character_context`. Defaults to `data/characters.json`.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation. `--num-ctx` defaults to `8192` so ten average-length dreams fit comfortably.
 
 The `search_dreams` tool supports optional inclusive `start_date` and `end_date`
@@ -305,6 +309,15 @@ records; unstructured dreams cannot contribute mentions. Date filters use the
 current parsed-journal dates, and structured records for IDs no longer present
 in that journal are excluded. Model evidence caps long dream-ID lists, while an
 `--output` Markdown report preserves the complete lists.
+
+`get_character_context` looks up canonical names and aliases
+case-insensitively in the character dictionary. It returns manually curated
+relationship and background context, plus a compact mention summary when one is
+present. If the dictionary uses `relationship_history`, the tool can use a
+dream's date to select entries whose inclusive date bounds apply. Ambiguous
+aliases, missing names, and missing date-specific history are reported rather
+than guessed. The dictionary may be either a top-level array or the envelope
+written by `build_character_lookup.py`.
 
 Exact duplicate calls reuse their cached result without another Chroma query,
 although each model request still consumes one slot in `--max-tool-calls`. Every

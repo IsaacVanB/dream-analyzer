@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dream_analysis.models import DreamValidationError
 from dream_analysis.repository import (
+    CharacterDictionaryRepository,
     DreamNotFoundError,
     DreamRepository,
     StructuredDreamRepository,
@@ -182,6 +183,50 @@ class StructuredDreamRepositoryTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(DreamValidationError, "Duplicate"):
                 StructuredDreamRepository(path).all()
+
+
+class CharacterDictionaryRepositoryTests(unittest.TestCase):
+    def test_loads_array_and_generated_envelope_formats(self) -> None:
+        character = {
+            "id": "maya",
+            "name": "Maya",
+            "aliases": ["May"],
+            "relationship": "friend",
+            "context": "A close friend.",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "characters.json"
+            for document in ([character], {"characters": [character]}):
+                path.write_text(json.dumps(document), encoding="utf-8")
+                records = CharacterDictionaryRepository(path).all()
+                self.assertEqual(records[0]["name"], "Maya")
+
+    def test_validates_ids_aliases_and_temporal_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "characters.json"
+            duplicate = {"id": "same", "name": "Maya", "aliases": []}
+            path.write_text(
+                json.dumps([duplicate, duplicate]), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(DreamValidationError, "Duplicate"):
+                CharacterDictionaryRepository(path).all()
+
+            invalid_history = {
+                "id": "maya",
+                "name": "Maya",
+                "aliases": [],
+                "relationship_history": [
+                    {
+                        "start_date": "2025-02-01",
+                        "end_date": "2025-01-01",
+                        "relationship": "friend",
+                        "context": "",
+                    }
+                ],
+            }
+            path.write_text(json.dumps([invalid_history]), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "start_date"):
+                CharacterDictionaryRepository(path).all()
 
 
 if __name__ == "__main__":

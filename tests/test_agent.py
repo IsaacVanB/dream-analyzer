@@ -13,6 +13,7 @@ from dream_analysis.agent import (
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.tools import (
+    CharacterContextTool,
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
@@ -116,6 +117,23 @@ class FakeStructuredRepository:
                 "dream_id": "dated-1",
                 "date_sort": "2025-07-04",
                 "named_characters": ["Maya"],
+            }
+        ]
+
+
+class FakeCharacterRepository:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def all(self):
+        self.calls += 1
+        return [
+            {
+                "id": "maya",
+                "name": "Maya",
+                "aliases": [],
+                "relationship": "close friend",
+                "context": "A calm and curious friend.",
             }
         ]
 
@@ -595,6 +613,31 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn('"evidence_type": "character_mentions"', prompt)
         self.assertIn('"coverage_percentage": 100.0', prompt)
         self.assertIn('"name": "Maya"', prompt)
+
+    def test_agent_dispatches_character_context_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response("get_character_context", {"names": ["maya"]}),
+                final_response("Discarded draft answer."),
+                final_response("Maya is a close friend."),
+            ]
+        )
+        repository = FakeCharacterRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[CharacterContextTool(repository)],
+        )
+
+        response = agent.answer("Who is Maya?")
+
+        self.assertEqual(repository.calls, 1)
+        self.assertEqual(
+            response.tool_executions[0].name, "get_character_context"
+        )
+        prompt = response.turn_traces[-1].request_prompt
+        self.assertIn('"evidence_type": "character_context"', prompt)
+        self.assertIn('"relationship": "close friend"', prompt)
+        self.assertIn('"context": "A calm and curious friend."', prompt)
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(

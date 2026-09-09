@@ -6,6 +6,7 @@ from datetime import date
 
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.tools import (
+    CharacterContextTool,
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
@@ -150,6 +151,16 @@ class FakeRepository:
 
 
 class FakeStructuredRepository:
+    def __init__(self, records):
+        self.records = records
+        self.calls = 0
+
+    def all(self):
+        self.calls += 1
+        return self.records
+
+
+class FakeCharacterRepository:
     def __init__(self, records):
         self.records = records
         self.calls = 0
@@ -474,6 +485,118 @@ class TagTrendToolTests(unittest.TestCase):
             tool.execute({"frequency": "W"})
         with self.assertRaisesRegex(ValueError, "unexpected arguments"):
             tool.execute({"plot_path": "/tmp/trend.png"})
+
+
+class CharacterContextToolTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.records = [
+            {
+                "id": "maya",
+                "name": "Maya",
+                "aliases": ["May"],
+                "relationship": "close friend",
+                "context": "A calm and curious investigator.",
+                "mentions": {
+                    "count": 3,
+                    "first_date": "2024-01-01",
+                    "last_date": "2025-01-01",
+                    "dream_ids": ["one", "two", "three"],
+                },
+            }
+        ]
+
+    def test_schema_requires_bounded_names_and_optional_dream_date(self) -> None:
+        tool = CharacterContextTool(FakeCharacterRepository([]))
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(tool.name, "get_character_context")
+        self.assertEqual(parameters["required"], ["names"])
+        self.assertEqual(parameters["properties"]["names"]["maxItems"], 20)
+        self.assertEqual(parameters["properties"]["dream_date"]["format"], "date")
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_matches_aliases_and_preserves_full_report_context(self) -> None:
+        repository = FakeCharacterRepository(self.records)
+        tool = CharacterContextTool(repository, max_context_chars=10)
+
+        bounded, report = tool.execute_with_report_data(
+            {"names": ["may", "Theo"]}
+        )
+
+        self.assertEqual(repository.calls, 1)
+        self.assertEqual(bounded["evidence_type"], "character_context")
+        self.assertEqual(bounded["analysis"]["matched_name_count"], 1)
+        self.assertEqual(bounded["analysis"]["missing_names"], ["Theo"])
+        character = bounded["analysis"]["characters"][0]
+        self.assertEqual(character["name"], "Maya")
+        self.assertEqual(character["matched_by"], "alias")
+        self.assertEqual(character["matched_value"], "May")
+        self.assertEqual(character["context"], "A calm and\n[TRUNCATED]")
+        self.assertNotIn("dream_ids", character["mentions"])
+        self.assertEqual(
+            report["analysis"]["characters"][0]["context"],
+            "A calm and curious investigator.",
+        )
+        self.assertTrue(any("Theo" in warning for warning in bounded["warnings"]))
+        self.assertTrue(
+            any("truncated" in warning for warning in bounded["warnings"])
+        )
+        json.dumps(bounded)
+        json.dumps(report)
+
+    def test_selects_date_bounded_history_and_reports_ambiguity(self) -> None:
+        records = [
+            {
+                "id": "alex-one",
+                "name": "Alexandra",
+                "aliases": ["Alex"],
+                "relationship_history": [
+                    {
+                        "start_date": None,
+                        "end_date": "2024-12-31",
+                        "relationship": "coworker",
+                        "context": "Worked together.",
+                    },
+                    {
+                        "start_date": "2025-01-01",
+                        "end_date": None,
+                        "relationship": "friend",
+                        "context": "Stayed friends.",
+                    },
+                ],
+            },
+            {
+                "id": "alex-two",
+                "name": "Alexander",
+                "aliases": ["Alex"],
+                "relationship": "cousin",
+                "context": "A different Alex.",
+            },
+        ]
+        tool = CharacterContextTool(FakeCharacterRepository(records))
+
+        result = tool.execute({"names": ["ALEX"], "dream_date": "2025-03-01"})
+
+        self.assertEqual(len(result["analysis"]["characters"]), 2)
+        self.assertEqual(result["analysis"]["ambiguous_names"], ["ALEX"])
+        alexandra = result["analysis"]["characters"][0]
+        self.assertEqual(len(alexandra["relationship_history"]), 1)
+        self.assertEqual(
+            alexandra["relationship_history"][0]["relationship"], "friend"
+        )
+        self.assertTrue(any("ambiguous" in warning for warning in result["warnings"]))
+
+    def test_validates_arguments(self) -> None:
+        tool = CharacterContextTool(FakeCharacterRepository(self.records))
+
+        with self.assertRaisesRegex(ValueError, "non-empty array"):
+            tool.execute({"names": []})
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            tool.execute({"names": ["Maya", "maya"]})
+        with self.assertRaisesRegex(ValueError, "Invalid dream_date"):
+            tool.execute({"names": ["Maya"], "dream_date": "last year"})
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"names": ["Maya"], "path": "/tmp/characters.json"})
 
 
 class CharacterMentionsToolTests(unittest.TestCase):
