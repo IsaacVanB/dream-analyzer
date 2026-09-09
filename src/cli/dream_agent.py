@@ -181,9 +181,14 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
                 f"{execution.arguments.get('end_date')}"
             )
         elif request is None:
-            request = "tags=" + json.dumps(
-                execution.arguments.get("tags", []), ensure_ascii=False
-            )
+            if "tags" in execution.arguments:
+                request = "tags=" + json.dumps(
+                    execution.arguments["tags"], ensure_ascii=False
+                )
+            else:
+                request = "parameters=" + json.dumps(
+                    dict(execution.arguments), ensure_ascii=False, sort_keys=True
+                )
         print(f"\nSearch {index}{cached} ({execution.name}): {request}")
         if execution.arguments.get("start_date") or execution.arguments.get(
             "end_date"
@@ -196,6 +201,13 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
         if not result.get("ok"):
             print(f"  ERROR: {result.get('error', 'unknown tool error')}")
             continue
+        if "analysis" in result:
+            print(
+                "  Analytical result: "
+                f"{result.get('evidence_type', 'unspecified')}"
+            )
+            for warning in result.get("warnings", []):
+                print(f"  Warning: {warning}")
         dreams = result.get("dreams", [])
         for item in dreams:
             distance = item.get("distance")
@@ -307,10 +319,18 @@ def format_markdown_report(
         elif execution.name == "get_dreams_by_date_range":
             request_label = "Selection"
             request_value = "All dreams in date range"
-        else:
+        elif "tags" in execution.arguments:
             request_label = "Tags (all required)"
             request_value = ", ".join(
                 str(tag) for tag in execution.arguments.get("tags", [])
+            )
+        else:
+            request_label = "Parameters"
+            request_value = json.dumps(
+                dict(execution.arguments),
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
             )
         cached = " — Cached Duplicate" if execution.cached else ""
         lines.extend(
@@ -343,6 +363,37 @@ def format_markdown_report(
                 [f"Error: {error}", ""]
             )
             continue
+        if "analysis" in result:
+            evidence_type = result.get("evidence_type", "unspecified")
+            lines.extend(
+                [
+                    f"Analytical result type: `{_inline_code(evidence_type)}`",
+                    "",
+                ]
+            )
+            warnings = result.get("warnings", [])
+            if warnings:
+                lines.extend(["Warnings:", ""])
+                lines.extend(
+                    f"- {_markdown_text(warning)}" for warning in warnings
+                )
+                lines.append("")
+            lines.extend(
+                [
+                    "````json",
+                    json.dumps(
+                        result.get("analysis", {}),
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                        default=str,
+                    ),
+                    "````",
+                    "",
+                ]
+            )
+            if "dreams" not in result:
+                continue
         has_distance = any("distance" in dream for dream in result.get("dreams", []))
         if has_distance:
             lines.extend(

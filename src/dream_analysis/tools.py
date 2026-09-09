@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict
 
 from dream_analysis.dates import parse_date_bound, validate_date_range
 from dream_analysis.models import Dream, SearchResult
+
+
+class AnalyticalToolResult(TypedDict):
+    """Standard result shape for deterministic aggregate-analysis tools."""
+
+    evidence_type: str
+    parameters: dict[str, Any]
+    analysis: dict[str, Any]
+    warnings: list[str]
 
 
 class SearchableDreamIndex(Protocol):

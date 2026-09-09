@@ -124,6 +124,40 @@ class CustomRetrievalTool:
         return result, result
 
 
+class CustomAnalyticalTool:
+    name = "custom_statistics"
+
+    def __init__(self, *, valid: bool = True) -> None:
+        self.valid = valid
+
+    @property
+    def schema(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": "Return deterministic aggregate statistics.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"frequency": {"type": "string"}},
+                    "required": ["frequency"],
+                },
+            },
+        }
+
+    def execute_with_report_data(self, arguments):
+        result = {
+            "evidence_type": "dream_statistics",
+            "parameters": dict(arguments),
+            "analysis": {"dream_count": 12, "average_word_count": 48.5},
+            "warnings": ["One unknown-date dream was excluded."],
+        }
+        if not self.valid:
+            result["warnings"] = "invalid"
+        report = {**result, "analysis": {**result["analysis"], "full": True}}
+        return result, report
+
+
 def tool_response(name: str, arguments: dict) -> dict:
     return {
         "message": {
@@ -177,6 +211,66 @@ class DreamRagAgentTests(unittest.TestCase):
             "custom_retrieval",
         )
         self.assertIn("DREAM_ID: custom-1", response.turn_traces[-1].request_prompt)
+
+    def test_analytical_result_is_preserved_for_forced_synthesis(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response("custom_statistics", {"frequency": "M"}),
+                final_response("Discarded draft answer."),
+                final_response("There were 12 dreams."),
+            ]
+        )
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[CustomAnalyticalTool()],
+        )
+
+        response = agent.answer("How many dreams were recorded?")
+
+        prompt = response.turn_traces[-1].request_prompt
+        self.assertIn("ANALYTICAL RESULT 1", prompt)
+        self.assertIn('"dream_count": 12', prompt)
+        self.assertIn("One unknown-date dream was excluded.", prompt)
+        self.assertIn("Answer from the analytical results", prompt)
+        self.assertNotIn("Return a compact table with dream_id", prompt)
+
+    def test_invalid_analytical_shape_becomes_a_tool_error(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response("custom_statistics", {"frequency": "M"}),
+                final_response("Discarded draft answer."),
+                final_response("The result was invalid."),
+            ]
+        )
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[CustomAnalyticalTool(valid=False)],
+        )
+
+        response = agent.answer("How many dreams were recorded?")
+
+        self.assertFalse(response.tool_executions[0].result["ok"])
+        self.assertIn("warnings", response.tool_executions[0].result["error"])
+
+    def test_analytical_evidence_respects_the_character_budget(self) -> None:
+        execution = ToolExecution(
+            name="custom_statistics",
+            arguments={"frequency": "M"},
+            result={
+                "ok": True,
+                "evidence_type": "dream_statistics",
+                "parameters": {"frequency": "M"},
+                "analysis": {"periods": ["x" * 1000] * 10},
+                "warnings": [],
+            },
+        )
+
+        evidence = DreamRagAgent._format_synthesis_evidence(
+            [execution], max_chars=800
+        )
+
+        self.assertLessEqual(len(evidence), 800)
+        self.assertIn("ANALYTICAL EVIDENCE TRUNCATED", evidence)
 
     def test_agent_registry_rejects_empty_and_duplicate_tool_names(self) -> None:
         gateway = OllamaGateway(client=SequencedOllamaClient([]))

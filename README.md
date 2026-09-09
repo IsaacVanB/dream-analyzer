@@ -254,6 +254,12 @@ minimum. Its context budget is derived from `--num-ctx`, now `8192` by default.
 Calls beyond the remaining tool budget are marked unexecuted and shown in the
 console and report.
 
+Deterministic aggregate tools can use the shared `AnalyticalToolResult` shape:
+an `evidence_type`, normalized `parameters`, an `analysis` object, and a list of
+`warnings`. The agent validates this shape, includes bounded analytical evidence
+in final synthesis, preserves the full report variant in Markdown, and adapts
+its final instructions when aggregate results do not contain individual dreams.
+
 The retrieval prompt asks the model to return `SEARCH_COMPLETE` rather than
 drafting an answer when it has enough searches. Any other content that ends the
 search phase is discarded, and the ranked no-tools synthesis is used for the

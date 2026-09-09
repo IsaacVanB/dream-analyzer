@@ -38,6 +38,7 @@ from dream_analysis.structuring import DreamStructuringService
 from dream_analysis.trends import TagTrendService
 from dream_analysis.tools import (
     AgentTool,
+    AnalyticalToolResult,
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
@@ -52,6 +53,7 @@ __all__ = [
     "DreamByIdTool",
     "DreamDateRangeTool",
     "AgentTool",
+    "AnalyticalToolResult",
     "DreamIndex",
     "DreamNotFoundError",
     "DreamRepository",

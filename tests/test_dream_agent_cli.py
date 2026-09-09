@@ -104,6 +104,31 @@ class DreamAgentCliTests(unittest.TestCase):
             ),
         )
 
+    def analytical_response(self) -> AgentResponse:
+        return AgentResponse(
+            answer="Dream counts increased.",
+            tool_executions=(
+                ToolExecution(
+                    name="get_dream_statistics",
+                    arguments={"frequency": "Y"},
+                    result={
+                        "ok": True,
+                        "evidence_type": "dream_statistics",
+                        "parameters": {"frequency": "Y"},
+                        "analysis": {"dream_count": 12},
+                        "warnings": ["One unknown date was excluded."],
+                    },
+                    report_result={
+                        "ok": True,
+                        "evidence_type": "dream_statistics",
+                        "parameters": {"frequency": "Y"},
+                        "analysis": {"dream_count": 12, "full": True},
+                        "warnings": ["One unknown date was excluded."],
+                    },
+                ),
+            ),
+        )
+
     def test_parser_accepts_an_optional_output_path(self) -> None:
         args = dream_agent.build_parser().parse_args(
             ["What happened?", "--output", "outputs/agent/report.md"]
@@ -163,6 +188,19 @@ class DreamAgentCliTests(unittest.TestCase):
         self.assertIn("### Search 2", report)
         self.assertIn("Retrieved by searches: `1, 2`", report)
         self.assertEqual(report.count("A hidden room.\nThen I woke up."), 1)
+
+    def test_markdown_renders_full_analytical_results_and_warnings(self) -> None:
+        report = dream_agent.format_markdown_report(
+            "How many dreams were recorded?",
+            self.analytical_response(),
+            settings={},
+        )
+
+        self.assertIn("Analytical result type: `dream_statistics`", report)
+        self.assertIn("One unknown date was excluded.", report)
+        self.assertIn('"dream_count": 12', report)
+        self.assertIn('"full": true', report)
+        self.assertNotIn("| *(no results)*", report)
 
     def test_partial_markdown_contains_limit_trace(self) -> None:
         error = self.limit_error()
