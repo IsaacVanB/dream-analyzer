@@ -235,8 +235,9 @@ Requires an existing ChromaDB index and Ollama running locally at `http://localh
 ## `src/cli/dream_agent.py`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
-of four read-only tools: semantic `search_dreams`, exhaustive
-`get_dreams_by_date_range`, exact `get_dream_by_id`, or exact
+of five read-only tools: semantic `search_dreams`, exhaustive
+`get_dreams_by_date_range`, deterministic `get_dream_statistics`, exact
+`get_dream_by_id`, or exact
 `get_dreams_by_tags`. The date-range tool is intended for questions about all
 dreams or common patterns within a period and requires inclusive `start_date`
 and `end_date` values. The ID tool supports prompts such as
@@ -254,6 +255,8 @@ without extending hardcoded dispatch branches.
 ```bash
 python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
 python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
+python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
+python3 src/cli/dream_agent.py "What words occurred most often last year?"
 python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \

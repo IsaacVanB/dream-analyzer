@@ -9,6 +9,7 @@ from dream_analysis.tools import (
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
+    DreamStatisticsTool,
     DreamTagTool,
 )
 
@@ -137,6 +138,10 @@ class FakeRepository:
         self.calls.append((start, end))
         return self.dreams
 
+    def all(self):
+        self.calls.append("all")
+        return self.dreams
+
     def get(self, dream_id):
         self.calls.append(dream_id)
         return self.dreams[0]
@@ -260,6 +265,113 @@ class DreamDateRangeToolTests(unittest.TestCase):
                     "query": "themes",
                 }
             )
+
+
+class DreamStatisticsToolTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.dreams = [
+            Dream(
+                dream_id="one",
+                date="1/5/2025",
+                date_sort=date(2025, 1, 5),
+                tags=("house", "flying"),
+                text="red house trees",
+                word_count=3,
+            ),
+            Dream(
+                dream_id="two",
+                date="2/5/2025",
+                date_sort=date(2025, 2, 5),
+                tags=("house", "school"),
+                text="blue school hallway",
+                word_count=3,
+            ),
+            Dream(
+                dream_id="three",
+                date="3/5/2025",
+                date_sort=date(2025, 3, 5),
+                tags=("travel",),
+                text="green train station",
+                word_count=3,
+            ),
+            Dream(
+                dream_id="unknown",
+                date="0/0/00",
+                date_sort=None,
+                tags=("unknown",),
+                text="fragment without date",
+                word_count=3,
+            ),
+        ]
+
+    def test_schema_exposes_bounded_statistics_parameters(self) -> None:
+        tool = DreamStatisticsTool(FakeRepository([]))
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(tool.name, "get_dream_statistics")
+        self.assertEqual(parameters["properties"]["frequency"]["enum"], ["M", "Q", "Y"])
+        self.assertEqual(parameters["properties"]["common_words"]["maximum"], 50)
+        self.assertEqual(parameters["properties"]["top_tags"]["maximum"], 50)
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_returns_bounded_model_and_complete_report_statistics(self) -> None:
+        repository = FakeRepository(self.dreams)
+        tool = DreamStatisticsTool(repository, max_periods=2)
+
+        bounded, report = tool.execute_with_report_data(
+            {
+                "frequency": "M",
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+                "common_words": 2,
+                "min_word_length": 3,
+                "top_tags": 1,
+            }
+        )
+
+        self.assertEqual(repository.calls, ["all"])
+        self.assertEqual(bounded["evidence_type"], "dream_statistics")
+        self.assertEqual(bounded["analysis"]["dream_count"], 3)
+        self.assertEqual(len(bounded["analysis"]["entries_per_period"]), 2)
+        self.assertEqual(bounded["analysis"]["entry_periods_omitted"], 1)
+        self.assertEqual(len(bounded["analysis"]["tag_stats"]), 1)
+        self.assertEqual(bounded["analysis"]["tag_stats_omitted"], 3)
+        self.assertEqual(len(report["analysis"]["entries_per_period"]), 3)
+        self.assertEqual(len(report["analysis"]["tag_stats"]), 4)
+        self.assertTrue(any("unknown date" in item for item in bounded["warnings"]))
+        self.assertTrue(any("journal tags" in item for item in bounded["warnings"]))
+        self.assertTrue(any("middle periods" in item for item in bounded["warnings"]))
+        json.dumps(bounded)
+        json.dumps(report)
+
+    def test_execute_uses_defaults_and_validates_arguments(self) -> None:
+        tool = DreamStatisticsTool(FakeRepository(self.dreams))
+
+        result = tool.execute({})
+
+        self.assertEqual(
+            result["parameters"],
+            {
+                "frequency": "M",
+                "start_date": None,
+                "end_date": None,
+                "common_words": 20,
+                "min_word_length": 3,
+                "top_tags": 20,
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "frequency"):
+            tool.execute({"frequency": "W"})
+        with self.assertRaisesRegex(ValueError, "common_words"):
+            tool.execute({"common_words": 51})
+        with self.assertRaisesRegex(ValueError, "common_words"):
+            tool.execute({"common_words": True})
+        with self.assertRaisesRegex(ValueError, "start_date"):
+            tool.execute(
+                {"start_date": "2025-02-01", "end_date": "2025-01-01"}
+            )
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"stopwords_path": "/tmp/words.txt"})
 
 
 class DreamByIdToolTests(unittest.TestCase):

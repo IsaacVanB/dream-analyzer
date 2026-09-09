@@ -7,6 +7,7 @@ from typing import Any, Protocol, TypedDict
 
 from dream_analysis.dates import parse_date_bound, validate_date_range
 from dream_analysis.models import Dream, SearchResult
+from dream_analysis.statistics import DreamStatisticsService
 
 
 class AnalyticalToolResult(TypedDict):
@@ -45,6 +46,10 @@ class DatedDreamRepository(Protocol):
         start: date | None = None,
         end: date | None = None,
     ) -> list[Dream]: ...
+
+
+class DreamCollectionRepository(Protocol):
+    def all(self) -> list[Dream]: ...
 
 
 class DreamByIdRepository(Protocol):
@@ -438,6 +443,224 @@ class DreamDateRangeTool:
             "text": text,
             "truncated": truncated,
         }
+
+
+class DreamStatisticsTool:
+    """Expose deterministic aggregate statistics for parsed dreams."""
+
+    name = "get_dream_statistics"
+    max_common_words = 50
+    max_top_tags = 50
+    max_min_word_length = 20
+
+    def __init__(
+        self,
+        repository: DreamCollectionRepository,
+        *,
+        max_periods: int = 120,
+    ) -> None:
+        if max_periods < 2:
+            raise ValueError("max_periods must be at least 2")
+        self.repository = repository
+        self.max_periods = max_periods
+
+    @property
+    def schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": (
+                    "Calculate exact, deterministic statistics from parsed dream "
+                    "records: dream counts, entries per month/quarter/year, common "
+                    "journal tags, dream lengths, and common non-stopword vocabulary. "
+                    "Use this for quantitative questions, not semantic themes or "
+                    "changes in tags over time. Optional dates are inclusive."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "frequency": {
+                            "type": "string",
+                            "enum": ["M", "Q", "Y"],
+                            "description": (
+                                "Period grouping: M=month, Q=quarter, Y=year."
+                            ),
+                        },
+                        "start_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Optional inclusive lower date bound.",
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": "Optional inclusive upper date bound.",
+                        },
+                        "common_words": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": self.max_common_words,
+                            "description": (
+                                "Number of common non-stopword tokens to return."
+                            ),
+                        },
+                        "min_word_length": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": self.max_min_word_length,
+                            "description": "Minimum token length for common words.",
+                        },
+                        "top_tags": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": self.max_top_tags,
+                            "description": "Maximum journal tags shown to the model.",
+                        },
+                    },
+                    "required": [],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        result, _ = self.execute_with_report_data(arguments)
+        return result
+
+    def execute_with_report_data(
+        self,
+        arguments: dict[str, Any],
+    ) -> tuple[AnalyticalToolResult, AnalyticalToolResult]:
+        allowed = {
+            "frequency",
+            "start_date",
+            "end_date",
+            "common_words",
+            "min_word_length",
+            "top_tags",
+        }
+        unexpected = sorted(set(arguments) - allowed)
+        if unexpected:
+            raise ValueError(f"unexpected arguments: {', '.join(unexpected)}")
+
+        frequency = arguments.get("frequency", "M")
+        if frequency not in {"M", "Q", "Y"}:
+            raise ValueError("frequency must be one of: M, Q, Y")
+        start_date = parse_date_bound(
+            arguments.get("start_date"), argument_name="start_date"
+        )
+        end_date = parse_date_bound(
+            arguments.get("end_date"), argument_name="end_date"
+        )
+        validate_date_range(start_date, end_date)
+        common_words = self._bounded_integer(
+            arguments.get("common_words", 20),
+            name="common_words",
+            minimum=0,
+            maximum=self.max_common_words,
+        )
+        min_word_length = self._bounded_integer(
+            arguments.get("min_word_length", 3),
+            name="min_word_length",
+            minimum=1,
+            maximum=self.max_min_word_length,
+        )
+        top_tags = self._bounded_integer(
+            arguments.get("top_tags", 20),
+            name="top_tags",
+            minimum=1,
+            maximum=self.max_top_tags,
+        )
+        parameters = {
+            "frequency": frequency,
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
+            "common_words": common_words,
+            "min_word_length": min_word_length,
+            "top_tags": top_tags,
+        }
+        analysis = DreamStatisticsService(self.repository.all()).summarize(
+            frequency=frequency,
+            start_date=start_date,
+            end_date=end_date,
+            common_words=common_words,
+            min_word_length=min_word_length,
+        )
+
+        report_warnings = self._source_warnings(analysis)
+        report: AnalyticalToolResult = {
+            "evidence_type": "dream_statistics",
+            "parameters": parameters,
+            "analysis": analysis,
+            "warnings": report_warnings,
+        }
+
+        bounded_analysis = dict(analysis)
+        tag_stats = list(analysis["tag_stats"])
+        periods = list(analysis["entries_per_period"])
+        bounded_analysis["tag_count"] = len(tag_stats)
+        bounded_analysis["tag_stats"] = tag_stats[:top_tags]
+        bounded_analysis["tag_stats_omitted"] = max(0, len(tag_stats) - top_tags)
+        bounded_periods, omitted_periods = self._bound_periods(periods)
+        bounded_analysis["entries_per_period"] = bounded_periods
+        bounded_analysis["entry_period_count"] = len(periods)
+        bounded_analysis["entry_periods_omitted"] = omitted_periods
+
+        warnings = list(report_warnings)
+        if len(tag_stats) > top_tags:
+            warnings.append(
+                f"Showing the top {top_tags} of {len(tag_stats)} journal tags; "
+                "the saved report retains all tags."
+            )
+        if omitted_periods:
+            warnings.append(
+                f"Showing the earliest and latest {self.max_periods} of "
+                f"{len(periods)} periods; {omitted_periods} middle periods are "
+                "omitted from model evidence but retained in the saved report."
+            )
+        bounded: AnalyticalToolResult = {
+            "evidence_type": "dream_statistics",
+            "parameters": parameters,
+            "analysis": bounded_analysis,
+            "warnings": warnings,
+        }
+        return bounded, report
+
+    @staticmethod
+    def _bounded_integer(
+        value: Any,
+        *,
+        name: str,
+        minimum: int,
+        maximum: int,
+    ) -> int:
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(f"{name} must be between {minimum} and {maximum}")
+        return value
+
+    @staticmethod
+    def _source_warnings(analysis: dict[str, Any]) -> list[str]:
+        excluded = int(analysis.get("excluded_unknown_date_count", 0))
+        if not excluded:
+            return []
+        noun = "dream has" if excluded == 1 else "dreams have"
+        return [
+            f"{excluded} {noun} an unknown date and cannot be included in "
+            "date-based statistics."
+        ]
+
+    def _bound_periods(
+        self, periods: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], int]:
+        if len(periods) <= self.max_periods:
+            return periods, 0
+        first_count = self.max_periods // 2
+        last_count = self.max_periods - first_count
+        return (
+            periods[:first_count] + periods[-last_count:],
+            len(periods) - self.max_periods,
+        )
 
 
 class DreamByIdTool:

@@ -207,6 +207,8 @@ results in an agent loop:
 ```bash
 python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
 python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
+python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
+python3 src/cli/dream_agent.py "What were my most common journal tags in July 2025?"
 python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
@@ -217,10 +219,13 @@ python3 src/cli/dream_agent.py "Compare house and school dreams" \
   --output outputs/agent/comparison_trace.md
 ```
 
-The agent exposes four read-only tools. `search_dreams` performs semantic
+The agent exposes five read-only tools. `search_dreams` performs semantic
 retrieval. `get_dreams_by_date_range` exhaustively returns every dream within
 two inclusive calendar dates, making it suitable for questions such as common
-themes within a month. `get_dream_by_id` retrieves one exact dream for requests
+themes within a month. `get_dream_statistics` deterministically calculates
+counts, entries by month/quarter/year, journal-tag frequencies, dream-length
+statistics, and common non-stopword vocabulary, optionally within inclusive
+date bounds. `get_dream_by_id` retrieves one exact dream for requests
 such as `Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
 containing all requested exact tags; matching is case-insensitive, preserves
 punctuation such as `lucid?`, and treats multiple tags as an AND combination.
@@ -259,6 +264,12 @@ an `evidence_type`, normalized `parameters`, an `analysis` object, and a list of
 `warnings`. The agent validates this shape, includes bounded analytical evidence
 in final synthesis, preserves the full report variant in Markdown, and adapts
 its final instructions when aggregate results do not contain individual dreams.
+
+The model-facing statistics result caps common words and tags and abbreviates
+very long period series with explicit warnings. Saved Markdown reports retain
+the complete tag and period results. Common-word counts are token occurrences;
+tag counts represent the number of dreams containing each tag. Dreams with
+unknown dates are excluded from temporal statistics and reported in a warning.
 
 The retrieval prompt asks the model to return `SEARCH_COMPLETE` rather than
 drafting an answer when it has enough searches. Any other content that ends the

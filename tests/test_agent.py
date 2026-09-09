@@ -16,6 +16,7 @@ from dream_analysis.tools import (
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
+    DreamStatisticsTool,
     DreamTagTool,
 )
 
@@ -85,6 +86,19 @@ class FakeTagRepository:
                 date="7/4/2025",
                 tags=("travel",),
                 text="I traveled across a lake with friends.",
+            )
+        ]
+
+    def all(self):
+        self.calls.append("all")
+        return [
+            Dream(
+                dream_id="dated-1",
+                date="7/4/2025",
+                date_sort=date(2025, 7, 4),
+                tags=("travel",),
+                text="I traveled across a lake with friends.",
+                word_count=7,
             )
         ]
 
@@ -471,6 +485,37 @@ class DreamRagAgentTests(unittest.TestCase):
             response.tool_executions[0].name, "get_dreams_by_date_range"
         )
         self.assertIn("DREAM_ID: dated-1", response.turn_traces[-1].request_prompt)
+
+    def test_agent_dispatches_dream_statistics_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "get_dream_statistics",
+                    {
+                        "frequency": "M",
+                        "start_date": "2025-07-01",
+                        "end_date": "2025-07-31",
+                    },
+                ),
+                final_response("Discarded draft answer."),
+                final_response("One dream was recorded in July 2025."),
+            ]
+        )
+        repository = FakeTagRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[DreamStatisticsTool(repository)],
+        )
+
+        response = agent.answer("How many dreams did I record in July 2025?")
+
+        self.assertEqual(repository.calls, ["all"])
+        self.assertEqual(response.tool_executions[0].name, "get_dream_statistics")
+        self.assertIn('"dream_count": 1', response.turn_traces[-1].request_prompt)
+        self.assertIn(
+            '"start_date": "2025-07-01"',
+            response.turn_traces[-1].request_prompt,
+        )
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(

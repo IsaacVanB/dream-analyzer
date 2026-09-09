@@ -42,6 +42,7 @@ from dream_analysis.tools import (
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
+    DreamStatisticsTool,
     DreamTagTool,
 )
 
@@ -49,6 +50,7 @@ __all__ = [
     "Dream",
     "DreamRagAgent",
     "DreamSearchTool",
+    "DreamStatisticsTool",
     "DreamTagTool",
     "DreamByIdTool",
     "DreamDateRangeTool",
