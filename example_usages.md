@@ -3,14 +3,32 @@
 These examples assume the project has been installed in editable mode with
 `pip install -e .` as described in the README.
 
-## `src/cli/parse_dreams.py`
+The preferred interface is the installed `dream-analyzer` command. It provides
+help at both levels:
+
+```bash
+dream-analyzer --help
+dream-analyzer parse --help
+dream-analyzer index --help
+dream-analyzer ask --help
+dream-analyzer analyze --help
+dream-analyzer stats --help
+dream-analyzer trends --help
+dream-analyzer cluster --help
+```
+
+The matching scripts under `src/cli/` remain available temporarily for
+backward compatibility. Utilities that do not yet have a consolidated
+subcommand continue to use their script entry points below.
+
+## `dream-analyzer parse`
 
 Parses the raw dream journal text file into JSON Lines, one JSON object per dream.
 
 ```bash
-python3 src/cli/parse_dreams.py
-python3 src/cli/parse_dreams.py data/mock_dream_journal.txt data/dreams.jsonl
-python3 src/cli/parse_dreams.py other_journal.txt data/other_dreams.jsonl --dream-separator-blank-lines 2
+dream-analyzer parse
+dream-analyzer parse data/mock_dream_journal.txt data/dreams.jsonl
+dream-analyzer parse other_journal.txt data/other_dreams.jsonl --dream-separator-blank-lines 2
 ```
 
 Arguments:
@@ -58,16 +76,16 @@ Arguments:
 - `--max-year-jump`: largest adjacent year change not flagged. Defaults to `1`.
 - `--json`: print machine-readable JSON instead of the text report.
 
-## `src/cli/build_chroma_db.py`
+## `dream-analyzer index`
 
 Embeds only each dream's text with Ollama `nomic-embed-text` and saves the vectors to a persistent ChromaDB collection. Dates, tags, and other metadata remain available for display and filtering but do not affect similarity.
 
 ```bash
-python3 src/cli/build_chroma_db.py
-python3 src/cli/build_chroma_db.py --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
-python3 src/cli/build_chroma_db.py --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
-python3 src/cli/build_chroma_db.py --rebuild
-python3 src/cli/build_chroma_db.py --prune
+dream-analyzer index
+dream-analyzer index --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
+dream-analyzer index --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
+dream-analyzer index --rebuild
+dream-analyzer index --prune
 ```
 
 Arguments:
@@ -94,40 +112,41 @@ The commands currently use two different scoring paths:
 |---|---|---|
 | `src/cli/retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `src/cli/basic_rag.py` | Chroma distance | Lower is closer. |
-| `src/cli/dream_agent.py` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
+| `dream-analyzer ask` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
 | `src/cli/evaluate_retrieval.py` | Configurable | Chroma distance by default; cosine similarity or both are selectable. |
 | `src/cli/compare_models.py rag` | Chroma distance | Lower is closer. |
-| `src/cli/analyze_dream.py` with related dreams enabled | Cosine similarity | Higher is more similar. |
+| `dream-analyzer analyze` with related dreams enabled | Cosine similarity | Higher is more similar. |
 | `src/cli/compare_models.py analyze` | Cosine similarity | Higher is more similar. |
 
-Collections created by `build_chroma_db.py` do not specify a Chroma distance
+Collections created by `dream-analyzer index` do not specify a Chroma distance
 space, so Chroma's current default applies: squared L2 distance. In contrast,
 the related-dream analysis path reads the stored vectors and calculates cosine
 similarity in Python. These rankings and numeric scores are not interchangeable,
 and they can select different dreams because stored embeddings are not
 explicitly normalized.
 
-`cluster_dreams.py` also performs cosine-based calculations, but it does not
+`dream-analyzer cluster` also performs cosine-based calculations, but it does not
 retrieve related dreams: it normalizes vectors, uses cosine distance for UMAP,
 uses cosine similarity for representative selection, and uses Euclidean
 distance for HDBSCAN.
 
-## `src/cli/plot_tags.py`
+## `dream-analyzer trends`
 
 Plots dream tag frequency over time and saves the image to `outputs/plots/`.
 
 ```bash
-python3 src/cli/plot_tags.py
-python3 src/cli/plot_tags.py --tags house recurring school --freq M
-python3 src/cli/plot_tags.py --freq Y --normalize --output outputs/plots/tags_by_year.png
-python3 src/cli/plot_tags.py --start-date 2023-01-01 --end-date 2023-12-31
+dream-analyzer trends
+dream-analyzer trends --tags house recurring school --freq M
+dream-analyzer trends --tag school --normalize
+dream-analyzer trends --freq Y --normalize --output outputs/plots/tags_by_year.png
+dream-analyzer trends --start-date 2023-01-01 --end-date 2023-12-31
 ```
 
 Arguments:
 
 - `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
 - `--output`: path where the plot image should be saved. Defaults to `outputs/plots/tag_frequency.png`.
-- `--tags`: specific tags to plot. Defaults to the top tags.
+- `--tags` / `--tag`: specific tags to plot. Defaults to the top tags.
 - `--top-n`: number of top tags to plot when `--tags` is omitted. Defaults to `10`.
 - `--freq`: time grouping frequency: `M`, `Q`, or `Y`. Defaults to `M`.
 - `--start-date`: only include dreams on or after this date.
@@ -136,15 +155,15 @@ Arguments:
 - `--title`: optional plot title.
 - `--show`: display the plot interactively after saving.
 
-## `src/cli/compute_stats.py`
+## `dream-analyzer stats`
 
 Computes dream counts, tag frequencies, and word-count statistics, then prints and saves JSON.
 
 ```bash
-python3 src/cli/compute_stats.py
-python3 src/cli/compute_stats.py --freq Q --start-date 2023-01-01 --end-date 2023-12-31
-python3 src/cli/compute_stats.py --freq Y --output outputs/stats/yearly_stats.json
-python3 src/cli/compute_stats.py --common-words 50 --stopwords-path data/stopwords.txt
+dream-analyzer stats
+dream-analyzer stats --freq Q --start-date 2023-01-01 --end-date 2023-12-31
+dream-analyzer stats --freq Y --output outputs/stats/yearly_stats.json
+dream-analyzer stats --common-words 50 --stopwords-path data/stopwords.txt
 ```
 
 Arguments:
@@ -178,7 +197,7 @@ Arguments:
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
 
-## `src/cli/cluster_dreams.py`
+## `dream-analyzer cluster`
 
 Clusters embeddings already stored in ChromaDB. It writes a per-dream CSV, an
 interactive HTML map, two PNG maps, and a Markdown evidence report under
@@ -191,10 +210,10 @@ data without files, then pass the resulting `ClusterAnalysis` to
 `ClusterReportService` only when artifacts are wanted.
 
 ```bash
-python3 src/cli/cluster_dreams.py
-python3 src/cli/cluster_dreams.py --collection-name dreams_qwen3_embedding
-python3 src/cli/cluster_dreams.py --min-cluster-size 7 --n-neighbors 10
-python3 src/cli/cluster_dreams.py --label-clusters --label-model qwen3:8b
+dream-analyzer cluster
+dream-analyzer cluster --collection-name dreams_qwen3_embedding
+dream-analyzer cluster --min-cluster-size 7 --n-neighbors 10
+dream-analyzer cluster --label-clusters --label-model qwen3:8b
 ```
 
 Important options include `--collection-name`, `--output-dir`,
@@ -232,7 +251,7 @@ Arguments:
 
 Requires an existing ChromaDB index and Ollama running locally at `http://localhost:11434`.
 
-## `src/cli/dream_agent.py`
+## `dream-analyzer ask`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
 of eight read-only tools: semantic `search_dreams`, exhaustive
@@ -255,22 +274,22 @@ to the agent as an ordered registry. New retrieval tools can therefore be added
 without extending hardcoded dispatch branches.
 
 ```bash
-python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
-python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
-python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
-python3 src/cli/dream_agent.py "What words occurred most often last year?"
-python3 src/cli/dream_agent.py "Did school-tagged dreams become more common during 2025?"
-python3 src/cli/dream_agent.py "Who appears most often in my structured dreams?"
-python3 src/cli/dream_agent.py "Who is Maya?"
-python3 src/cli/dream_agent.py \
+dream-analyzer ask "What patterns appear in dreams about hidden rooms?"
+dream-analyzer ask "What are common themes in dreams from last month?"
+dream-analyzer ask "How many dreams did I record in 2025?"
+dream-analyzer ask "What words occurred most often last year?"
+dream-analyzer ask "Did school-tagged dreams become more common during 2025?"
+dream-analyzer ask "Who appears most often in my structured dreams?"
+dream-analyzer ask "Who is Maya?"
+dream-analyzer ask \
   "What are common themes in dreams about school? Use only dreams from last month."
-python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \
+dream-analyzer ask "How do school anxiety dreams appear?" \
   --top-k 5 \
   --chat-model qwen3:8b \
   --embed-model nomic-embed-text \
   --output outputs/agent/school_anxiety.md
 
-python3 src/cli/dream_agent.py "Compare house and school dreams" \
+dream-analyzer ask "Compare house and school dreams" \
   --max-tool-calls 3 \
   --debug \
   --output outputs/agent/comparison_trace.md
@@ -345,7 +364,7 @@ accordingly.
 Requires an existing matching ChromaDB index, a tool-capable chat model, and
 Ollama running locally.
 
-## `src/cli/analyze_dream.py`
+## `dream-analyzer analyze`
 
 Loads one dream by ID or accepts dream text directly, then asks an Ollama chat model for a close analysis of its events, dynamics, themes, and possible interpretations.
 The analysis is printed and saved under `outputs/analysis/`. Saved files include
@@ -354,17 +373,19 @@ analysis. ID-based filenames use `<dream_id>_<datetime>.txt`; direct-text
 filenames use `<datetime>.txt`.
 
 ```bash
-python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0
-python3 src/cli/analyze_dream.py --text "I opened a door and found another kitchen."
-python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0 --chat-model qwen3:8b
-python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5 --similarity-threshold 0.55
-python3 src/cli/analyze_dream.py --dream-id dream-2022-10-10-0 --related-dreams 5 --start-date 2022-04-10 --end-date 2022-10-10
+dream-analyzer analyze dream-2022-1-22-0
+dream-analyzer analyze --text "I opened a door and found another kitchen."
+dream-analyzer analyze dream-2022-1-22-0 --chat-model qwen3:8b
+dream-analyzer analyze dream-2022-1-22-0 --related-dreams 5 --similarity-threshold 0.55
+dream-analyzer analyze dream-2022-10-10-0 --related-dreams 5 --start-date 2022-04-10 --end-date 2022-10-10
 ```
 
 Arguments:
 
-- `--dream-id`: dream ID to load from JSONL. Mutually exclusive with `--text`.
-- `--text`: dream text to analyze directly. Mutually exclusive with `--dream-id`.
+- `dream-id`: positional dream ID to load from JSONL. The legacy `--dream-id`
+  option remains available temporarily. Mutually exclusive with `--text`.
+- `--text`: dream text to analyze directly. Mutually exclusive with either
+  dream-ID form.
 - `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
 - `--chat-model`: Ollama chat model. Defaults to `qwen3:8b`.
 - `--related-dreams`: maximum number of similar indexed dreams to use as context. Defaults to `0` (disabled).
