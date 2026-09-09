@@ -126,6 +126,14 @@ Cluster labels summarize recurring content and are not psychological diagnoses.
 The optional `--label-clusters` flag uses the local Ollama chat model; clustering
 itself does not require new model calls.
 
+The command is a thin adapter over reusable package services:
+`dream_analysis.clustering.DreamEmbeddingRepository` loads stored vectors,
+`DreamClusteringService` performs projection, clustering, evidence selection,
+and optional Ollama labeling, and
+`dream_analysis.cluster_reporting.ClusterReportService` generates the CSV,
+HTML, PNG, and Markdown artifacts. These services can be used independently
+without constructing an `argparse.Namespace` or invoking the CLI.
+
 Compute summary stats:
 
 ```bash

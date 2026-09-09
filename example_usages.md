@@ -162,6 +162,12 @@ Clusters embeddings already stored in ChromaDB. It writes a per-dream CSV, an
 interactive HTML map, two PNG maps, and a Markdown evidence report under
 `outputs/clusters/`. It does not regenerate embeddings.
 
+The CLI delegates its work to `dream_analysis.clustering` and
+`dream_analysis.cluster_reporting`. Use `DreamEmbeddingRepository` and
+`DreamClusteringService` when another Python workflow needs computed cluster
+data without files, then pass the resulting `ClusterAnalysis` to
+`ClusterReportService` only when artifacts are wanted.
+
 ```bash
 python3 src/cli/cluster_dreams.py
 python3 src/cli/cluster_dreams.py --collection-name dreams_qwen3_embedding
