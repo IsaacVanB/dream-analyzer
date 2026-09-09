@@ -1,0 +1,422 @@
+{
+  "description": "Retrieval relevance judgments for mock_dream_journal_v2.txt. Dream IDs use dream-YYYY-M-D-index, with index starting at 0 for each date.",
+  "journal_file": "mock_dream_journal_v2.txt",
+  "num_queries": 30,
+  "queries": [
+    {
+      "query": "dreams about dogs",
+      "category": "direct_semantic",
+      "relevant_dream_ids": [
+        "dream-2022-2-3-0",
+        "dream-2022-8-26-0",
+        "dream-2024-4-9-1",
+        "dream-2024-7-21-0",
+        "dream-2025-1-26-0",
+        "dream-2025-7-4-2",
+        "dream-2026-1-3-1"
+      ]
+    },
+    {
+      "query": "dreams about gorillas",
+      "category": "direct_semantic",
+      "relevant_dream_ids": [
+        "dream-2022-6-2-0",
+        "dream-2023-6-1-0",
+        "dream-2023-6-1-2",
+        "dream-2025-3-1-1",
+        "dream-2025-5-18-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "dreams involving airports",
+      "category": "direct_semantic",
+      "relevant_dream_ids": [
+        "dream-2022-2-18-0",
+        "dream-2023-7-19-0",
+        "dream-2025-9-28-0",
+        "dream-2026-1-11-0",
+        "dream-2026-6-11-0"
+      ]
+    },
+    {
+      "query": "dreams about phones behaving strangely",
+      "category": "direct_semantic",
+      "relevant_dream_ids": [
+        "dream-2022-1-22-1",
+        "dream-2022-4-29-0",
+        "dream-2022-7-31-0",
+        "dream-2023-3-1-1",
+        "dream-2023-8-2-0",
+        "dream-2024-5-9-0",
+        "dream-2024-8-18-0",
+        "dream-2025-3-30-0",
+        "dream-2025-3-30-2",
+        "dream-2025-6-12-1",
+        "dream-2025-7-4-0",
+        "dream-2026-3-8-0",
+        "dream-2026-3-8-2"
+      ]
+    },
+    {
+      "query": "dreams involving flooded or underwater places",
+      "category": "direct_semantic",
+      "relevant_dream_ids": [
+        "dream-2022-3-27-0",
+        "dream-2022-6-2-0",
+        "dream-2022-10-10-0",
+        "dream-2023-9-12-0",
+        "dream-2024-11-17-0",
+        "dream-2025-7-4-2",
+        "dream-2026-1-11-0",
+        "dream-2026-4-19-0",
+        "dream-2026-5-20-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "feeling trapped somewhere",
+      "category": "conceptual",
+      "relevant_dream_ids": [
+        "dream-2022-1-6-0",
+        "dream-2022-2-18-0",
+        "dream-2022-2-18-2",
+        "dream-2025-11-22-2"
+      ]
+    },
+    {
+      "query": "being unable to find the way out",
+      "category": "conceptual",
+      "relevant_dream_ids": [
+        "dream-2022-1-6-0",
+        "dream-2022-8-26-0",
+        "dream-2023-2-12-0",
+        "dream-2023-8-28-0",
+        "dream-2024-2-4-0",
+        "dream-2024-9-6-0",
+        "dream-2024-10-5-0",
+        "dream-2025-2-14-0",
+        "dream-2025-9-13-1",
+        "dream-2025-9-28-0",
+        "dream-2026-2-15-0",
+        "dream-2026-4-29-1"
+      ]
+    },
+    {
+      "query": "being evaluated or tested and feeling unprepared",
+      "category": "conceptual",
+      "relevant_dream_ids": [
+        "dream-2022-1-6-0",
+        "dream-2022-4-11-0",
+        "dream-2022-8-14-0",
+        "dream-2022-11-4-0",
+        "dream-2023-1-5-0",
+        "dream-2023-8-2-0",
+        "dream-2024-1-14-0",
+        "dream-2024-2-14-0",
+        "dream-2024-5-3-0",
+        "dream-2024-11-8-0",
+        "dream-2025-3-1-0",
+        "dream-2025-5-18-0",
+        "dream-2025-8-21-0",
+        "dream-2026-4-19-0"
+      ]
+    },
+    {
+      "query": "records or documents that cannot be trusted",
+      "category": "conceptual",
+      "relevant_dream_ids": [
+        "dream-2022-1-22-1",
+        "dream-2022-5-15-2",
+        "dream-2022-8-26-0",
+        "dream-2022-11-4-0",
+        "dream-2023-2-12-1",
+        "dream-2023-4-2-0",
+        "dream-2023-4-7-0",
+        "dream-2023-6-1-2",
+        "dream-2023-9-17-0",
+        "dream-2023-12-3-2",
+        "dream-2024-2-4-0",
+        "dream-2024-2-29-1",
+        "dream-2024-3-16-0",
+        "dream-2024-3-16-1",
+        "dream-2024-5-3-0",
+        "dream-2024-10-5-0",
+        "dream-2024-11-17-0",
+        "dream-2025-1-9-0",
+        "dream-2025-11-22-0",
+        "dream-2025-11-22-2",
+        "dream-2025-12-18-1",
+        "dream-2026-1-11-0",
+        "dream-2026-2-15-0",
+        "dream-2026-2-15-1",
+        "dream-2026-3-8-2",
+        "dream-2026-4-29-1",
+        "dream-2026-6-27-0",
+        "dream-2026-6-30-1",
+        "dream-2026-7-7-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "discovering unexpected rooms",
+      "category": "recurring_event",
+      "relevant_dream_ids": [
+        "dream-2022-1-22-0",
+        "dream-2022-4-11-1",
+        "dream-2022-5-15-2",
+        "dream-2022-7-31-0",
+        "dream-2022-11-2-0",
+        "dream-2023-4-2-0",
+        "dream-2023-5-10-0",
+        "dream-2023-9-17-0",
+        "dream-2024-3-16-0",
+        "dream-2024-5-9-0",
+        "dream-2024-10-20-0",
+        "dream-2024-11-17-0",
+        "dream-2025-1-9-0",
+        "dream-2025-5-5-0",
+        "dream-2025-12-18-0",
+        "dream-2026-1-3-0",
+        "dream-2026-1-11-0",
+        "dream-2026-3-8-1",
+        "dream-2026-6-30-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "dreams about discovering hidden rooms",
+      "category": "recurring_event",
+      "relevant_dream_ids": [
+        "dream-2022-1-22-0",
+        "dream-2022-4-11-1",
+        "dream-2022-5-15-2",
+        "dream-2022-7-31-0",
+        "dream-2022-11-2-0",
+        "dream-2023-4-2-0",
+        "dream-2023-5-10-0",
+        "dream-2023-9-17-0",
+        "dream-2024-3-16-0",
+        "dream-2024-5-9-0",
+        "dream-2024-10-20-0",
+        "dream-2024-11-17-0",
+        "dream-2025-1-9-0",
+        "dream-2025-5-5-0",
+        "dream-2025-12-18-0",
+        "dream-2026-1-3-0",
+        "dream-2026-1-11-0",
+        "dream-2026-3-8-1",
+        "dream-2026-6-30-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "transportation that does not work normally",
+      "category": "recurring_event",
+      "relevant_dream_ids": [
+        "dream-2022-2-18-0",
+        "dream-2022-2-18-2",
+        "dream-2023-2-12-0",
+        "dream-2023-7-19-0",
+        "dream-2023-9-12-0",
+        "dream-2023-12-27-0",
+        "dream-2024-7-21-0",
+        "dream-2025-2-14-0",
+        "dream-2025-6-12-0",
+        "dream-2025-9-28-0",
+        "dream-2026-2-15-0",
+        "dream-2026-6-11-0"
+      ]
+    },
+    {
+      "query": "animals behaving like people",
+      "category": "recurring_event",
+      "relevant_dream_ids": [
+        "dream-2022-2-3-0",
+        "dream-2022-8-26-0",
+        "dream-2023-3-18-0",
+        "dream-2023-6-1-0",
+        "dream-2023-6-1-2",
+        "dream-2024-2-4-1",
+        "dream-2024-7-21-0",
+        "dream-2025-3-1-1",
+        "dream-2025-7-4-2",
+        "dream-2026-3-8-0",
+        "dream-2026-3-8-2"
+      ]
+    },
+    {
+      "query": "school dreams involving anxiety",
+      "category": "multi_concept",
+      "relevant_dream_ids": [
+        "dream-2022-1-6-0",
+        "dream-2022-4-11-0",
+        "dream-2022-11-4-0",
+        "dream-2023-1-5-0",
+        "dream-2024-2-14-0",
+        "dream-2024-5-3-0",
+        "dream-2024-11-8-0",
+        "dream-2025-5-18-0",
+        "dream-2025-8-21-0",
+        "dream-2026-4-19-0"
+      ]
+    },
+    {
+      "query": "house dreams involving water",
+      "category": "multi_concept",
+      "relevant_dream_ids": [
+        "dream-2022-4-11-1",
+        "dream-2023-3-1-0",
+        "dream-2024-11-17-0",
+        "dream-2026-1-11-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "technology dreams that become threatening or unsettling",
+      "category": "multi_concept",
+      "relevant_dream_ids": [
+        "dream-2023-12-3-2",
+        "dream-2025-3-30-2",
+        "dream-2025-11-22-0"
+      ]
+    },
+    {
+      "query": "dreams involving both animals and transportation",
+      "category": "multi_concept",
+      "relevant_dream_ids": [
+        "dream-2022-8-26-0",
+        "dream-2023-3-18-0",
+        "dream-2023-6-1-2",
+        "dream-2024-7-21-0",
+        "dream-2025-7-4-2",
+        "dream-2026-3-8-0",
+        "dream-2026-3-8-2"
+      ]
+    },
+    {
+      "query": "school dreams featuring Maya",
+      "category": "multi_concept",
+      "relevant_dream_ids": [
+        "dream-2022-11-4-0",
+        "dream-2024-2-14-0",
+        "dream-2025-5-18-0"
+      ]
+    },
+    {
+      "query": "dreams featuring Maya",
+      "category": "character",
+      "relevant_dream_ids": [
+        "dream-2022-2-18-2",
+        "dream-2022-5-15-2",
+        "dream-2022-11-4-0",
+        "dream-2023-6-1-2",
+        "dream-2023-9-12-0",
+        "dream-2024-2-14-0",
+        "dream-2024-7-21-0",
+        "dream-2024-11-17-0",
+        "dream-2025-1-26-0",
+        "dream-2025-5-18-0",
+        "dream-2025-9-28-0",
+        "dream-2026-1-11-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "dreams featuring Theo",
+      "category": "character",
+      "relevant_dream_ids": [
+        "dream-2022-8-26-0",
+        "dream-2023-1-17-0",
+        "dream-2023-9-12-0",
+        "dream-2024-5-9-0",
+        "dream-2025-3-30-2",
+        "dream-2025-9-28-0",
+        "dream-2025-11-22-2",
+        "dream-2026-3-8-2",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "dreams featuring Lena",
+      "category": "character",
+      "relevant_dream_ids": [
+        "dream-2023-4-2-0",
+        "dream-2023-12-3-2",
+        "dream-2024-11-17-0",
+        "dream-2025-7-4-2",
+        "dream-2026-4-19-0",
+        "dream-2026-7-7-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "dreams featuring Marcus",
+      "category": "character",
+      "relevant_dream_ids": [
+        "dream-2024-10-5-0",
+        "dream-2025-9-28-0"
+      ]
+    },
+    {
+      "query": "dreams featuring Priya",
+      "category": "character",
+      "relevant_dream_ids": [
+        "dream-2025-1-26-0"
+      ]
+    },
+    {
+      "query": "house dreams from 2024",
+      "category": "temporal",
+      "relevant_dream_ids": [
+        "dream-2024-3-16-0",
+        "dream-2024-5-9-0",
+        "dream-2024-10-20-0",
+        "dream-2024-11-17-0"
+      ]
+    },
+    {
+      "query": "school dreams from 2025",
+      "category": "temporal",
+      "relevant_dream_ids": [
+        "dream-2025-3-1-0",
+        "dream-2025-5-18-0",
+        "dream-2025-8-21-0"
+      ]
+    },
+    {
+      "query": "animal dreams from 2026",
+      "category": "temporal",
+      "relevant_dream_ids": [
+        "dream-2026-3-8-0",
+        "dream-2026-3-8-2",
+        "dream-2026-7-7-1"
+      ]
+    },
+    {
+      "query": "dreams involving Maya from 2026",
+      "category": "temporal",
+      "relevant_dream_ids": [
+        "dream-2026-1-11-0",
+        "dream-2026-8-16-0"
+      ]
+    },
+    {
+      "query": "dreams about skiing",
+      "category": "negative_ambiguous",
+      "relevant_dream_ids": []
+    },
+    {
+      "query": "dreams involving a romantic relationship with Maya",
+      "category": "negative_ambiguous",
+      "relevant_dream_ids": [],
+      "notes": "Maya is recurring, but the journal does not establish a romantic relationship."
+    },
+    {
+      "query": "dreams about dogs attacking people",
+      "category": "negative_ambiguous",
+      "relevant_dream_ids": [],
+      "notes": "Dogs appear, but no clearly relevant dream involves a dog attacking a person."
+    }
+  ]
+}

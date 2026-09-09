@@ -34,6 +34,20 @@ class DreamByIdRepository(Protocol):
     def get(self, dream_id: str) -> Dream: ...
 
 
+class AgentTool(Protocol):
+    """Common interface for a read-only tool exposed to the dream agent."""
+
+    name: str
+
+    @property
+    def schema(self) -> dict[str, Any]: ...
+
+    def execute_with_report_data(
+        self,
+        arguments: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]: ...
+
+
 class DreamSearchTool:
     """Expose bounded semantic dream retrieval as one read-only tool."""
 
@@ -271,6 +285,7 @@ class DreamTagTool:
         common = {
             "tags": tags,
             "match": "all",
+            "synthesis_include_all_matches": True,
             "start_date": start_date.isoformat() if start_date else None,
             "end_date": end_date.isoformat() if end_date else None,
             "result_count": len(matches),

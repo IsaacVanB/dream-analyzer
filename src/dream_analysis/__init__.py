@@ -35,12 +35,20 @@ from dream_analysis.repository import (
 )
 from dream_analysis.statistics import DreamStatisticsService
 from dream_analysis.trends import TagTrendService
-from dream_analysis.tools import DreamSearchTool
+from dream_analysis.tools import (
+    AgentTool,
+    DreamByIdTool,
+    DreamSearchTool,
+    DreamTagTool,
+)
 
 __all__ = [
     "Dream",
     "DreamRagAgent",
     "DreamSearchTool",
+    "DreamTagTool",
+    "DreamByIdTool",
+    "AgentTool",
     "DreamIndex",
     "DreamNotFoundError",
     "DreamRepository",

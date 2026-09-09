@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Mapping
 
 from dream_analysis.ollama_client import OllamaGateway, OllamaToolCall
-from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
+from dream_analysis.tools import AgentTool
 
 
 class AgentSearchRequiredError(RuntimeError):
@@ -111,14 +112,31 @@ class DreamRagAgent:
         self,
         *,
         ollama_gateway: OllamaGateway,
-        search_tool: DreamSearchTool,
-        tag_tool: DreamTagTool | None = None,
-        dream_by_id_tool: DreamByIdTool | None = None,
+        tools: Sequence[AgentTool],
     ) -> None:
+        if not tools:
+            raise ValueError("tools must contain at least one agent tool")
+        registry: dict[str, AgentTool] = {}
+        for tool in tools:
+            name = getattr(tool, "name", None)
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("each agent tool must have a non-empty name")
+            if name in registry:
+                raise ValueError(f"duplicate agent tool name: {name}")
+            try:
+                schema_name = tool.schema["function"]["name"]
+            except (KeyError, TypeError) as exc:
+                raise ValueError(f"agent tool {name!r} has an invalid schema") from exc
+            if schema_name != name:
+                raise ValueError(
+                    f"agent tool name {name!r} does not match schema name "
+                    f"{schema_name!r}"
+                )
+            registry[name] = tool
+
         self.ollama = ollama_gateway
-        self.search_tool = search_tool
-        self.tag_tool = tag_tool
-        self.dream_by_id_tool = dream_by_id_tool
+        self.tools = tuple(tools)
+        self._tools_by_name = registry
 
     def answer(
         self,
@@ -154,7 +172,7 @@ class DreamRagAgent:
             str,
             tuple[dict[str, Any], dict[str, Any]],
         ] = {}
-        search_reminder_sent = False
+        tool_reminder_sent = False
         force_reason: str | None = None
 
         while True:
@@ -225,22 +243,17 @@ class DreamRagAgent:
 
             if not tool_calls:
                 if not executions:
-                    if search_reminder_sent:
+                    if tool_reminder_sent:
                         raise AgentSearchRequiredError(
                             "Ollama answered twice without calling a retrieval tool"
                         )
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "Call search_dreams for semantic requests, "
-                                "get_dream_by_id for a supplied dream ID, or "
-                                "get_dreams_by_tags for exact tag requests before "
-                                "answering."
-                            ),
+                            "content": self._tool_reminder(),
                         }
                     )
-                    search_reminder_sent = True
+                    tool_reminder_sent = True
                     continue
                 force_reason = (
                     "The model finished requesting searches. Synthesize a final "
@@ -324,12 +337,7 @@ class DreamRagAgent:
         self,
         call: OllamaToolCall,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        tools = {self.search_tool.name: self.search_tool}
-        if self.tag_tool is not None:
-            tools[self.tag_tool.name] = self.tag_tool
-        if self.dream_by_id_tool is not None:
-            tools[self.dream_by_id_tool.name] = self.dream_by_id_tool
-        tool = tools.get(call.name)
+        tool = self._tools_by_name.get(call.name)
         if tool is None:
             result = {
                 "ok": False,
@@ -352,12 +360,14 @@ class DreamRagAgent:
         )
 
     def _tool_schemas(self) -> list[dict[str, Any]]:
-        schemas = [self.search_tool.schema]
-        if self.tag_tool is not None:
-            schemas.append(self.tag_tool.schema)
-        if self.dream_by_id_tool is not None:
-            schemas.append(self.dream_by_id_tool.schema)
-        return schemas
+        return [tool.schema for tool in self.tools]
+
+    def _tool_reminder(self) -> str:
+        names = ", ".join(tool.name for tool in self.tools)
+        return (
+            "Call an available retrieval tool before finishing. Select the tool "
+            f"whose description best matches the request. Available tools: {names}."
+        )
 
     @staticmethod
     def _tool_cache_key(call: OllamaToolCall) -> str:
@@ -503,7 +513,9 @@ class DreamRagAgent:
         tag_catalog: list[str] = []
         cataloged: set[str] = set()
         for execution in executions:
-            if execution.name != DreamTagTool.name or not execution.result.get("ok"):
+            if not execution.result.get("ok") or not execution.result.get(
+                "synthesis_include_all_matches"
+            ):
                 continue
             full_result = execution.report_result or execution.result
             for dream in full_result.get("dreams", []) or []:
@@ -623,13 +635,9 @@ class DreamRagAgent:
         today = date.today().isoformat()
         return (
             "You plan retrieval for questions about a private dream journal. You "
-            "must call a retrieval tool before finishing. Use get_dream_by_id "
-            "whenever the user supplies a specific dream_id, including requests "
-            "to analyze that dream. Use get_dreams_by_tags "
-            "when the user explicitly asks for dreams with a tag or an AND "
-            "combination of tags; pass every requested tag in one tags array. Use "
-            "search_dreams for semantic topics and choose a concise query focused "
-            "on dream content rather than analysis instructions. "
+            "must call at least one available retrieval tool before finishing. "
+            "Select tools according to their descriptions and use concise search "
+            "terms focused on dream content rather than analysis instructions. "
             f"Today's date is {today}. When the question restricts dates, pass "
             "inclusive start_date and end_date values to every relevant search "
             "using YYYY-MM-DD. Interpret 'last month' as the previous calendar "

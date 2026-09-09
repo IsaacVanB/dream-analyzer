@@ -168,6 +168,7 @@ class DreamTagToolTests(unittest.TestCase):
         self.assertEqual(repository.calls, [(["school", "lucid?"], None, None)])
         self.assertEqual(bounded["result_count"], 2)
         self.assertEqual(bounded["match"], "all")
+        self.assertTrue(bounded["synthesis_include_all_matches"])
         self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
         self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
         json.dumps(bounded)

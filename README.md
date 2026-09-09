@@ -180,6 +180,9 @@ retrieval. `get_dream_by_id` retrieves one exact dream for requests such as
 `Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
 containing all requested exact tags; matching is case-insensitive, preserves
 punctuation such as `lucid?`, and treats multiple tags as an AND combination.
+All tools implement the shared `AgentTool` protocol and are supplied through an
+ordered registry, so adding another tool does not require changing agent
+dispatch, schema collection, or retry-reminder logic.
 The semantic and tag tools accept optional, inclusive `start_date` and
 `end_date` bounds in `YYYY-MM-DD` format. The agent
 translates relative language into those bounds using the current date; "last

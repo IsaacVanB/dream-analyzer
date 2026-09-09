@@ -73,6 +73,41 @@ class FakeTagRepository:
         )
 
 
+class CustomRetrievalTool:
+    name = "custom_retrieval"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    @property
+    def schema(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": "Retrieve a custom bounded dream result.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"term": {"type": "string"}},
+                    "required": ["term"],
+                },
+            },
+        }
+
+    def execute_with_report_data(self, arguments):
+        self.calls.append(arguments)
+        result = {
+            "dreams": [
+                {
+                    "dream_id": "custom-1",
+                    "date": "4/5/2024",
+                    "text": "A custom retrieval result.",
+                }
+            ]
+        }
+        return result, result
+
+
 def tool_response(name: str, arguments: dict) -> dict:
     return {
         "message": {
@@ -99,9 +134,42 @@ class DreamRagAgentTests(unittest.TestCase):
         index = FakeIndex()
         agent = DreamRagAgent(
             ollama_gateway=gateway,
-            search_tool=DreamSearchTool(index, result_limit=4),
+            tools=[DreamSearchTool(index, result_limit=4)],
         )
         return agent, client, index
+
+    def test_agent_registry_dispatches_a_new_tool_without_agent_changes(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response("custom_retrieval", {"term": "room"}),
+                final_response("Discarded draft answer."),
+                final_response("Custom grounded answer."),
+            ]
+        )
+        tool = CustomRetrievalTool()
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[tool],
+        )
+
+        response = agent.answer("Find a custom room dream.")
+
+        self.assertEqual(tool.calls, [{"term": "room"}])
+        self.assertEqual(response.answer, "Custom grounded answer.")
+        self.assertEqual(
+            client.chat_calls[0]["tools"][0]["function"]["name"],
+            "custom_retrieval",
+        )
+        self.assertIn("DREAM_ID: custom-1", response.turn_traces[-1].request_prompt)
+
+    def test_agent_registry_rejects_empty_and_duplicate_tool_names(self) -> None:
+        gateway = OllamaGateway(client=SequencedOllamaClient([]))
+        tool = CustomRetrievalTool()
+
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            DreamRagAgent(ollama_gateway=gateway, tools=[])
+        with self.assertRaisesRegex(ValueError, "duplicate agent tool name"):
+            DreamRagAgent(ollama_gateway=gateway, tools=[tool, tool])
 
     def test_agent_executes_search_and_returns_the_final_answer(self) -> None:
         agent, client, index = self.make_agent(
@@ -211,8 +279,7 @@ class DreamRagAgentTests(unittest.TestCase):
         repository = FakeTagRepository()
         agent = DreamRagAgent(
             ollama_gateway=gateway,
-            search_tool=DreamSearchTool(index),
-            tag_tool=DreamTagTool(repository),
+            tools=[DreamSearchTool(index), DreamTagTool(repository)],
         )
 
         response = agent.answer("Get all dreams tagged school and lucid?")
@@ -246,9 +313,11 @@ class DreamRagAgentTests(unittest.TestCase):
         repository = FakeTagRepository()
         agent = DreamRagAgent(
             ollama_gateway=gateway,
-            search_tool=DreamSearchTool(index),
-            tag_tool=DreamTagTool(repository),
-            dream_by_id_tool=DreamByIdTool(repository),
+            tools=[
+                DreamSearchTool(index),
+                DreamTagTool(repository),
+                DreamByIdTool(repository),
+            ],
         )
 
         response = agent.answer("Get dream-2025-1-9-0 and analyze it.")
@@ -576,7 +645,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(response.answer, "Grounded answer (dream-1, 1/2/2024).")
         self.assertEqual(index.calls, [("hidden room", 4, None, None)])
         reminder = client.chat_calls[1]["messages"][-1]["content"]
-        self.assertIn("Call search_dreams", reminder)
+        self.assertIn("Available tools: search_dreams", reminder)
 
     def test_agent_rejects_two_answers_without_search(self) -> None:
         agent, _, index = self.make_agent(
@@ -595,9 +664,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn("previous calendar month", prompt)
         self.assertIn("start_date and end_date", prompt)
         self.assertIn("SEARCH_COMPLETE", prompt)
-        self.assertIn("get_dreams_by_tags", prompt)
-        self.assertIn("get_dream_by_id", prompt)
-        self.assertIn("AND combination", prompt)
+        self.assertIn("according to their descriptions", prompt)
 
 
 if __name__ == "__main__":

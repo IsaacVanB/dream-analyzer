@@ -48,19 +48,21 @@ def build_agent(
     )
     return DreamRagAgent(
         ollama_gateway=gateway,
-        search_tool=DreamSearchTool(
-            index,
-            result_limit=top_k,
-            max_chars_per_dream=max_chars_per_dream,
-        ),
-        tag_tool=DreamTagTool(
-            repository,
-            max_chars_per_dream=max_chars_per_dream,
-        ),
-        dream_by_id_tool=DreamByIdTool(
-            repository,
-            max_chars_per_dream=max_chars_per_dream,
-        ),
+        tools=[
+            DreamSearchTool(
+                index,
+                result_limit=top_k,
+                max_chars_per_dream=max_chars_per_dream,
+            ),
+            DreamTagTool(
+                repository,
+                max_chars_per_dream=max_chars_per_dream,
+            ),
+            DreamByIdTool(
+                repository,
+                max_chars_per_dream=max_chars_per_dream,
+            ),
+        ],
     )
 
 

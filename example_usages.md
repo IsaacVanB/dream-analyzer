@@ -216,6 +216,10 @@ every supplied tag (AND matching), so prompts such as
 inspects bounded results and then produces a
 grounded answer with dream IDs and dates.
 
+Internally, these tools implement a common `AgentTool` protocol and are passed
+to the agent as an ordered registry. New retrieval tools can therefore be added
+without extending hardcoded dispatch branches.
+
 ```bash
 python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
 python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
