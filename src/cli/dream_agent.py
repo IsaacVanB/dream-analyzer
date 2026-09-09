@@ -95,12 +95,14 @@ def build_agent(
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Answer a question using an Ollama agent with read-only dream search."
-        )
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = (
+        "Answer a question using an Ollama agent with read-only dream search."
     )
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument("question", help="Question to answer from the dream journal.")
     parser.add_argument(
         "--dreams-path",
@@ -572,9 +574,11 @@ def report_settings(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+def run(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> None:
+    parser = parser or build_parser()
     validate_args(parser, args)
 
     agent = build_agent(
@@ -641,6 +645,11 @@ def main() -> None:
         )
         output_path = save_markdown_report(args.output, report)
         print(f"\nSaved Markdown report to {output_path}")
+
+
+def main() -> None:
+    parser = build_parser()
+    run(parser.parse_args(), parser)
 
 
 if __name__ == "__main__":

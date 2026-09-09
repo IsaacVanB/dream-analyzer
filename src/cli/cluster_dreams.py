@@ -61,11 +61,13 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     return ClusterReportService().write(analysis, args.output_dir)
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
     """Build the command-line parser separately for reuse and testing."""
-    parser = argparse.ArgumentParser(
-        description="Cluster stored dream embeddings and report candidate themes."
-    )
+    description = "Cluster stored dream embeddings and report candidate themes."
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument("--chroma-path", default=CHROMA_PATH)
     parser.add_argument("--collection-name", default=COLLECTION_NAME)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
@@ -95,9 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+def run_command(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> dict[str, Path]:
+    parser = parser or build_parser()
     try:
         paths = run(args)
     except ValueError as exc:
@@ -105,6 +109,12 @@ def main() -> None:
     print("Cluster analysis complete:")
     for name, path in paths.items():
         print(f"  {name}: {path}")
+    return paths
+
+
+def main() -> None:
+    parser = build_parser()
+    run_command(parser.parse_args(), parser)
 
 
 if __name__ == "__main__":

@@ -138,10 +138,12 @@ def sync_chroma_db(
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Create a persistent ChromaDB database from dream JSONL."
-    )
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = "Create a persistent ChromaDB database from dream JSONL."
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument(
         "--dreams-path",
         type=Path,
@@ -179,7 +181,14 @@ def main() -> None:
         action="store_true",
         help="Delete indexed IDs that are absent from the parsed journal.",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def run(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> None:
+    parser = parser or build_parser()
     if args.rebuild and args.prune:
         parser.error("--rebuild and --prune cannot be used together")
 
@@ -212,6 +221,11 @@ def main() -> None:
             f"Warning: {len(result.orphaned_ids)} indexed dream(s) are absent from "
             "the parsed journal; they were not deleted."
         )
+
+
+def main() -> None:
+    parser = build_parser()
+    run(parser.parse_args(), parser)
 
 
 if __name__ == "__main__":

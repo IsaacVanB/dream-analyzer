@@ -14,8 +14,13 @@ ollama pull nomic-embed-text
 ollama pull qwen3:8b
 ```
 
-The editable install makes both the reusable `dream_analysis` package and the
-commands under `src/cli/` importable while developing from the repository.
+The editable install makes the reusable `dream_analysis` package importable and
+installs the consolidated `dream-analyzer` command. Run `dream-analyzer --help`
+to list its subcommands, or `dream-analyzer <subcommand> --help` for the options
+of a specific command.
+
+The scripts under `src/cli/` remain available temporarily for backward
+compatibility, but `dream-analyzer` is the preferred interface for new usage.
 
 At least one embedding model and chat model are needed. Ollama must be running locally at `http://localhost:11434`.
 
@@ -57,13 +62,13 @@ demonstrating this format. It is the default input, so you can run the code
 without supplying your own journal:
 
 ```bash
-python3 src/cli/parse_dreams.py
+dream-analyzer parse
 ```
 
 To parse your own journal, provide input and output paths:
 
 ```bash
-python3 src/cli/parse_dreams.py path/to/journal.txt data/my_dreams.jsonl
+dream-analyzer parse path/to/journal.txt data/my_dreams.jsonl
 ```
 
 For an ongoing journal where new dreams are appended at the end, use the
@@ -84,7 +89,7 @@ recorded journal version is idempotent.
 Synchronize the ChromaDB index:
 
 ```bash
-python3 src/cli/build_chroma_db.py
+dream-analyzer index
 ```
 
 Embeddings are generated from dream text only; metadata is stored separately.
@@ -106,10 +111,10 @@ directions and should not be compared directly.
 |---|---|---|
 | `retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `basic_rag.py` | Chroma distance | The generated or supplied retrieval query is ranked by Chroma. |
-| `dream_agent.py` | Chroma distance | `search_dreams` uses Chroma ranking; optional dates filter that ranked search. |
+| `dream-analyzer ask` | Chroma distance | `search_dreams` uses Chroma ranking; optional dates filter that ranked search. |
 | `evaluate_retrieval.py` | Configurable | Defaults to Chroma distance; `--retrieval-metric cosine` uses cosine similarity and `both` compares them. |
 | `compare_models.py rag` | Chroma distance | Uses the same retrieval path as `basic_rag.py`. |
-| `analyze_dream.py --related-dreams ...` | Cosine similarity | Higher is more similar; `--similarity-threshold` is a cosine threshold. |
+| `dream-analyzer analyze ... --related-dreams ...` | Cosine similarity | Higher is more similar; `--similarity-threshold` is a cosine threshold. |
 | `compare_models.py analyze` | Cosine similarity | Uses the same related-dream path as `analyze_dream.py`. |
 
 Collections built by this repository do not explicitly configure Chroma's
@@ -119,7 +124,7 @@ similarity in Python, filters by the similarity threshold, and sorts from
 highest to lowest. Because the project does not normalize embeddings before
 storage, the two paths can return different rankings for the same input.
 
-`cluster_dreams.py` is not a retrieval command. It L2-normalizes stored vectors,
+`dream-analyzer cluster` is not a retrieval command. It L2-normalizes stored vectors,
 uses cosine distance for UMAP, uses cosine similarity for representative
 selection, and uses Euclidean distance for HDBSCAN clustering.
 
@@ -134,15 +139,17 @@ python3 src/cli/retrieve_dreams.py "hidden room water" --top-k 5
 Plot tag frequency over time:
 
 ```bash
-python3 src/cli/plot_tags.py --tags house recurring school
+dream-analyzer trends --tags house recurring school
+# For one tag, the shorter alias is also available:
+dream-analyzer trends --tag school
 ```
 
 Cluster the existing dream embeddings and generate theme evidence, static plots,
 an interactive map, and per-dream assignments:
 
 ```bash
-python3 src/cli/cluster_dreams.py
-python3 src/cli/cluster_dreams.py --label-clusters
+dream-analyzer cluster
+dream-analyzer cluster --label-clusters
 ```
 
 Cluster labels summarize recurring content and are not psychological diagnoses.
@@ -160,14 +167,14 @@ without constructing an `argparse.Namespace` or invoking the CLI.
 Compute summary stats:
 
 ```bash
-python3 src/cli/compute_stats.py --freq Y
+dream-analyzer stats --freq Y
 ```
 
 Analyze one dream:
 
 ```bash
-python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0
-python3 src/cli/analyze_dream.py --dream-id dream-2022-1-22-0 --related-dreams 5
+dream-analyzer analyze dream-2022-1-22-0
+dream-analyzer analyze dream-2022-1-22-0 --related-dreams 5
 ```
 
 Extract structured features for every dream or one dream:
@@ -205,18 +212,18 @@ Or let a tool-capable Ollama model choose the semantic search query and use the
 results in an agent loop:
 
 ```bash
-python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden rooms?"
-python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
-python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
-python3 src/cli/dream_agent.py "What were my most common journal tags in July 2025?"
-python3 src/cli/dream_agent.py "Did school-tagged dreams become more common during 2025?"
-python3 src/cli/dream_agent.py "Who appears most often in my structured dreams?"
-python3 src/cli/dream_agent.py "Who is Maya?"
-python3 src/cli/dream_agent.py \
+dream-analyzer ask "What patterns appear in dreams about hidden rooms?"
+dream-analyzer ask "What are common themes in dreams from last month?"
+dream-analyzer ask "How many dreams did I record in 2025?"
+dream-analyzer ask "What were my most common journal tags in July 2025?"
+dream-analyzer ask "Did school-tagged dreams become more common during 2025?"
+dream-analyzer ask "Who appears most often in my structured dreams?"
+dream-analyzer ask "Who is Maya?"
+dream-analyzer ask \
   "What are common themes in dreams about school? Use only dreams from last month."
-python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
+dream-analyzer ask "What patterns recur in school dreams?" \
   --output outputs/agent/school_patterns.md
-python3 src/cli/dream_agent.py "Compare house and school dreams" \
+dream-analyzer ask "Compare house and school dreams" \
   --max-tool-calls 3 \
   --debug \
   --output outputs/agent/comparison_trace.md

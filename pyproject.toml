@@ -9,6 +9,9 @@ description = "Local dream-journal parsing, retrieval, and analysis"
 readme = "README.md"
 requires-python = ">=3.10"
 
+[project.scripts]
+dream-analyzer = "cli.main:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["dream_analysis*", "cli*"]

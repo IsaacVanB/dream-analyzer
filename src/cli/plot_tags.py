@@ -250,10 +250,12 @@ def make_tag_frequency_plot(
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Plot dream tag frequencies over time."
-    )
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = "Plot dream tag frequencies over time."
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument(
         "--dreams-path",
         type=Path,
@@ -268,6 +270,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--tags",
+        "--tag",
         nargs="+",
         help="Specific tags to plot. Defaults to the top tags.",
     )
@@ -305,8 +308,13 @@ def main() -> None:
         action="store_true",
         help="Display the plot interactively after saving.",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def run(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> dict[str, Any]:
     metadata = make_tag_frequency_plot(
         dreams_path=args.dreams_path,
         output_path=args.output,
@@ -320,6 +328,12 @@ def main() -> None:
         end_date=args.end_date,
     )
     print(json.dumps(metadata, indent=2))
+    return metadata
+
+
+def main() -> None:
+    parser = build_parser()
+    run(parser.parse_args())
 
 
 if __name__ == "__main__":

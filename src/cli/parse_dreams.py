@@ -49,10 +49,12 @@ def write_jsonl(dreams: list[dict[str, Any]], output_path: Path) -> None:
     write_text_atomic(output_path, content)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Parse a dream journal text file into JSON Lines."
-    )
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = "Parse a dream journal text file into JSON Lines."
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument(
         "input",
         nargs="?",
@@ -78,9 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    argument_parser = build_parser()
-    args = argument_parser.parse_args()
+def run(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> None:
+    argument_parser = parser or build_parser()
     journal_text = args.input.read_text(encoding="utf-8")
     try:
         dreams = JournalParser(
@@ -90,6 +94,11 @@ def main() -> None:
         argument_parser.error(str(exc))
     write_jsonl(dreams, args.output)
     print(f"Wrote {len(dreams)} dreams to {args.output}")
+
+
+def main() -> None:
+    argument_parser = build_parser()
+    run(argument_parser.parse_args(), argument_parser)
 
 
 if __name__ == "__main__":

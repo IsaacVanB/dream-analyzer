@@ -246,11 +246,19 @@ def format_saved_analysis(
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Analyze a dream selected by ID or supplied as text."
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = "Analyze a dream selected by ID or supplied as text."
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
+    parser.add_argument(
+        "dream_id_argument",
+        nargs="?",
+        metavar="dream-id",
+        help="ID of a dream to analyze (preferred consolidated CLI form).",
     )
-    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group = parser.add_mutually_exclusive_group()
     source_group.add_argument(
         "--dream-id",
         help="ID of a dream to load from the JSONL file.",
@@ -338,8 +346,22 @@ def main() -> None:
         default=0.2,
         help="Sampling temperature for the chat model.",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def run(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> Path:
+    parser = parser or build_parser()
+    selected_sources = sum(
+        value is not None
+        for value in (args.dream_id_argument, args.dream_id, args.text)
+    )
+    if selected_sources != 1:
+        parser.error("provide exactly one dream-id, --dream-id, or --text")
+    if args.dream_id_argument is not None:
+        args.dream_id = args.dream_id_argument
     if args.related_dreams < 0:
         parser.error("--related-dreams cannot be negative")
     if not -1.0 <= args.similarity_threshold <= 1.0:
@@ -431,6 +453,12 @@ def main() -> None:
         output_dir=args.output_dir,
     )
     print(f"\nSaved analysis to {output_path}")
+    return output_path
+
+
+def main() -> None:
+    parser = build_parser()
+    run(parser.parse_args(), parser)
 
 
 if __name__ == "__main__":

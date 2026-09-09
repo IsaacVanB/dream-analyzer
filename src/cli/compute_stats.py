@@ -163,10 +163,12 @@ def compute_dream_stats(
     return stats
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Compute summary statistics for parsed dream records."
-    )
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = "Compute summary statistics for parsed dream records."
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument(
         "--dreams-path",
         type=Path,
@@ -210,8 +212,13 @@ def main() -> None:
         default=3,
         help="Minimum word length to include in common-word stats.",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def run(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser | None = None,
+) -> dict[str, Any]:
     stats = compute_dream_stats(
         dreams_path=args.dreams_path,
         output_path=args.output,
@@ -223,6 +230,12 @@ def main() -> None:
         min_word_length=args.min_word_length,
     )
     print(json.dumps(stats, indent=2))
+    return stats
+
+
+def main() -> None:
+    parser = build_parser()
+    run(parser.parse_args())
 
 
 if __name__ == "__main__":
