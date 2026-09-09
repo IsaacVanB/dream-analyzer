@@ -34,6 +34,7 @@ from dream_analysis.repository import (
     load_jsonl_objects,
 )
 from dream_analysis.statistics import DreamStatisticsService
+from dream_analysis.structuring import DreamStructuringService
 from dream_analysis.trends import TagTrendService
 from dream_analysis.tools import (
     AgentTool,
@@ -54,6 +55,7 @@ __all__ = [
     "DreamRepository",
     "DreamValidationError",
     "DreamStatisticsService",
+    "DreamStructuringService",
     "DirectRagService",
     "EmbeddingModelMismatchError",
     "filter_records_by_date",

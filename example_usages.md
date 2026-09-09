@@ -442,6 +442,11 @@ Uses structured Ollama output to extract grounded, descriptive fields from
 every dream and saves one JSON object per line to
 `outputs/structured_dreams/dream_features.jsonl`:
 
+The reusable schema, prompts, validation, record construction, selection/resume
+logic, and JSONL decoding live in `dream_analysis.structuring` behind
+`DreamStructuringService`. The CLI handles arguments, progress, failure
+reporting, and atomic checkpoint saves.
+
 ```bash
 python3 src/cli/structure_dreams.py
 ```

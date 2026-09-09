@@ -227,6 +227,12 @@ results. The command-line scripts remain responsible only for loading files,
 plotting, and saving outputs; these service boundaries can later be exposed as
 read-only LLM tools.
 
+Structured feature extraction is implemented by `DreamStructuringService` in
+`dream_analysis.structuring`. That module owns the extraction schema and prompts,
+response validation, versioned record construction, selection/resume behavior,
+and structured JSONL decoding. `structure_dreams.py` handles CLI orchestration,
+progress reporting, and atomic checkpoint saves.
+
 Compare the four chat/embedding combinations (qwen3:8b and gemma3:12b for chat, nomic-embed-text and qwen3-embedding for embedding) with a fixed retrieval query:
 
 ```bash
