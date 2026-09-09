@@ -65,6 +65,7 @@ class DreamStructuringTests(unittest.TestCase):
         self.assertEqual(record["dream_id"], "dream-1")
         self.assertEqual(record["schema_version"], SCHEMA_VERSION)
         self.assertEqual(record["model"], "feature-model")
+        self.assertRegex(record["structured_text_hash"], r"^[0-9a-f]{64}$")
         self.assertEqual(gateway.calls[0]["schema"], DREAM_FEATURE_SCHEMA)
         self.assertEqual(gateway.calls[0]["options"]["num_ctx"], 4096)
 

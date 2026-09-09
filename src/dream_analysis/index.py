@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date
 import math
 from pathlib import Path
@@ -12,6 +13,7 @@ import chromadb
 from chromadb.errors import NotFoundError
 
 from dream_analysis.dates import record_date, parse_date_value, validate_date_range
+from dream_analysis.imports import dream_text_hash
 from dream_analysis.models import Dream, RelatedDream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
 
@@ -61,8 +63,13 @@ def build_document(dream: Dream) -> str:
     )
 
 
-def build_metadata(dream: Dream) -> dict[str, str | int]:
+def build_metadata(
+    dream: Dream,
+    *,
+    embedded_text_hash: str | None = None,
+) -> dict[str, str | int]:
     """Build Chroma-compatible metadata using the project's existing shape."""
+    current_text_hash = dream_text_hash(dream.text)
     return {
         "date": dream.date,
         "year": dream.year or 0,
@@ -72,7 +79,19 @@ def build_metadata(dream: Dream) -> dict[str, str | int]:
         "date_sort": dream.date_sort.isoformat() if dream.date_sort else "",
         "tags": ", ".join(dream.tags),
         "word_count": dream.word_count,
+        "current_text_hash": current_text_hash,
+        "embedded_text_hash": embedded_text_hash or current_text_hash,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class IndexSyncResult:
+    """Summary of an incremental Chroma synchronization."""
+
+    embedded: int
+    updated: int
+    unchanged: int
+    orphaned_ids: tuple[str, ...]
 
 
 def validate_collection_embedding_model(
@@ -162,6 +181,111 @@ class DreamIndex:
                 embeddings=embeddings,
             )
         return len(dream_list)
+
+    def sync(
+        self,
+        dreams: Sequence[Dream],
+        *,
+        batch_size: int = 32,
+        progress: Callable[[int, int, Dream], None] | None = None,
+    ) -> IndexSyncResult:
+        """Add missing dreams and refresh documents without re-embedding old IDs.
+
+        Existing embeddings are deliberately retained when their source text has
+        received a correction. Metadata records both the current text hash and
+        the hash of the text that produced the retained vector.
+        """
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        dream_list = list(dreams)
+        ids = [dream.dream_id for dream in dream_list]
+        if len(ids) != len(set(ids)):
+            raise ValueError("dream IDs must be unique")
+
+        try:
+            collection = self.client.get_collection(name=self.collection_name)
+            validate_collection_embedding_model(
+                collection,
+                collection_name=self.collection_name,
+                embedding_model=self.embedding_model,
+            )
+        except (NotFoundError, ValueError) as exc:
+            if isinstance(exc, EmbeddingModelMismatchError):
+                raise
+            collection = self.client.create_collection(
+                name=self.collection_name,
+                metadata={
+                    "embedding_source": "dream_text",
+                    "embedding_model": self.embedding_model,
+                },
+            )
+
+        stored = collection.get(include=["documents", "metadatas", "embeddings"])
+        stored_embeddings = stored.get("embeddings")
+        if stored_embeddings is None:
+            raise ValueError("The ChromaDB collection contains no embeddings.")
+        stored_by_id = {
+            str(dream_id): (
+                str(document or ""),
+                dict(metadata or {}),
+                [float(value) for value in embedding],
+            )
+            for dream_id, document, metadata, embedding in zip(
+                stored["ids"],
+                stored.get("documents") or [],
+                stored.get("metadatas") or [],
+                stored_embeddings,
+            )
+        }
+        missing = [dream for dream in dream_list if dream.dream_id not in stored_by_id]
+        updated = 0
+        unchanged = 0
+
+        for offset in range(0, len(missing), batch_size):
+            batch = missing[offset : offset + batch_size]
+            if progress is not None:
+                for index, dream in enumerate(batch, start=offset + 1):
+                    progress(index, len(missing), dream)
+            embeddings = self.ollama.embed_many(
+                [dream.text for dream in batch], model=self.embedding_model
+            )
+            collection.add(
+                ids=[dream.dream_id for dream in batch],
+                documents=[build_document(dream) for dream in batch],
+                metadatas=[build_metadata(dream) for dream in batch],
+                embeddings=embeddings,
+            )
+
+        for dream in dream_list:
+            existing = stored_by_id.get(dream.dream_id)
+            if existing is None:
+                continue
+            old_document, old_metadata, old_embedding = existing
+            embedded_hash = str(
+                old_metadata.get("embedded_text_hash")
+                or dream_text_hash(extract_dream_text(old_document))
+            )
+            document = build_document(dream)
+            metadata = build_metadata(dream, embedded_text_hash=embedded_hash)
+            if old_document == document and old_metadata == metadata:
+                unchanged += 1
+                continue
+            collection.update(
+                ids=[dream.dream_id],
+                documents=[document],
+                metadatas=[metadata],
+                embeddings=[old_embedding],
+            )
+            updated += 1
+
+        current_ids = set(ids)
+        orphaned = tuple(sorted(set(stored_by_id) - current_ids))
+        return IndexSyncResult(
+            embedded=len(missing),
+            updated=updated,
+            unchanged=unchanged,
+            orphaned_ids=orphaned,
+        )
 
     def search(
         self,

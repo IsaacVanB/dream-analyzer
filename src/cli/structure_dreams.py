@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from dream_analysis.artifacts import write_text_atomic
 from dream_analysis.config import Settings
+from dream_analysis.imports import DEFAULT_IMPORT_STATE_PATH, import_new_ids
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.structuring import (
     ARRAY_FIELDS,
@@ -82,6 +83,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reprocess selected dreams already present in the output.",
     )
+    parser.add_argument(
+        "--scope",
+        choices=("pending", "new"),
+        default="pending",
+        help="Process all pending dreams, or only new dreams from an import.",
+    )
+    parser.add_argument(
+        "--import-state",
+        type=Path,
+        default=DEFAULT_IMPORT_STATE_PATH,
+        help="Journal import state used by --scope new.",
+    )
+    parser.add_argument(
+        "--import-id",
+        default="latest",
+        help="Import ID used by --scope new; defaults to the latest import.",
+    )
     return parser
 
 
@@ -92,6 +110,12 @@ def main() -> None:
         parser.error("--num-ctx must be positive")
 
     dreams = select_dreams(load_dreams(args.dreams_path), args.dream_id)
+    if args.scope == "new":
+        try:
+            selected_ids = set(import_new_ids(args.import_state, args.import_id))
+        except ValueError as exc:
+            parser.error(str(exc))
+        dreams = [dream for dream in dreams if dream.get("dream_id") in selected_ids]
     records = load_existing_records(args.output)
     pending = select_pending_dreams(
         dreams,

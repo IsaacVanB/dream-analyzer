@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from dream_analysis.ollama_client import OllamaGateway
+from dream_analysis.imports import dream_text_hash
 from dream_analysis.repository import DreamRepository
 
 
@@ -290,6 +291,7 @@ def build_record(
         "date_sort": dream.get("date_sort"),
         "journal_tags": dream.get("tags", []),
         "source_word_count": dream.get("word_count"),
+        "structured_text_hash": dream_text_hash(str(dream.get("text", ""))),
         "schema_version": SCHEMA_VERSION,
         "model": model,
         "extracted_at": timestamp.isoformat(timespec="seconds"),

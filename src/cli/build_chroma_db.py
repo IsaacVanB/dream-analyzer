@@ -13,6 +13,7 @@ from chromadb.errors import NotFoundError
 from dream_analysis.config import Settings
 from dream_analysis.index import (
     DreamIndex,
+    IndexSyncResult,
     build_document as build_index_document,
     build_metadata as build_index_metadata,
 )
@@ -110,6 +111,31 @@ def build_chroma_db(
     )
 
 
+def sync_chroma_db(
+    *,
+    dreams_path: Path = DREAMS_PATH,
+    chroma_path: str = CHROMA_PATH,
+    collection_name: str = COLLECTION_NAME,
+    embed_model: str = EMBED_MODEL,
+    batch_size: int = 32,
+) -> IndexSyncResult:
+    """Synchronize parsed dreams while retaining embeddings for existing IDs."""
+    dreams = DreamRepository(dreams_path).all()
+    index = DreamIndex(
+        path=chroma_path,
+        collection_name=collection_name,
+        embedding_model=embed_model,
+        ollama_gateway=OllamaGateway(),
+    )
+    return index.sync(
+        dreams,
+        batch_size=batch_size,
+        progress=lambda current, total, dream: print(
+            f"Embedding new dream {current}/{total}: {dream.dream_id}"
+        ),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Create a persistent ChromaDB database from dream JSONL."
@@ -141,16 +167,40 @@ def main() -> None:
         default=32,
         help="Number of dream texts to embed per Ollama request.",
     )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Discard and regenerate all embeddings instead of synchronizing.",
+    )
     args = parser.parse_args()
 
-    indexed_count = build_chroma_db(
+    if args.rebuild:
+        indexed_count = build_chroma_db(
+            dreams_path=args.dreams_path,
+            chroma_path=args.chroma_path,
+            collection_name=args.collection_name,
+            embed_model=args.embed_model,
+            batch_size=args.batch_size,
+        )
+        print(f"Rebuilt {indexed_count} dream embeddings at {args.chroma_path}.")
+        return
+
+    result = sync_chroma_db(
         dreams_path=args.dreams_path,
         chroma_path=args.chroma_path,
         collection_name=args.collection_name,
         embed_model=args.embed_model,
         batch_size=args.batch_size,
     )
-    print(f"Indexed {indexed_count} dreams in ChromaDB at {args.chroma_path}.")
+    print(
+        f"Synchronized ChromaDB at {args.chroma_path}: {result.embedded} embedded, "
+        f"{result.updated} metadata/document updates, {result.unchanged} unchanged."
+    )
+    if result.orphaned_ids:
+        print(
+            f"Warning: {len(result.orphaned_ids)} indexed dream(s) are absent from "
+            "the parsed journal; they were not deleted."
+        )
 
 
 if __name__ == "__main__":

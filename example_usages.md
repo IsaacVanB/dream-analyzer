@@ -26,6 +26,21 @@ date stops the command and identifies the original value and journal line number
 for manual correction. Zero placeholders remain valid for supported partial or
 unknown dates: `0/0/YYYY`, `M/0/YYYY`, and `0/0/00` or `0/0/0000`.
 
+## `src/cli/sync_dream_journal.py`
+
+Synchronizes an ongoing append-only journal with an existing parsed JSONL file
+and records the new IDs for downstream work:
+
+```bash
+python3 src/cli/sync_dream_journal.py path/to/journal.txt --dry-run
+python3 src/cli/sync_dream_journal.py path/to/journal.txt
+```
+
+Small corrections to the old positional prefix retain their IDs. Truncation,
+reordering, insertion into that prefix, or a substantive edit stops the import.
+Use `--minimum-similarity` to adjust the conservative edit threshold and
+`--state` to choose a non-default import-state file.
+
 ## `src/cli/check_dates.py`
 
 Checks parsed dreams for suspicious years, duplicate dates, and duplicate dream IDs. It is helpful for finding human errors in dream journal dates and does not modify the data. Dates containing `0` placeholders are ignored during date checks, but their dream IDs are still checked for duplicates.
@@ -51,18 +66,21 @@ Embeds only each dream's text with Ollama `nomic-embed-text` and saves the vecto
 python3 src/cli/build_chroma_db.py
 python3 src/cli/build_chroma_db.py --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
 python3 src/cli/build_chroma_db.py --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
+python3 src/cli/build_chroma_db.py --rebuild
 ```
 
 Arguments:
 
 - `--dreams-path`: path to parsed dream JSONL records. Defaults to `data/dreams.jsonl`.
 - `--chroma-path`: directory for the persistent ChromaDB database. Defaults to `data/chroma_db`.
-- `--collection-name`: ChromaDB collection name to recreate. Defaults to `dreams`.
+- `--collection-name`: ChromaDB collection to synchronize. Defaults to `dreams_nomic_embed_text`.
 - `--embed-model`: Ollama embedding model. Defaults to `nomic-embed-text`.
-- `--batch-size`: number of dream texts sent to Ollama per embedding request. Defaults to `32`.
+- `--batch-size`: number of new dream texts sent to Ollama per embedding request. Defaults to `32`.
+- `--rebuild`: replace the collection and regenerate every vector. Without it,
+  the command adds missing dream IDs and preserves existing embeddings.
 
-Requires Ollama running locally at `http://localhost:11434`.
-Run this command again after changing the embedding logic so the existing index is rebuilt with text-only embeddings.
+Requires Ollama running locally at `http://localhost:11434`. After changing the
+embedding logic, run this command with `--rebuild` to regenerate the index.
 
 ## Retrieval scoring reference
 
@@ -462,7 +480,12 @@ Process or regenerate one dream:
 ```bash
 python3 src/cli/structure_dreams.py --dream-id dream-2022-1-22-0
 python3 src/cli/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
+python3 src/cli/structure_dreams.py --scope new
 ```
+
+`--scope new` reads `data/dream_imports.json` and processes only IDs introduced
+by the latest append-oriented journal import. Select another manifest with
+`--import-id`, or another state file with `--import-state`.
 
 Existing dream IDs with the current schema version are skipped unless
 `--overwrite` is supplied; records from an older schema are regenerated

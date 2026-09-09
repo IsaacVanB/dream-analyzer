@@ -66,13 +66,32 @@ To parse your own journal, provide input and output paths:
 python3 src/cli/parse_dreams.py path/to/journal.txt data/my_dreams.jsonl
 ```
 
-Build the ChromaDB index:
+For an ongoing journal where new dreams are appended at the end, use the
+append-oriented synchronizer after the initial parse. Preview the changes first:
+
+```bash
+python3 src/cli/sync_dream_journal.py path/to/journal.txt --dry-run
+python3 src/cli/sync_dream_journal.py path/to/journal.txt
+```
+
+The synchronizer preserves IDs for the existing positional prefix, tolerates
+small corrections to old entries, assigns IDs only to the appended tail, and
+records each import in `data/dream_imports.json`. It refuses truncation,
+reordering, insertions into the old prefix, and substantive changes so those
+cannot silently attach derived data to the wrong dream. Repeating an already
+recorded journal version is idempotent.
+
+Synchronize the ChromaDB index:
 
 ```bash
 python3 src/cli/build_chroma_db.py
 ```
 
 Embeddings are generated from dream text only; metadata is stored separately.
+The default synchronization embeds only IDs absent from the collection. For an
+edited old dream, it retains the existing vector while updating the displayed
+document and recording both the embedded and current text hashes. Use
+`--rebuild` when intentionally changing the embedding model or embedding logic.
 
 ## Retrieval scoring
 
@@ -153,6 +172,17 @@ Extract structured features for every dream or one dream:
 python3 src/cli/structure_dreams.py
 python3 src/cli/structure_dreams.py --dream-id dream-2022-1-22-0 --overwrite
 ```
+
+After synchronizing an appended journal, structure only the dreams introduced
+by the latest import:
+
+```bash
+python3 src/cli/structure_dreams.py --scope new
+```
+
+Use `--import-id journal-...` to select an earlier recorded import. This scope
+is based on the import manifest, so it works even when no older dream has ever
+been structured.
 
 Build a fillable character lookup from those structured records without more
 LLM calls:

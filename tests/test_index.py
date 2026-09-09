@@ -153,6 +153,26 @@ class DreamIndexTests(unittest.TestCase):
         self.assertEqual(related[0].dream_id, "room-dream")
         self.assertEqual(self.gateway.calls, [(["room"], "test-embed")])
 
+    def test_sync_embeds_only_missing_ids_and_reuses_edited_embedding(self) -> None:
+        self.index.rebuild(self.dreams)
+        original = self.index.client.get_collection("test_dreams").get(
+            ids=["room-dream"], include=["metadatas"]
+        )["metadatas"][0]
+        edited = make_dream("room-dream", "hidden room rooms", 1)
+        added = make_dream("new-dream", "a new school room", 3)
+        self.gateway.calls.clear()
+
+        result = self.index.sync([edited, self.dreams[1], added], batch_size=10)
+
+        self.assertEqual(result.embedded, 1)
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(self.gateway.calls, [([added.text], "test-embed")])
+        metadata = self.index.client.get_collection("test_dreams").get(
+            ids=["room-dream"], include=["metadatas"]
+        )["metadatas"][0]
+        self.assertEqual(metadata["embedded_text_hash"], original["embedded_text_hash"])
+        self.assertNotEqual(metadata["current_text_hash"], metadata["embedded_text_hash"])
+
 
 if __name__ == "__main__":
     unittest.main()
