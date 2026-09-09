@@ -118,6 +118,7 @@ def sync_chroma_db(
     collection_name: str = COLLECTION_NAME,
     embed_model: str = EMBED_MODEL,
     batch_size: int = 32,
+    prune: bool = False,
 ) -> IndexSyncResult:
     """Synchronize parsed dreams while retaining embeddings for existing IDs."""
     dreams = DreamRepository(dreams_path).all()
@@ -130,6 +131,7 @@ def sync_chroma_db(
     return index.sync(
         dreams,
         batch_size=batch_size,
+        prune=prune,
         progress=lambda current, total, dream: print(
             f"Embedding new dream {current}/{total}: {dream.dream_id}"
         ),
@@ -172,7 +174,14 @@ def main() -> None:
         action="store_true",
         help="Discard and regenerate all embeddings instead of synchronizing.",
     )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="Delete indexed IDs that are absent from the parsed journal.",
+    )
     args = parser.parse_args()
+    if args.rebuild and args.prune:
+        parser.error("--rebuild and --prune cannot be used together")
 
     if args.rebuild:
         indexed_count = build_chroma_db(
@@ -191,10 +200,12 @@ def main() -> None:
         collection_name=args.collection_name,
         embed_model=args.embed_model,
         batch_size=args.batch_size,
+        prune=args.prune,
     )
     print(
         f"Synchronized ChromaDB at {args.chroma_path}: {result.embedded} embedded, "
-        f"{result.updated} metadata/document updates, {result.unchanged} unchanged."
+        f"{result.renamed} ID migration(s), {result.updated} metadata/document "
+        f"updates, {result.unchanged} unchanged, {result.pruned} pruned."
     )
     if result.orphaned_ids:
         print(

@@ -89,8 +89,10 @@ class IndexSyncResult:
     """Summary of an incremental Chroma synchronization."""
 
     embedded: int
+    renamed: int
     updated: int
     unchanged: int
+    pruned: int
     orphaned_ids: tuple[str, ...]
 
 
@@ -187,6 +189,7 @@ class DreamIndex:
         dreams: Sequence[Dream],
         *,
         batch_size: int = 32,
+        prune: bool = False,
         progress: Callable[[int, int, Dream], None] | None = None,
     ) -> IndexSyncResult:
         """Add missing dreams and refresh documents without re-embedding old IDs.
@@ -237,7 +240,43 @@ class DreamIndex:
                 stored_embeddings,
             )
         }
+        current_ids = set(ids)
+        orphaned_ids = set(stored_by_id) - current_ids
+        orphan_ids_by_text_hash: dict[str, list[str]] = {}
+        for orphan_id in orphaned_ids:
+            orphan_document = stored_by_id[orphan_id][0]
+            text_hash = dream_text_hash(extract_dream_text(orphan_document))
+            orphan_ids_by_text_hash.setdefault(text_hash, []).append(orphan_id)
+
         missing = [dream for dream in dream_list if dream.dream_id not in stored_by_id]
+        renamed = 0
+        renamed_ids: set[str] = set()
+        consumed_orphans: set[str] = set()
+        for dream in missing:
+            matches = orphan_ids_by_text_hash.get(dream_text_hash(dream.text), [])
+            available = [item for item in matches if item not in consumed_orphans]
+            if len(available) != 1:
+                continue
+            orphan_id = available[0]
+            old_document, old_metadata, old_embedding = stored_by_id[orphan_id]
+            embedded_hash = str(
+                old_metadata.get("embedded_text_hash")
+                or dream_text_hash(extract_dream_text(old_document))
+            )
+            collection.add(
+                ids=[dream.dream_id],
+                documents=[build_document(dream)],
+                metadatas=[
+                    build_metadata(dream, embedded_text_hash=embedded_hash)
+                ],
+                embeddings=[old_embedding],
+            )
+            collection.delete(ids=[orphan_id])
+            renamed_ids.add(dream.dream_id)
+            consumed_orphans.add(orphan_id)
+            renamed += 1
+
+        missing = [dream for dream in missing if dream.dream_id not in renamed_ids]
         updated = 0
         unchanged = 0
 
@@ -278,12 +317,19 @@ class DreamIndex:
             )
             updated += 1
 
-        current_ids = set(ids)
-        orphaned = tuple(sorted(set(stored_by_id) - current_ids))
+        remaining_orphans = orphaned_ids - consumed_orphans
+        pruned = 0
+        if prune and remaining_orphans:
+            collection.delete(ids=sorted(remaining_orphans))
+            pruned = len(remaining_orphans)
+            remaining_orphans.clear()
+        orphaned = tuple(sorted(remaining_orphans))
         return IndexSyncResult(
             embedded=len(missing),
+            renamed=renamed,
             updated=updated,
             unchanged=unchanged,
+            pruned=pruned,
             orphaned_ids=orphaned,
         )
 

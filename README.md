@@ -92,6 +92,10 @@ The default synchronization embeds only IDs absent from the collection. For an
 edited old dream, it retains the existing vector while updating the displayed
 document and recording both the embedded and current text hashes. Use
 `--rebuild` when intentionally changing the embedding model or embedding logic.
+If a date correction changed a legacy date-derived ID, synchronization reuses
+the old vector when the orphaned and current records have exactly matching dream
+text. Remaining orphaned IDs are reported but retained unless `--prune` is
+supplied explicitly.
 
 ## Retrieval scoring
 

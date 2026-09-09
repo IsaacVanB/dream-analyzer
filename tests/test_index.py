@@ -173,6 +173,32 @@ class DreamIndexTests(unittest.TestCase):
         self.assertEqual(metadata["embedded_text_hash"], original["embedded_text_hash"])
         self.assertNotEqual(metadata["current_text_hash"], metadata["embedded_text_hash"])
 
+    def test_sync_migrates_exact_text_to_a_corrected_id_without_embedding(self) -> None:
+        old = make_dream("dream-2024-1-1-0", "same remembered dream", 1)
+        corrected = make_dream("dream-2024-1-2-0", "same remembered dream", 2)
+        self.index.rebuild([old])
+        self.gateway.calls.clear()
+
+        result = self.index.sync([corrected])
+
+        self.assertEqual(result.embedded, 0)
+        self.assertEqual(result.renamed, 1)
+        self.assertEqual(result.orphaned_ids, ())
+        self.assertEqual(self.gateway.calls, [])
+        ids = self.index.client.get_collection("test_dreams").get()["ids"]
+        self.assertEqual(ids, [corrected.dream_id])
+
+    def test_sync_prunes_unmatched_orphans_only_when_requested(self) -> None:
+        self.index.rebuild(self.dreams)
+
+        retained = self.index.sync([self.dreams[0]])
+        pruned = self.index.sync([self.dreams[0]], prune=True)
+
+        self.assertEqual(retained.orphaned_ids, ("school-dream",))
+        self.assertEqual(retained.pruned, 0)
+        self.assertEqual(pruned.pruned, 1)
+        self.assertEqual(pruned.orphaned_ids, ())
+
 
 if __name__ == "__main__":
     unittest.main()

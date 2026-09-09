@@ -67,6 +67,7 @@ python3 src/cli/build_chroma_db.py
 python3 src/cli/build_chroma_db.py --dreams-path data/dreams.jsonl --chroma-path data/chroma_db
 python3 src/cli/build_chroma_db.py --embed-model qwen3-embedding --collection-name dreams_qwen3_embedding --batch-size 16
 python3 src/cli/build_chroma_db.py --rebuild
+python3 src/cli/build_chroma_db.py --prune
 ```
 
 Arguments:
@@ -78,6 +79,9 @@ Arguments:
 - `--batch-size`: number of new dream texts sent to Ollama per embedding request. Defaults to `32`.
 - `--rebuild`: replace the collection and regenerate every vector. Without it,
   the command adds missing dream IDs and preserves existing embeddings.
+- `--prune`: delete indexed IDs absent from the current parsed journal. Exact
+  text matches are automatically migrated from an orphaned legacy ID to a new
+  corrected ID without generating another embedding.
 
 Requires Ollama running locally at `http://localhost:11434`. After changing the
 embedding logic, run this command with `--rebuild` to regenerate the index.
