@@ -12,7 +12,12 @@ from dream_analysis.agent import (
 )
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
-from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
+from dream_analysis.tools import (
+    DreamByIdTool,
+    DreamDateRangeTool,
+    DreamSearchTool,
+    DreamTagTool,
+)
 
 
 class SequencedOllamaClient:
@@ -71,6 +76,17 @@ class FakeTagRepository:
             tags=("school",),
             text="I was taking an exam in an unfamiliar classroom.",
         )
+
+    def between(self, start=None, end=None):
+        self.calls.append((start, end))
+        return [
+            Dream(
+                dream_id="dated-1",
+                date="7/4/2025",
+                tags=("travel",),
+                text="I traveled across a lake with friends.",
+            )
+        ]
 
 
 class CustomRetrievalTool:
@@ -292,7 +308,7 @@ class DreamRagAgentTests(unittest.TestCase):
         )
         self.assertEqual(response.tool_executions[0].name, "get_dreams_by_tags")
         self.assertIn(
-            "All exact tag matches",
+            "All exhaustive matches",
             response.turn_traces[-1].request_prompt,
         )
         self.assertIn("TAGS: school, lucid?", response.turn_traces[-1].request_prompt)
@@ -333,6 +349,34 @@ class DreamRagAgentTests(unittest.TestCase):
             "I was taking an exam in an unfamiliar classroom.",
             response.turn_traces[-1].request_prompt,
         )
+
+    def test_agent_dispatches_exhaustive_date_range_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "get_dreams_by_date_range",
+                    {"start_date": "2025-07-01", "end_date": "2025-07-31"},
+                ),
+                final_response("Discarded draft answer."),
+                final_response("Travel recurs in the selected month."),
+            ]
+        )
+        gateway = OllamaGateway(client=client)
+        repository = FakeTagRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=gateway,
+            tools=[DreamDateRangeTool(repository)],
+        )
+
+        response = agent.answer("Find common themes in dreams from July 2025.")
+
+        self.assertEqual(
+            repository.calls, [(date(2025, 7, 1), date(2025, 7, 31))]
+        )
+        self.assertEqual(
+            response.tool_executions[0].name, "get_dreams_by_date_range"
+        )
+        self.assertIn("DREAM_ID: dated-1", response.turn_traces[-1].request_prompt)
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(

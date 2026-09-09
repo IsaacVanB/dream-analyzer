@@ -531,7 +531,7 @@ class DreamRagAgent:
         if tag_catalog:
             prefix_lines.extend(
                 [
-                    "All exact tag matches (include every item when answering):",
+                    "All exhaustive matches (include every item when answering):",
                     *tag_catalog,
                 ]
             )

@@ -217,9 +217,11 @@ python3 src/cli/dream_agent.py "Compare house and school dreams" \
   --output outputs/agent/comparison_trace.md
 ```
 
-The agent exposes three read-only tools. `search_dreams` performs semantic
-retrieval. `get_dream_by_id` retrieves one exact dream for requests such as
-`Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
+The agent exposes four read-only tools. `search_dreams` performs semantic
+retrieval. `get_dreams_by_date_range` exhaustively returns every dream within
+two inclusive calendar dates, making it suitable for questions such as common
+themes within a month. `get_dream_by_id` retrieves one exact dream for requests
+such as `Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
 containing all requested exact tags; matching is case-insensitive, preserves
 punctuation such as `lucid?`, and treats multiple tags as an AND combination.
 All tools implement the shared `AgentTool` protocol and are supplied through an
@@ -231,7 +233,8 @@ translates relative language into those bounds using the current date; "last
 month" means the previous calendar month. Topic terms such as "school" remain
 part of the semantic query while the date bounds filter the results. Search
 queries, result counts, and per-dream context are bounded before being returned
-to the model. `--output` optionally saves the question, settings, searches,
+to the model. The date-range tool requires both bounds and does not rank or
+sample its results semantically. `--output` optionally saves the question, settings, searches,
 selected date ranges, retrieved citations, the full text of every unique dream
 returned across the searches, and the answer as Markdown. Repeated results remain
 listed in their search tables, but their full text appears only once. The full

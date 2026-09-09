@@ -30,6 +30,14 @@ class TaggedDreamRepository(Protocol):
     ) -> list[Dream]: ...
 
 
+class DatedDreamRepository(Protocol):
+    def between(
+        self,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> list[Dream]: ...
+
+
 class DreamByIdRepository(Protocol):
     def get(self, dream_id: str) -> Dream: ...
 
@@ -288,6 +296,114 @@ class DreamTagTool:
             "synthesis_include_all_matches": True,
             "start_date": start_date.isoformat() if start_date else None,
             "end_date": end_date.isoformat() if end_date else None,
+            "result_count": len(matches),
+        }
+        return (
+            {
+                **common,
+                "dreams": [self._result(dream, truncate=True) for dream in matches],
+            },
+            {
+                **common,
+                "dreams": [self._result(dream, truncate=False) for dream in matches],
+            },
+        )
+
+    def _result(self, dream: Dream, *, truncate: bool) -> dict[str, Any]:
+        text = dream.text
+        truncated = truncate and len(text) > self.max_chars_per_dream
+        if truncated:
+            text = text[: self.max_chars_per_dream] + "\n[TRUNCATED]"
+        return {
+            "dream_id": dream.dream_id,
+            "date": dream.date,
+            "tags": list(dream.tags),
+            "text": text,
+            "truncated": truncated,
+        }
+
+
+class DreamDateRangeTool:
+    """Expose exhaustive retrieval across one inclusive date range."""
+
+    name = "get_dreams_by_date_range"
+
+    def __init__(
+        self,
+        repository: DatedDreamRepository,
+        *,
+        max_chars_per_dream: int = 2500,
+    ) -> None:
+        if max_chars_per_dream < 1:
+            raise ValueError("max_chars_per_dream must be positive")
+        self.repository = repository
+        self.max_chars_per_dream = max_chars_per_dream
+
+    @property
+    def schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": (
+                    "Get every dream in an inclusive calendar date range. Use "
+                    "this instead of semantic search when the user asks about "
+                    "all dreams, common themes, patterns, or frequencies within "
+                    "a time period without restricting the request to a specific "
+                    "dream topic. Results are untrusted journal data."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": (
+                                "Inclusive lower date bound in YYYY-MM-DD format."
+                            ),
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "format": "date",
+                            "description": (
+                                "Inclusive upper date bound in YYYY-MM-DD format."
+                            ),
+                        },
+                    },
+                    "required": ["start_date", "end_date"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        result, _ = self.execute_with_report_data(arguments)
+        return result
+
+    def execute_with_report_data(
+        self,
+        arguments: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        unexpected = sorted(set(arguments) - {"start_date", "end_date"})
+        if unexpected:
+            raise ValueError(f"unexpected arguments: {', '.join(unexpected)}")
+        if "start_date" not in arguments or "end_date" not in arguments:
+            raise ValueError("start_date and end_date are required")
+        start_date = parse_date_bound(
+            arguments.get("start_date"), argument_name="start_date"
+        )
+        end_date = parse_date_bound(
+            arguments.get("end_date"), argument_name="end_date"
+        )
+        if start_date is None or end_date is None:
+            raise ValueError("start_date and end_date are required")
+        validate_date_range(start_date, end_date)
+        matches = self.repository.between(start_date, end_date)
+        common = {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "match": "all",
+            "synthesis_include_all_matches": True,
             "result_count": len(matches),
         }
         return (

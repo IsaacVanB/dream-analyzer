@@ -235,8 +235,11 @@ Requires an existing ChromaDB index and Ollama running locally at `http://localh
 ## `src/cli/dream_agent.py`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
-of three read-only tools: semantic `search_dreams`, exact `get_dream_by_id`, or
-exact `get_dreams_by_tags`. The ID tool supports prompts such as
+of four read-only tools: semantic `search_dreams`, exhaustive
+`get_dreams_by_date_range`, exact `get_dream_by_id`, or exact
+`get_dreams_by_tags`. The date-range tool is intended for questions about all
+dreams or common patterns within a period and requires inclusive `start_date`
+and `end_date` values. The ID tool supports prompts such as
 `Get dream-2025-1-9-0 and analyze it`. The tag tool returns dreams containing
 every supplied tag (AND matching), so prompts such as
 `Get all dreams tagged school` and

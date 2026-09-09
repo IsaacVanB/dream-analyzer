@@ -39,6 +39,7 @@ from dream_analysis.trends import TagTrendService
 from dream_analysis.tools import (
     AgentTool,
     DreamByIdTool,
+    DreamDateRangeTool,
     DreamSearchTool,
     DreamTagTool,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "DreamSearchTool",
     "DreamTagTool",
     "DreamByIdTool",
+    "DreamDateRangeTool",
     "AgentTool",
     "DreamIndex",
     "DreamNotFoundError",

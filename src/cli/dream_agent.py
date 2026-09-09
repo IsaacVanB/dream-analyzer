@@ -23,7 +23,12 @@ from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.repository import DreamRepository
-from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
+from dream_analysis.tools import (
+    DreamByIdTool,
+    DreamDateRangeTool,
+    DreamSearchTool,
+    DreamTagTool,
+)
 
 
 DEFAULT_SETTINGS = Settings()
@@ -52,6 +57,10 @@ def build_agent(
             DreamSearchTool(
                 index,
                 result_limit=top_k,
+                max_chars_per_dream=max_chars_per_dream,
+            ),
+            DreamDateRangeTool(
+                repository,
                 max_chars_per_dream=max_chars_per_dream,
             ),
             DreamTagTool(
@@ -166,6 +175,11 @@ def print_searches(executions: tuple[ToolExecution, ...]) -> None:
         request = execution.arguments.get("query")
         if "dream_id" in execution.arguments:
             request = f"dream_id={execution.arguments['dream_id']}"
+        elif execution.name == "get_dreams_by_date_range":
+            request = (
+                f"date_range={execution.arguments.get('start_date')} through "
+                f"{execution.arguments.get('end_date')}"
+            )
         elif request is None:
             request = "tags=" + json.dumps(
                 execution.arguments.get("tags", []), ensure_ascii=False
@@ -290,6 +304,9 @@ def format_markdown_report(
         elif query is not None:
             request_label = "Query"
             request_value = query
+        elif execution.name == "get_dreams_by_date_range":
+            request_label = "Selection"
+            request_value = "All dreams in date range"
         else:
             request_label = "Tags (all required)"
             request_value = ", ".join(

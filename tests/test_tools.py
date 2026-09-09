@@ -5,7 +5,12 @@ import unittest
 from datetime import date
 
 from dream_analysis.models import Dream, SearchResult
-from dream_analysis.tools import DreamByIdTool, DreamSearchTool, DreamTagTool
+from dream_analysis.tools import (
+    DreamByIdTool,
+    DreamDateRangeTool,
+    DreamSearchTool,
+    DreamTagTool,
+)
 
 
 class FakeIndex:
@@ -128,6 +133,10 @@ class FakeRepository:
         self.calls.append((tags, start, end))
         return self.dreams
 
+    def between(self, start=None, end=None):
+        self.calls.append((start, end))
+        return self.dreams
+
     def get(self, dream_id):
         self.calls.append(dream_id)
         return self.dreams[0]
@@ -184,6 +193,73 @@ class DreamTagToolTests(unittest.TestCase):
             tool.execute({"tags": ["school"], "match": "any"})
         with self.assertRaisesRegex(ValueError, "Invalid start_date"):
             tool.execute({"tags": ["school"], "start_date": "yesterday"})
+
+
+class DreamDateRangeToolTests(unittest.TestCase):
+    def test_schema_requires_an_inclusive_date_range(self) -> None:
+        tool = DreamDateRangeTool(FakeRepository([]))
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(
+            tool.schema["function"]["name"], "get_dreams_by_date_range"
+        )
+        self.assertEqual(parameters["required"], ["start_date", "end_date"])
+        self.assertEqual(parameters["properties"]["start_date"]["format"], "date")
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_returns_every_match_and_preserves_full_report_text(self) -> None:
+        dreams = [
+            Dream(
+                dream_id="one",
+                date="7/1/2025",
+                tags=("school",),
+                text="abcdefgh",
+            ),
+            Dream(
+                dream_id="two",
+                date="7/31/2025",
+                tags=("travel",),
+                text="ijklmnop",
+            ),
+        ]
+        repository = FakeRepository(dreams)
+        tool = DreamDateRangeTool(repository, max_chars_per_dream=4)
+
+        bounded, report = tool.execute_with_report_data(
+            {"start_date": "2025-07-01", "end_date": "2025-07-31"}
+        )
+
+        self.assertEqual(
+            repository.calls, [(date(2025, 7, 1), date(2025, 7, 31))]
+        )
+        self.assertEqual(bounded["result_count"], 2)
+        self.assertEqual(bounded["match"], "all")
+        self.assertTrue(bounded["synthesis_include_all_matches"])
+        self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
+        self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
+        json.dumps(bounded)
+
+    def test_execute_rejects_missing_invalid_and_reversed_dates(self) -> None:
+        tool = DreamDateRangeTool(FakeRepository([]))
+
+        with self.assertRaisesRegex(ValueError, "required"):
+            tool.execute({"start_date": "2025-07-01"})
+        with self.assertRaisesRegex(ValueError, "Invalid start_date"):
+            tool.execute(
+                {"start_date": "last month", "end_date": "2025-07-31"}
+            )
+        with self.assertRaisesRegex(ValueError, "start_date"):
+            tool.execute(
+                {"start_date": "2025-08-01", "end_date": "2025-07-31"}
+            )
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute(
+                {
+                    "start_date": "2025-07-01",
+                    "end_date": "2025-07-31",
+                    "query": "themes",
+                }
+            )
 
 
 class DreamByIdToolTests(unittest.TestCase):
