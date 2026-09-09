@@ -18,6 +18,7 @@ from dream_analysis.tools import (
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
+    TagTrendTool,
 )
 
 
@@ -516,6 +517,38 @@ class DreamRagAgentTests(unittest.TestCase):
             '"start_date": "2025-07-01"',
             response.turn_traces[-1].request_prompt,
         )
+
+    def test_agent_dispatches_tag_trend_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "analyze_tag_trends",
+                    {
+                        "tags": ["travel"],
+                        "frequency": "M",
+                        "normalize": True,
+                        "start_date": "2025-01-01",
+                        "end_date": "2025-12-31",
+                    },
+                ),
+                final_response("Discarded draft answer."),
+                final_response("Travel appeared in the July period."),
+            ]
+        )
+        repository = FakeTagRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[TagTrendTool(repository)],
+        )
+
+        response = agent.answer("How did travel dreams change during 2025?")
+
+        self.assertEqual(repository.calls, ["all"])
+        self.assertEqual(response.tool_executions[0].name, "analyze_tag_trends")
+        prompt = response.turn_traces[-1].request_prompt
+        self.assertIn('"evidence_type": "tag_trends"', prompt)
+        self.assertIn('"value_unit": "percent"', prompt)
+        self.assertIn('"travel": 100.0', prompt)
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(

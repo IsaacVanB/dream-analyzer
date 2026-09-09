@@ -29,6 +29,7 @@ from dream_analysis.tools import (
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
+    TagTrendTool,
 )
 
 
@@ -65,6 +66,7 @@ def build_agent(
                 max_chars_per_dream=max_chars_per_dream,
             ),
             DreamStatisticsTool(repository),
+            TagTrendTool(repository),
             DreamTagTool(
                 repository,
                 max_chars_per_dream=max_chars_per_dream,

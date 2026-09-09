@@ -126,6 +126,54 @@ class TagTrendServiceTests(unittest.TestCase):
         self.assertEqual(result["periods"][0]["values"]["flying"], 50.0)
         self.assertEqual(rank_tags(self.dreams[:3], top_n=2), ["house", "flying"])
 
+    def test_tags_are_case_insensitive_and_rank_once_per_dream(self) -> None:
+        dreams = [
+            dream(
+                "one",
+                date(2025, 1, 1),
+                tags=("School", "school", "HOUSE"),
+            ),
+            dream("two", date(2025, 1, 2), tags=("school",)),
+        ]
+
+        result = TagTrendService(dreams).analyze(tags=["SCHOOL"], normalize=True)
+
+        self.assertEqual(rank_tags(dreams, top_n=2), ["School", "HOUSE"])
+        self.assertEqual(result["missing_tags"], [])
+        self.assertEqual(result["periods"][0]["values"]["SCHOOL"], 100.0)
+
+    def test_optional_empty_periods_are_explicit(self) -> None:
+        dreams = [
+            dream("one", date(2025, 1, 1), tags=("school",)),
+            dream("two", date(2025, 3, 1), tags=("school",)),
+        ]
+
+        result = TagTrendService(dreams).analyze(
+            tags=["school"],
+            normalize=True,
+            include_empty_periods=True,
+        )
+
+        self.assertEqual([item["period"] for item in result["periods"]], ["1-2025", "2-2025", "3-2025"])
+        self.assertEqual(result["periods"][1]["dream_count"], 0)
+        self.assertEqual(result["periods"][1]["values"]["school"], 0.0)
+
+    def test_empty_periods_extend_to_requested_date_boundaries(self) -> None:
+        result = TagTrendService(
+            [dream("one", date(2025, 2, 10), tags=("school",))]
+        ).analyze(
+            tags=["school"],
+            normalize=True,
+            include_empty_periods=True,
+            start_date="2025-01-01",
+            end_date="2025-03-31",
+        )
+
+        self.assertEqual(
+            [item["dream_count"] for item in result["periods"]],
+            [0, 1, 0],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

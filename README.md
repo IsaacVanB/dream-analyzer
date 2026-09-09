@@ -209,6 +209,7 @@ python3 src/cli/dream_agent.py "What patterns appear in dreams about hidden room
 python3 src/cli/dream_agent.py "What are common themes in dreams from last month?"
 python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
 python3 src/cli/dream_agent.py "What were my most common journal tags in July 2025?"
+python3 src/cli/dream_agent.py "Did school-tagged dreams become more common during 2025?"
 python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
@@ -219,13 +220,15 @@ python3 src/cli/dream_agent.py "Compare house and school dreams" \
   --output outputs/agent/comparison_trace.md
 ```
 
-The agent exposes five read-only tools. `search_dreams` performs semantic
+The agent exposes six read-only tools. `search_dreams` performs semantic
 retrieval. `get_dreams_by_date_range` exhaustively returns every dream within
 two inclusive calendar dates, making it suitable for questions such as common
 themes within a month. `get_dream_statistics` deterministically calculates
 counts, entries by month/quarter/year, journal-tag frequencies, dream-length
 statistics, and common non-stopword vocabulary, optionally within inclusive
-date bounds. `get_dream_by_id` retrieves one exact dream for requests
+date bounds. `analyze_tag_trends` compares exact journal-tag frequencies across
+months, quarters, or years using normalized percentages by default. It supports
+explicit tags or automatically selects the most frequent tags. `get_dream_by_id` retrieves one exact dream for requests
 such as `Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
 containing all requested exact tags; matching is case-insensitive, preserves
 punctuation such as `lucid?`, and treats multiple tags as an AND combination.
@@ -270,6 +273,12 @@ very long period series with explicit warnings. Saved Markdown reports retain
 the complete tag and period results. Common-word counts are token occurrences;
 tag counts represent the number of dreams containing each tag. Dreams with
 unknown dates are excluded from temporal statistics and reported in a warning.
+
+Tag trends match explicit tags case-insensitively and count a tag at most once
+per dream. Periods with no dated dreams are included with a zero dream count so
+gaps cannot be mistaken for omitted data. Missing tags and unknown-date dreams
+produce warnings. Long timelines are abbreviated only in model evidence; saved
+reports retain every period.
 
 The retrieval prompt asks the model to return `SEARCH_COMPLETE` rather than
 drafting an answer when it has enough searches. Any other content that ends the

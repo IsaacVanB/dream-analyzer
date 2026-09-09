@@ -11,6 +11,7 @@ from dream_analysis.tools import (
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
+    TagTrendTool,
 )
 
 
@@ -372,6 +373,96 @@ class DreamStatisticsToolTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "unexpected arguments"):
             tool.execute({"stopwords_path": "/tmp/words.txt"})
+
+
+class TagTrendToolTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.dreams = [
+            Dream(
+                dream_id="one",
+                date="1/5/2025",
+                date_sort=date(2025, 1, 5),
+                tags=("School",),
+                text="school hallway",
+                word_count=2,
+            ),
+            Dream(
+                dream_id="two",
+                date="3/5/2025",
+                date_sort=date(2025, 3, 5),
+                tags=("school", "house"),
+                text="school house",
+                word_count=2,
+            ),
+            Dream(
+                dream_id="unknown",
+                date="0/0/00",
+                date_sort=None,
+                tags=("school",),
+                text="unknown date",
+                word_count=2,
+            ),
+        ]
+
+    def test_schema_exposes_bounded_trend_parameters(self) -> None:
+        tool = TagTrendTool(FakeRepository([]))
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(tool.name, "analyze_tag_trends")
+        self.assertEqual(parameters["properties"]["frequency"]["enum"], ["M", "Q", "Y"])
+        self.assertEqual(parameters["properties"]["tags"]["maxItems"], 10)
+        self.assertEqual(parameters["properties"]["top_n"]["maximum"], 20)
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_normalizes_and_returns_complete_report_periods(self) -> None:
+        repository = FakeRepository(self.dreams)
+        tool = TagTrendTool(repository, max_periods=2)
+
+        bounded, report = tool.execute_with_report_data(
+            {
+                "tags": ["SCHOOL", "missing"],
+                "frequency": "M",
+                "normalize": True,
+                "start_date": "2025-01-01",
+                "end_date": "2025-03-31",
+                "top_n": 5,
+            }
+        )
+
+        self.assertEqual(repository.calls, ["all"])
+        self.assertEqual(bounded["evidence_type"], "tag_trends")
+        self.assertEqual(bounded["analysis"]["value_unit"], "percent")
+        self.assertEqual(bounded["analysis"]["missing_tags"], ["missing"])
+        self.assertEqual(bounded["analysis"]["period_count"], 3)
+        self.assertEqual(bounded["analysis"]["periods_omitted"], 1)
+        self.assertEqual(len(bounded["analysis"]["periods"]), 2)
+        self.assertEqual(len(report["analysis"]["periods"]), 3)
+        self.assertEqual(report["analysis"]["periods"][1]["dream_count"], 0)
+        self.assertTrue(any("No matching" in item for item in bounded["warnings"]))
+        self.assertTrue(any("unknown date" in item for item in bounded["warnings"]))
+        self.assertTrue(any("no dated dreams" in item for item in bounded["warnings"]))
+        self.assertTrue(any("middle periods" in item for item in bounded["warnings"]))
+        json.dumps(bounded)
+        json.dumps(report)
+
+    def test_execute_defaults_to_normalized_top_tags_and_validates(self) -> None:
+        tool = TagTrendTool(FakeRepository(self.dreams))
+
+        result = tool.execute({})
+
+        self.assertTrue(result["parameters"]["normalize"])
+        self.assertEqual(result["parameters"]["top_n"], 10)
+        self.assertIsNone(result["parameters"]["tags"])
+        with self.assertRaisesRegex(ValueError, "normalize"):
+            tool.execute({"normalize": 1})
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            tool.execute({"tags": ["school", "SCHOOL"]})
+        with self.assertRaisesRegex(ValueError, "top_n"):
+            tool.execute({"top_n": 21})
+        with self.assertRaisesRegex(ValueError, "frequency"):
+            tool.execute({"frequency": "W"})
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"plot_path": "/tmp/trend.png"})
 
 
 class DreamByIdToolTests(unittest.TestCase):
