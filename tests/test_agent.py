@@ -13,6 +13,7 @@ from dream_analysis.agent import (
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.tools import (
+    CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
@@ -101,6 +102,21 @@ class FakeTagRepository:
                 text="I traveled across a lake with friends.",
                 word_count=7,
             )
+        ]
+
+
+class FakeStructuredRepository:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def all(self):
+        self.calls += 1
+        return [
+            {
+                "dream_id": "dated-1",
+                "date_sort": "2025-07-04",
+                "named_characters": ["Maya"],
+            }
         ]
 
 
@@ -549,6 +565,36 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn('"evidence_type": "tag_trends"', prompt)
         self.assertIn('"value_unit": "percent"', prompt)
         self.assertIn('"travel": 100.0', prompt)
+
+    def test_agent_dispatches_character_mentions_tool(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "get_character_mentions",
+                    {"names": ["maya"], "minimum_mentions": 1},
+                ),
+                final_response("Discarded draft answer."),
+                final_response("Maya appears in one structured dream."),
+            ]
+        )
+        repository = FakeTagRepository()
+        structured_repository = FakeStructuredRepository()
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[CharacterMentionsTool(repository, structured_repository)],
+        )
+
+        response = agent.answer("How often does Maya appear in my dreams?")
+
+        self.assertEqual(repository.calls, ["all"])
+        self.assertEqual(structured_repository.calls, 1)
+        self.assertEqual(
+            response.tool_executions[0].name, "get_character_mentions"
+        )
+        prompt = response.turn_traces[-1].request_prompt
+        self.assertIn('"evidence_type": "character_mentions"', prompt)
+        self.assertIn('"coverage_percentage": 100.0', prompt)
+        self.assertIn('"name": "Maya"', prompt)
 
     def test_invalid_arguments_are_returned_to_the_model_without_searching(self) -> None:
         agent, client, index = self.make_agent(

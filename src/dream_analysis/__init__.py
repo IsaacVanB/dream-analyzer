@@ -31,6 +31,7 @@ from dream_analysis.rag import DirectRagService
 from dream_analysis.repository import (
     DreamNotFoundError,
     DreamRepository,
+    StructuredDreamRepository,
     load_jsonl_objects,
 )
 from dream_analysis.statistics import DreamStatisticsService
@@ -39,6 +40,7 @@ from dream_analysis.trends import TagTrendService
 from dream_analysis.tools import (
     AgentTool,
     AnalyticalToolResult,
+    CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
@@ -58,9 +60,11 @@ __all__ = [
     "DreamDateRangeTool",
     "AgentTool",
     "AnalyticalToolResult",
+    "CharacterMentionsTool",
     "DreamIndex",
     "DreamNotFoundError",
     "DreamRepository",
+    "StructuredDreamRepository",
     "DreamValidationError",
     "DreamStatisticsService",
     "DreamStructuringService",

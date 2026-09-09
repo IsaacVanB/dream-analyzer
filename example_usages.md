@@ -235,9 +235,9 @@ Requires an existing ChromaDB index and Ollama running locally at `http://localh
 ## `src/cli/dream_agent.py`
 
 Answers a question through Ollama's tool-calling loop. The model can call one
-of six read-only tools: semantic `search_dreams`, exhaustive
+of seven read-only tools: semantic `search_dreams`, exhaustive
 `get_dreams_by_date_range`, deterministic `get_dream_statistics`, deterministic
-`analyze_tag_trends`, exact
+`analyze_tag_trends`, structured `get_character_mentions`, exact
 `get_dream_by_id`, or exact
 `get_dreams_by_tags`. The date-range tool is intended for questions about all
 dreams or common patterns within a period and requires inclusive `start_date`
@@ -259,6 +259,7 @@ python3 src/cli/dream_agent.py "What are common themes in dreams from last month
 python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
 python3 src/cli/dream_agent.py "What words occurred most often last year?"
 python3 src/cli/dream_agent.py "Did school-tagged dreams become more common during 2025?"
+python3 src/cli/dream_agent.py "Who appears most often in my structured dreams?"
 python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "How do school anxiety dreams appear?" \
@@ -277,13 +278,17 @@ Arguments:
 
 - `question`: required question to answer from the journal.
 - `--top-k`: maximum results returned by each search call. Defaults to `8` and is capped at `20`.
-- `--max-tool-calls`: maximum searches permitted for one answer. Defaults to `3`.
+- `--max-tool-calls`: maximum tool calls permitted for one answer. Defaults to `3`.
 - `--max-synthesis-dreams`: maximum unique dreams included in the final answer prompt. Defaults to `10` and is capped at `20`.
 - `--max-chars-per-dream`: maximum journal characters per search result returned to the model. The Markdown report still contains the full text. Defaults to `2500`.
 - `--output`: optional path for a Markdown report containing the question, settings, searches, citations, full text of every unique retrieved dream, and answer. Repeated dreams are listed in each applicable search table, but their full text appears once and is not added to the model's bounded context.
 - `--debug`: print assistant messages and Ollama response diagnostics and include them in the Markdown report.
 - `--chroma-path`, `--collection-name`, and `--embed-model`: select the existing vector index.
 - `--chat-model`: select the tool-capable Ollama model without changing `config.py`.
+- `--dreams-path`: parsed journal JSONL used for exact and analytical tools.
+- `--structured-dreams-path`: structured feature JSONL used by
+  `get_character_mentions`. Defaults to
+  `outputs/structured_dreams/dream_features.jsonl`.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation. `--num-ctx` defaults to `8192` so ten average-length dreams fit comfortably.
 
 The `search_dreams` tool supports optional inclusive `start_date` and `end_date`
@@ -291,6 +296,15 @@ arguments in `YYYY-MM-DD` format. The agent resolves relative wording using the
 current date and treats "last month" as the previous calendar month. Date bounds
 are applied together with semantic terms, so a question about school dreams from
 last month searches for school content only inside that month.
+
+`get_character_mentions` uses the `named_characters` extracted by
+`structure_dreams.py`, not the manually edited character lookup. Names match
+case-insensitively and counts are deduplicated within each dream. Its results
+always report the share of current parsed dreams that have matching structured
+records; unstructured dreams cannot contribute mentions. Date filters use the
+current parsed-journal dates, and structured records for IDs no longer present
+in that journal are excluded. Model evidence caps long dream-ID lists, while an
+`--output` Markdown report preserves the complete lists.
 
 Exact duplicate calls reuse their cached result without another Chroma query,
 although each model request still consumes one slot in `--max-tool-calls`. Every

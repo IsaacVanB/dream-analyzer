@@ -210,6 +210,7 @@ python3 src/cli/dream_agent.py "What are common themes in dreams from last month
 python3 src/cli/dream_agent.py "How many dreams did I record in 2025?"
 python3 src/cli/dream_agent.py "What were my most common journal tags in July 2025?"
 python3 src/cli/dream_agent.py "Did school-tagged dreams become more common during 2025?"
+python3 src/cli/dream_agent.py "Who appears most often in my structured dreams?"
 python3 src/cli/dream_agent.py \
   "What are common themes in dreams about school? Use only dreams from last month."
 python3 src/cli/dream_agent.py "What patterns recur in school dreams?" \
@@ -220,7 +221,7 @@ python3 src/cli/dream_agent.py "Compare house and school dreams" \
   --output outputs/agent/comparison_trace.md
 ```
 
-The agent exposes six read-only tools. `search_dreams` performs semantic
+The agent exposes seven read-only tools. `search_dreams` performs semantic
 retrieval. `get_dreams_by_date_range` exhaustively returns every dream within
 two inclusive calendar dates, making it suitable for questions such as common
 themes within a month. `get_dream_statistics` deterministically calculates
@@ -232,6 +233,10 @@ explicit tags or automatically selects the most frequent tags. `get_dream_by_id`
 such as `Get dream-2025-1-9-0 and analyze it`. `get_dreams_by_tags` returns every dream
 containing all requested exact tags; matching is case-insensitive, preserves
 punctuation such as `lucid?`, and treats multiple tags as an AND combination.
+`get_character_mentions` ranks named characters by the number of distinct
+structured dreams that mention them, or looks up specified names
+case-insensitively. It supports inclusive date bounds and reports first and last
+dated mentions plus matching dream IDs.
 All tools implement the shared `AgentTool` protocol and are supplied through an
 ordered registry, so adding another tool does not require changing agent
 dispatch, schema collection, or retry-reminder logic.
@@ -279,6 +284,17 @@ per dream. Periods with no dated dreams are included with a zero dream count so
 gaps cannot be mistaken for omitted data. Missing tags and unknown-date dreams
 produce warnings. Long timelines are abbreviated only in model evidence; saved
 reports retain every period.
+
+Character mentions are freshly aggregated from
+`outputs/structured_dreams/dream_features.jsonl`; the tool does not read the
+manually enrichable `data/characters.json`. Every result reports parsed-journal
+and structured-record coverage because dreams that have not been structured
+cannot contribute named characters. Structured records whose IDs no longer
+occur in the current parsed journal are excluded and reported. Date filtering
+uses current parsed-journal dates, so a corrected date does not require
+restructuring the dream. Model-facing character results retain at most 20 dream
+IDs per character, while saved reports retain complete lists. Use
+`--structured-dreams-path` to select another structured JSONL file.
 
 The retrieval prompt asks the model to return `SEARCH_COMPLETE` rather than
 drafting an answer when it has enough searches. Any other content that ends the

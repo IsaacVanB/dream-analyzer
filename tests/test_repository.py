@@ -10,6 +10,7 @@ from dream_analysis.models import DreamValidationError
 from dream_analysis.repository import (
     DreamNotFoundError,
     DreamRepository,
+    StructuredDreamRepository,
     load_jsonl_objects,
 )
 
@@ -140,6 +141,47 @@ class DreamRepositoryTests(unittest.TestCase):
 
         self.assertEqual([line_number for line_number, _ in loaded], [1, 3])
         self.assertEqual([item["dream_id"] for _, item in loaded], ["same", "same"])
+
+
+class StructuredDreamRepositoryTests(unittest.TestCase):
+    def test_loads_validated_character_feature_records(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "structured.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "dream_id": "dream-1",
+                        "date_sort": "2025-01-02",
+                        "named_characters": ["Maya"],
+                        "summary": "A dream.",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            records = StructuredDreamRepository(path).all()
+
+        self.assertEqual(records[0]["named_characters"], ["Maya"])
+        self.assertEqual(records[0]["summary"], "A dream.")
+
+    def test_rejects_missing_character_field_and_duplicate_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "structured.jsonl"
+            path.write_text(
+                json.dumps({"dream_id": "dream-1"}) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(DreamValidationError, "named_characters"):
+                StructuredDreamRepository(path).all()
+
+            record = {"dream_id": "dream-1", "named_characters": []}
+            path.write_text(
+                json.dumps(record) + "\n" + json.dumps(record) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(DreamValidationError, "Duplicate"):
+                StructuredDreamRepository(path).all()
 
 
 if __name__ == "__main__":

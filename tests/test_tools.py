@@ -6,6 +6,7 @@ from datetime import date
 
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.tools import (
+    CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
     DreamSearchTool,
@@ -146,6 +147,16 @@ class FakeRepository:
     def get(self, dream_id):
         self.calls.append(dream_id)
         return self.dreams[0]
+
+
+class FakeStructuredRepository:
+    def __init__(self, records):
+        self.records = records
+        self.calls = 0
+
+    def all(self):
+        self.calls += 1
+        return self.records
 
 
 class DreamTagToolTests(unittest.TestCase):
@@ -463,6 +474,149 @@ class TagTrendToolTests(unittest.TestCase):
             tool.execute({"frequency": "W"})
         with self.assertRaisesRegex(ValueError, "unexpected arguments"):
             tool.execute({"plot_path": "/tmp/trend.png"})
+
+
+class CharacterMentionsToolTests(unittest.TestCase):
+    def test_schema_exposes_bounded_character_parameters(self) -> None:
+        tool = CharacterMentionsTool(
+            FakeRepository([]), FakeStructuredRepository([])
+        )
+        parameters = tool.schema["function"]["parameters"]
+
+        self.assertEqual(tool.name, "get_character_mentions")
+        self.assertEqual(parameters["properties"]["names"]["maxItems"], 20)
+        self.assertEqual(parameters["properties"]["limit"]["maximum"], 50)
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_reports_coverage_and_bounds_dream_ids(self) -> None:
+        dreams = [
+            Dream(
+                dream_id=f"dream-{index}",
+                date=f"1/{index + 1}/2025",
+                date_sort=date(2025, 1, index + 1),
+                text="Dream",
+            )
+            for index in range(22)
+        ]
+        dreams.append(
+            Dream(
+                dream_id="unstructured",
+                date="2/1/2025",
+                date_sort=date(2025, 2, 1),
+                text="Dream",
+            )
+        )
+        records = [
+            {
+                "dream_id": f"dream-{index}",
+                "date_sort": "1999-01-01",
+                "named_characters": ["Maya", "maya"],
+            }
+            for index in range(22)
+        ]
+        records.append(
+            {
+                "dream_id": "orphan",
+                "date_sort": "2025-01-01",
+                "named_characters": ["Theo"],
+            }
+        )
+        dream_repository = FakeRepository(dreams)
+        structured_repository = FakeStructuredRepository(records)
+        tool = CharacterMentionsTool(dream_repository, structured_repository)
+
+        bounded, report = tool.execute_with_report_data(
+            {
+                "names": ["maya", "Theo"],
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+                "minimum_mentions": 1,
+                "limit": 25,
+            }
+        )
+
+        coverage = bounded["analysis"]["coverage"]
+        self.assertEqual(dream_repository.calls, ["all"])
+        self.assertEqual(structured_repository.calls, 1)
+        self.assertEqual(coverage["parsed_dream_count"], 23)
+        self.assertEqual(coverage["structured_current_dream_count"], 22)
+        self.assertEqual(coverage["orphaned_structured_record_count"], 1)
+        self.assertEqual(bounded["analysis"]["missing_names"], ["Theo"])
+        self.assertEqual(bounded["analysis"]["characters"][0]["name"], "Maya")
+        self.assertEqual(
+            bounded["analysis"]["characters"][0]["mentions"]["count"], 22
+        )
+        self.assertEqual(
+            len(bounded["analysis"]["characters"][0]["mentions"]["dream_ids"]),
+            20,
+        )
+        self.assertEqual(
+            bounded["analysis"]["characters"][0]["mentions"]["dream_ids_omitted"],
+            2,
+        )
+        self.assertEqual(
+            len(report["analysis"]["characters"][0]["mentions"]["dream_ids"]),
+            22,
+        )
+        self.assertTrue(any("current dreams" in item for item in bounded["warnings"]))
+        self.assertTrue(any("do not match" in item for item in bounded["warnings"]))
+        self.assertTrue(any("Theo" in item for item in bounded["warnings"]))
+        self.assertTrue(any("truncated" in item for item in bounded["warnings"]))
+        json.dumps(bounded)
+        json.dumps(report)
+
+    def test_execute_uses_current_dates_and_validates_arguments(self) -> None:
+        dreams = [
+            Dream(
+                dream_id="one",
+                date="5/1/2025",
+                date_sort=date(2025, 5, 1),
+                text="Dream",
+            ),
+            Dream(
+                dream_id="unknown",
+                date="0/0/00",
+                date_sort=None,
+                text="Dream",
+            ),
+        ]
+        records = [
+            {
+                "dream_id": "one",
+                "date_sort": "1999-01-01",
+                "named_characters": ["Maya"],
+            },
+            {
+                "dream_id": "unknown",
+                "date_sort": "1999-01-02",
+                "named_characters": ["Theo"],
+            },
+        ]
+        tool = CharacterMentionsTool(
+            FakeRepository(dreams), FakeStructuredRepository(records)
+        )
+
+        result = tool.execute(
+            {"start_date": "2025-01-01", "end_date": "2025-12-31"}
+        )
+
+        self.assertEqual(
+            result["analysis"]["characters"][0]["mentions"]["first_date"],
+            "2025-05-01",
+        )
+        self.assertEqual(result["analysis"]["excluded_unknown_date_count"], 1)
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            tool.execute({"names": ["Maya", "maya"]})
+        with self.assertRaisesRegex(ValueError, "limit"):
+            tool.execute({"limit": 51})
+        with self.assertRaisesRegex(ValueError, "minimum_mentions"):
+            tool.execute({"minimum_mentions": False})
+        with self.assertRaisesRegex(ValueError, "start_date"):
+            tool.execute(
+                {"start_date": "2025-02-01", "end_date": "2025-01-01"}
+            )
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"temporal_context": True})
 
 
 class DreamByIdToolTests(unittest.TestCase):

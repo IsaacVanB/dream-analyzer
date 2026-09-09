@@ -136,6 +136,17 @@ class DreamAgentCliTests(unittest.TestCase):
 
         self.assertEqual(args.output, Path("outputs/agent/report.md"))
 
+    def test_parser_accepts_a_structured_dream_path(self) -> None:
+        args = dream_agent.build_parser().parse_args(
+            [
+                "Who appears most often?",
+                "--structured-dreams-path",
+                "data/features.jsonl",
+            ]
+        )
+
+        self.assertEqual(args.structured_dreams_path, Path("data/features.jsonl"))
+
     def test_parser_accepts_debug_tracing(self) -> None:
         args = dream_agent.build_parser().parse_args(["What happened?", "--debug"])
 
