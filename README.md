@@ -1,3 +1,5 @@
+[![CI](https://github.com/IsaacVanB/dream-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/IsaacVanB/dream-analyzer/actions/workflows/ci.yml)
+
 # Dream Analyzer
 
 Small local pipeline for parsing a dream journal, embedding dreams with Ollama,
