@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   tests:
-    name: Lint and test (Python 3.11)
+    name: Lint and test (Python 3.12)
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
 
