@@ -126,7 +126,7 @@ directions and should not be compared directly.
 | `retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `basic_rag.py` | Chroma distance | The generated or supplied retrieval query is ranked by Chroma. |
 | `dream-analyzer ask` | Chroma distance | `search_dreams` uses Chroma ranking; optional dates filter that ranked search. |
-| `evaluate_retrieval.py` | Agent-selected tools | Runs each labeled query through the dream agent's retrieval planner and reports P@5/10, recall@5/10, and R-precision. |
+| `evaluate_retrieval.py` | Selectable; agent default | Runs labeled queries through the dream agent or direct query embeddings and reports P@5/10, recall@5/10, and R-precision. |
 | `evaluate_retrieval_llm.py` | Configurable | Defaults to Chroma distance; `--retrieval-metric cosine` uses cosine similarity and `both` compares them. |
 | `compare_models.py rag` | Chroma distance | Uses the same retrieval path as `basic_rag.py`. |
 | `dream-analyzer analyze ... --related-dreams ...` | Cosine similarity | Higher is more similar; `--similarity-threshold` is a cosine threshold. |
@@ -373,10 +373,18 @@ Evaluate retrieval against the known relevant dreams in
 
 ```bash
 python3 src/cli/evaluate_retrieval.py
+python3 src/cli/evaluate_retrieval.py --retrieval-mode embedding
 python3 src/cli/evaluate_retrieval.py \
   --collection-name dreams_qwen3_embedding \
   --embed-model qwen3-embedding
 ```
+
+`--retrieval-mode agent` is the default. For a non-agentic baseline,
+`--retrieval-mode embedding` embeds each evaluation query exactly as written and
+ranks it directly through Chroma, without a chat-model request or tool-planning
+steps. It retrieves `max(10, R)` dreams so R-precision can be calculated. The
+embedding baseline validates only the Chroma collection and embedding model; it
+does not require agent tool data files.
 
 The evaluator gives each query to the same tool-planning agent used by
 `dream-analyzer ask`. The chat model can generate semantic queries, apply date

@@ -92,6 +92,35 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertNotIn("structured dreams file does not exist", message)
         self.assertIn("Available collections: dreams_with_underscores", message)
 
+    def test_embedding_preflight_does_not_require_agent_data_files(self) -> None:
+        class Collection:
+            name = "dreams"
+            metadata = {"embedding_model": "embed"}
+
+            @staticmethod
+            def count():
+                return 12
+
+        class Client:
+            @staticmethod
+            def list_collections():
+                return [Collection()]
+
+            @staticmethod
+            def get_collection(*, name):
+                return Collection()
+
+        with TemporaryDirectory() as temporary_directory:
+            args = self.preflight_args(Path(temporary_directory))
+            args.retrieval_mode = "embedding"
+            args.dreams_path.unlink()
+            args.structured_dreams_path.unlink()
+            args.characters_path.unlink()
+            result = evaluate_retrieval.preflight(args, chroma_client=Client())
+
+        self.assertEqual(result["retrieval_mode"], "embedding")
+        self.assertEqual(result["data_files"], {})
+
     def test_metrics_at_cutoffs_and_r_precision(self) -> None:
         relevant = ["a", "c", "e"]
         retrieved = ["a", "x", "c", "y", "z", "e"]
@@ -113,6 +142,46 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(metrics["max_precision_at_5"], 0.0)
         self.assertIsNone(metrics["recall_at_5"])
         self.assertIsNone(metrics["r_precision"])
+
+    def test_parser_defaults_to_agent_and_accepts_embedding_baseline(self) -> None:
+        parser = evaluate_retrieval.build_parser()
+
+        agent_args = parser.parse_args([])
+        embedding_args = parser.parse_args(["--retrieval-mode", "embedding"])
+
+        self.assertEqual(agent_args.retrieval_mode, "agent")
+        self.assertEqual(embedding_args.retrieval_mode, "embedding")
+
+    def test_embedding_baseline_embeds_query_verbatim_and_retrieves_to_r(self) -> None:
+        calls = []
+
+        def retrieve(query, **kwargs):
+            calls.append((query, kwargs))
+            return [{"dream_id": "relevant"}]
+
+        with redirect_stdout(StringIO()):
+            rows = evaluate_retrieval.evaluate_embedding_queries(
+                [
+                    {
+                        "query": "dreams about exact wording",
+                        "category": "direct",
+                        "relevant_dream_ids": [
+                            "relevant",
+                            *[f"other-{index}" for index in range(11)],
+                        ],
+                    }
+                ],
+                chroma_path="db",
+                collection_name="dreams",
+                embed_model="embed",
+                retrieve=retrieve,
+            )
+
+        self.assertEqual(calls[0][0], "dreams about exact wording")
+        self.assertEqual(calls[0][1]["top_k"], 12)
+        self.assertEqual(rows[0]["retrieval_query"], "dreams about exact wording")
+        self.assertEqual(rows[0]["retrieval_depth"], 12)
+        self.assertEqual(rows[0]["tool_calls"], [])
 
     def test_evaluator_uses_agent_and_fuses_its_tool_results(self) -> None:
         class FakeAgent:
@@ -222,6 +291,7 @@ class RetrievalMetricTests(unittest.TestCase):
             "created_at": "2026-09-11T12:00:00-04:00",
             "queries_path": "queries.json",
             "settings": {
+                "retrieval_mode": "agent",
                 "collection_name": "dreams",
                 "embed_model": "embed",
                 "chat_model": "chat",

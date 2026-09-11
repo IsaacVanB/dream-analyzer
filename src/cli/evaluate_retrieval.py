@@ -10,11 +10,11 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import chromadb
 
-from cli import dream_agent
+from cli import basic_rag, dream_agent
 from dream_analysis.agent import DreamRagAgent, ToolExecution
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 from dream_analysis.index import validate_collection_embedding_model
@@ -28,6 +28,7 @@ from dream_analysis.repository import (
 QUERIES_PATH = Path("data/retrieval_eval_queries.json")
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
 CUTOFFS = (5, 10)
+RETRIEVAL_MODES = ("agent", "embedding")
 SCORED_METRICS = (
     "precision_at_5",
     "max_precision_at_5",
@@ -50,6 +51,62 @@ def preflight(
 ) -> dict[str, Any]:
     """Validate retrieval dependencies without invoking either Ollama model."""
     errors: list[str] = []
+    data_file_results = (
+        _preflight_agent_data(args, errors)
+        if getattr(args, "retrieval_mode", "agent") == "agent"
+        else {}
+    )
+
+    chroma_path = Path(args.chroma_path)
+    collection = None
+    collection_count = None
+    available_collections: list[str] = []
+    if not chroma_path.exists():
+        errors.append(f"Chroma path does not exist: {chroma_path}")
+    else:
+        try:
+            client = chroma_client or chromadb.PersistentClient(path=chroma_path)
+            available_collections = sorted(
+                str(item.name) for item in client.list_collections()
+            )
+            collection = client.get_collection(name=args.collection_name)
+        except Exception as exc:
+            available = ", ".join(available_collections) or "none"
+            errors.append(
+                f"cannot open Chroma collection {args.collection_name!r}: {exc}. "
+                f"Available collections: {available}"
+            )
+
+    if collection is not None:
+        try:
+            validate_collection_embedding_model(
+                collection,
+                collection_name=args.collection_name,
+                embedding_model=args.embed_model,
+            )
+            collection_count = collection.count()
+        except Exception as exc:
+            errors.append(str(exc))
+
+    if errors:
+        detail = "\n".join(f"- {error}" for error in errors)
+        raise EvaluationPreflightError(
+            "Retrieval evaluation preflight failed; no queries were run:\n" + detail
+        )
+    return {
+        "status": "ok",
+        "retrieval_mode": getattr(args, "retrieval_mode", "agent"),
+        "collection_count": collection_count,
+        "available_collections": available_collections,
+        "data_files": data_file_results,
+    }
+
+
+def _preflight_agent_data(
+    args: argparse.Namespace,
+    errors: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Validate files needed only by the agent's non-embedding tools."""
     required_data_files = {
         "parsed dreams": (
             Path(args.dreams_path),
@@ -97,48 +154,7 @@ def preflight(
                 "effect": "get_character_mentions enabled",
             }
 
-    chroma_path = Path(args.chroma_path)
-    collection = None
-    collection_count = None
-    available_collections: list[str] = []
-    if not chroma_path.exists():
-        errors.append(f"Chroma path does not exist: {chroma_path}")
-    else:
-        try:
-            client = chroma_client or chromadb.PersistentClient(path=chroma_path)
-            available_collections = sorted(
-                str(item.name) for item in client.list_collections()
-            )
-            collection = client.get_collection(name=args.collection_name)
-        except Exception as exc:
-            available = ", ".join(available_collections) or "none"
-            errors.append(
-                f"cannot open Chroma collection {args.collection_name!r}: {exc}. "
-                f"Available collections: {available}"
-            )
-
-    if collection is not None:
-        try:
-            validate_collection_embedding_model(
-                collection,
-                collection_name=args.collection_name,
-                embedding_model=args.embed_model,
-            )
-            collection_count = collection.count()
-        except Exception as exc:
-            errors.append(str(exc))
-
-    if errors:
-        detail = "\n".join(f"- {error}" for error in errors)
-        raise EvaluationPreflightError(
-            "Retrieval evaluation preflight failed; no queries were run:\n" + detail
-        )
-    return {
-        "status": "ok",
-        "collection_count": collection_count,
-        "available_collections": available_collections,
-        "data_files": data_file_results,
-    }
+    return data_file_results
 
 
 def load_evaluation_queries(path: Path) -> dict[str, Any]:
@@ -355,6 +371,85 @@ def evaluate_queries(
     return rows
 
 
+def evaluate_embedding_queries(
+    queries: list[dict[str, Any]],
+    *,
+    chroma_path: str,
+    collection_name: str,
+    embed_model: str,
+    retrieve: Callable[..., list[dict[str, Any]]] = basic_rag.retrieve_dreams,
+) -> list[dict[str, Any]]:
+    """Embed each labeled query verbatim and score direct Chroma retrieval."""
+    rows: list[dict[str, Any]] = []
+    for number, item in enumerate(queries, start=1):
+        relevant_ids = item["relevant_dream_ids"]
+        retrieval_depth = max(max(CUTOFFS), len(relevant_ids))
+        progress = f"[{number}/{len(queries)}]"
+        print(f"{progress} Starting embedding baseline: {item['query']}", flush=True)
+        started = perf_counter()
+        try:
+            retrieved = retrieve(
+                item["query"],
+                top_k=retrieval_depth,
+                chroma_path=chroma_path,
+                collection_name=collection_name,
+                embed_model=embed_model,
+            )
+        except Exception as exc:
+            retrieval_seconds = round(perf_counter() - started, 3)
+            rows.append(
+                {
+                    "query": item["query"],
+                    "category": item["category"],
+                    "status": "error",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    **failed_retrieval_metrics(relevant_ids),
+                    "retrieval_query": item["query"],
+                    "retrieval_depth": retrieval_depth,
+                    "returned_count": 0,
+                    "retrieval_seconds": retrieval_seconds,
+                    "retrieved_dream_ids": [],
+                    "relevant_dream_ids": relevant_ids,
+                    "tool_calls": [],
+                    "unexecuted_tool_calls": [],
+                }
+            )
+            print(
+                f"{progress} ERROR after {retrieval_seconds:.3f}s: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            continue
+
+        retrieved_ids = [str(result["dream_id"]) for result in retrieved]
+        retrieval_seconds = round(perf_counter() - started, 3)
+        rows.append(
+            {
+                "query": item["query"],
+                "category": item["category"],
+                "status": "ok",
+                "error_type": None,
+                "error": None,
+                **retrieval_metrics(retrieved_ids, relevant_ids),
+                "retrieval_query": item["query"],
+                "retrieval_depth": retrieval_depth,
+                "returned_count": len(retrieved_ids),
+                "retrieval_seconds": retrieval_seconds,
+                "retrieved_dream_ids": retrieved_ids,
+                "relevant_dream_ids": relevant_ids,
+                "tool_calls": [],
+                "unexecuted_tool_calls": [],
+            }
+        )
+        print(
+            f"{progress} Finished embedding baseline in "
+            f"{retrieval_seconds:.3f}s: {len(retrieved_ids)} dream(s)",
+            flush=True,
+        )
+    return rows
+
+
 def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
     """Keep the agent's generated queries and filters without journal text."""
     result = execution.report_result or execution.result
@@ -382,25 +477,33 @@ def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
 def run(args: argparse.Namespace) -> dict[str, Any]:
     payload = load_evaluation_queries(args.queries_path)
     preflight_result = preflight(args)
-    agent = dream_agent.build_agent(
-        chroma_path=args.chroma_path,
-        collection_name=args.collection_name,
-        embed_model=args.embed_model,
-        top_k=args.top_k,
-        max_chars_per_dream=args.max_chars_per_dream,
-        dreams_path=args.dreams_path,
-        structured_dreams_path=args.structured_dreams_path,
-        characters_path=args.characters_path,
-    )
-    rows = evaluate_queries(
-        payload["queries"],
-        agent=agent,
-        chat_model=args.chat_model,
-        max_tool_calls=args.max_tool_calls,
-        num_ctx=args.num_ctx,
-        num_predict=args.num_predict,
-        temperature=args.temperature,
-    )
+    if args.retrieval_mode == "agent":
+        agent = dream_agent.build_agent(
+            chroma_path=args.chroma_path,
+            collection_name=args.collection_name,
+            embed_model=args.embed_model,
+            top_k=args.top_k,
+            max_chars_per_dream=args.max_chars_per_dream,
+            dreams_path=args.dreams_path,
+            structured_dreams_path=args.structured_dreams_path,
+            characters_path=args.characters_path,
+        )
+        rows = evaluate_queries(
+            payload["queries"],
+            agent=agent,
+            chat_model=args.chat_model,
+            max_tool_calls=args.max_tool_calls,
+            num_ctx=args.num_ctx,
+            num_predict=args.num_predict,
+            temperature=args.temperature,
+        )
+    else:
+        rows = evaluate_embedding_queries(
+            payload["queries"],
+            chroma_path=args.chroma_path,
+            collection_name=args.collection_name,
+            embed_model=args.embed_model,
+        )
     by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         by_category[row["category"]].append(row)
@@ -410,6 +513,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "journal_file": payload.get("journal_file"),
         "preflight": preflight_result,
         "settings": {
+            "retrieval_mode": args.retrieval_mode,
             "chroma_path": args.chroma_path,
             "collection_name": args.collection_name,
             "embed_model": args.embed_model,
@@ -466,35 +570,50 @@ def _summary_table(rows: Iterable[tuple[str, dict[str, Any]]]) -> list[str]:
 def markdown_report(report: dict[str, Any]) -> str:
     """Render aggregate and per-query retrieval metrics as Markdown."""
     settings = report["settings"]
+    retrieval_mode = settings["retrieval_mode"]
     lines = [
         "# Retrieval benchmark",
         "",
         f"- Created: `{report['created_at']}`",
         f"- Queries: `{report['queries_path']}`",
+        f"- Retrieval mode: `{retrieval_mode}`",
         f"- Chroma collection: `{settings['collection_name']}`",
         f"- Embedding model: `{settings['embed_model']}`",
-        f"- Agent chat model: `{settings['chat_model']}`",
-        f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
-        f"- Results per semantic search: `{settings['results_per_semantic_search']}`",
         f"- Preflight: `{report['preflight']['status']}`",
-        "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
         "- Queries with agent or tool errors are marked as errors and excluded from all metric averages.",
         "- Undefined recall and R-precision for queries with no relevant dreams are shown as `n/a` and excluded from macro averages.",
         "- Maximum P@k is `min(number of relevant dreams, k) / k`.",
-        "",
-        "## Macro averages",
-        "",
-        *_summary_table([("all", report["summary"])]),
-        "",
-        "## Category macro averages",
-        "",
-        *_summary_table(report["category_summaries"].items()),
-        "",
-        "## Per-query results",
-        "",
-        "| query | category | status | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
+    if retrieval_mode == "agent":
+        lines.extend(
+            [
+                f"- Agent chat model: `{settings['chat_model']}`",
+                f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
+                f"- Results per semantic search: `{settings['results_per_semantic_search']}`",
+                "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
+            ]
+        )
+    else:
+        lines.append(
+            "- Each benchmark query is embedded verbatim and ranked directly by Chroma; no chat model or agent tools are used."
+        )
+    lines.extend(
+        [
+            "",
+            "## Macro averages",
+            "",
+            *_summary_table([("all", report["summary"])]),
+            "",
+            "## Category macro averages",
+            "",
+            *_summary_table(report["category_summaries"].items()),
+            "",
+            "## Per-query results",
+            "",
+            "| query | category | status | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
+            "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        ]
+    )
     for row in report["queries"]:
         query = row["query"].replace("|", "\\|").replace("\n", " ")
         error = str(row.get("error") or "").replace("|", "\\|")
@@ -508,20 +627,23 @@ def markdown_report(report: dict[str, Any]) -> str:
             f"{_display(row['r_precision'])} | "
             f"{error} |"
         )
-    lines.extend(
-        [
-            "",
-            "## Agent retrieval trace",
-            "",
-            "| query | generated tool calls |",
-            "|---|---|",
-        ]
-    )
-    for row in report["queries"]:
-        query = row["query"].replace("|", "\\|").replace("\n", " ")
-        calls = "; ".join(_format_tool_call(call) for call in row["tool_calls"])
-        escaped_calls = calls.replace("|", "\\|") or "none"
-        lines.append(f"| {query} | {escaped_calls} |")
+    if retrieval_mode == "agent":
+        lines.extend(
+            [
+                "",
+                "## Agent retrieval trace",
+                "",
+                "| query | generated tool calls |",
+                "|---|---|",
+            ]
+        )
+        for row in report["queries"]:
+            query = row["query"].replace("|", "\\|").replace("\n", " ")
+            calls = "; ".join(
+                _format_tool_call(call) for call in row["tool_calls"]
+            )
+            escaped_calls = calls.replace("|", "\\|") or "none"
+            lines.append(f"| {query} | {escaped_calls} |")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -539,10 +661,17 @@ def _format_tool_call(call: dict[str, Any]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate dream-agent tool retrieval using labeled relevance judgments."
+            "Evaluate agentic or embedding-only dream retrieval using labeled "
+            "relevance judgments."
         )
     )
     parser.add_argument("--queries-path", type=Path, default=QUERIES_PATH)
+    parser.add_argument(
+        "--retrieval-mode",
+        choices=RETRIEVAL_MODES,
+        default="agent",
+        help="Use the dream agent (default) or direct query embeddings.",
+    )
     parser.add_argument(
         "--dreams-path",
         type=Path,
@@ -588,7 +717,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if not 10 <= args.top_k <= 20:
+    if args.retrieval_mode == "agent" and not 10 <= args.top_k <= 20:
         parser.error("--top-k must be between 10 and 20 for evaluation at 10")
     if args.max_tool_calls < 1:
         parser.error("--max-tool-calls must be positive")
@@ -609,7 +738,8 @@ def main() -> None:
     except EvaluationPreflightError as exc:
         parser.exit(2, f"error: {exc}\n")
     created = datetime.now().astimezone()
-    stem = created.strftime("benchmark_%Y-%m-%d_%H-%M-%S-%f")
+    timestamp = created.strftime("%Y-%m-%d_%H-%M-%S-%f")
+    stem = f"benchmark_{args.retrieval_mode}_{timestamp}"
     json_path = args.output_dir / f"{stem}.json"
     markdown_path = args.output_dir / f"{stem}.md"
     write_json_atomic(json_path, report)

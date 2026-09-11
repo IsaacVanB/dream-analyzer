@@ -113,7 +113,7 @@ The commands currently use two different scoring paths:
 | `src/cli/retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `src/cli/basic_rag.py` | Chroma distance | Lower is closer. |
 | `dream-analyzer ask` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
-| `src/cli/evaluate_retrieval.py` | Agent-selected tools | Runs the labeled retrieval benchmark through the dream-agent planner. |
+| `src/cli/evaluate_retrieval.py` | Selectable; agent default | Runs the labeled benchmark through the dream agent or direct query embeddings. |
 | `src/cli/evaluate_retrieval_llm.py` | Configurable | Chroma distance by default; cosine similarity or both are selectable. |
 | `src/cli/compare_models.py rag` | Chroma distance | Lower is closer. |
 | `dream-analyzer analyze` with related dreams enabled | Cosine similarity | Higher is more similar. |
@@ -463,10 +463,16 @@ of known relevant dreams.
 
 ```bash
 python3 src/cli/evaluate_retrieval.py
+python3 src/cli/evaluate_retrieval.py --retrieval-mode embedding
 python3 src/cli/evaluate_retrieval.py \
   --collection-name dreams_qwen3_embedding \
   --embed-model qwen3-embedding
 ```
+
+Agent retrieval is the default. The `embedding` mode provides a non-agentic
+baseline: it embeds each labeled query verbatim, retrieves `max(10, R)` results
+directly from Chroma, and never invokes the chat model or agent tools. It also
+does not require parsed, structured, or character data files.
 
 Each semantic search returns 10 dreams by default, and each query may use up to
 three tool calls. These settings can be changed with `--top-k` (10–20) and
