@@ -12,14 +12,115 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Iterable
 
+import chromadb
+
 from cli import dream_agent
 from dream_analysis.agent import DreamRagAgent, ToolExecution
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
+from dream_analysis.index import validate_collection_embedding_model
+from dream_analysis.repository import (
+    CharacterDictionaryRepository,
+    DreamRepository,
+    StructuredDreamRepository,
+)
 
 
 QUERIES_PATH = Path("data/retrieval_eval_queries.json")
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
 CUTOFFS = (5, 10)
+SCORED_METRICS = (
+    "precision_at_5",
+    "max_precision_at_5",
+    "recall_at_5",
+    "precision_at_10",
+    "max_precision_at_10",
+    "recall_at_10",
+    "r_precision",
+)
+
+
+class EvaluationPreflightError(RuntimeError):
+    """Raised before evaluation when a configured retrieval dependency is invalid."""
+
+
+def preflight(
+    args: argparse.Namespace,
+    *,
+    chroma_client: Any | None = None,
+) -> dict[str, Any]:
+    """Validate retrieval dependencies without invoking either Ollama model."""
+    errors: list[str] = []
+    data_files = {
+        "parsed dreams": (
+            Path(args.dreams_path),
+            DreamRepository(args.dreams_path),
+        ),
+        "structured dreams": (
+            Path(args.structured_dreams_path),
+            StructuredDreamRepository(args.structured_dreams_path),
+        ),
+        "character dictionary": (
+            Path(args.characters_path),
+            CharacterDictionaryRepository(args.characters_path),
+        ),
+    }
+    data_file_results: dict[str, dict[str, Any]] = {}
+    for label, (path, repository) in data_files.items():
+        if not path.is_file():
+            errors.append(f"{label} file does not exist: {path}")
+            continue
+        try:
+            record_count = len(repository.all())
+        except Exception as exc:
+            errors.append(f"cannot load {label} file {path}: {exc}")
+            continue
+        data_file_results[label] = {
+            "path": str(path),
+            "record_count": record_count,
+        }
+
+    chroma_path = Path(args.chroma_path)
+    collection = None
+    collection_count = None
+    available_collections: list[str] = []
+    if not chroma_path.exists():
+        errors.append(f"Chroma path does not exist: {chroma_path}")
+    else:
+        try:
+            client = chroma_client or chromadb.PersistentClient(path=chroma_path)
+            available_collections = sorted(
+                str(item.name) for item in client.list_collections()
+            )
+            collection = client.get_collection(name=args.collection_name)
+        except Exception as exc:
+            available = ", ".join(available_collections) or "none"
+            errors.append(
+                f"cannot open Chroma collection {args.collection_name!r}: {exc}. "
+                f"Available collections: {available}"
+            )
+
+    if collection is not None:
+        try:
+            validate_collection_embedding_model(
+                collection,
+                collection_name=args.collection_name,
+                embedding_model=args.embed_model,
+            )
+            collection_count = collection.count()
+        except Exception as exc:
+            errors.append(str(exc))
+
+    if errors:
+        detail = "\n".join(f"- {error}" for error in errors)
+        raise EvaluationPreflightError(
+            "Retrieval evaluation preflight failed; no queries were run:\n" + detail
+        )
+    return {
+        "status": "ok",
+        "collection_count": collection_count,
+        "available_collections": available_collections,
+        "data_files": data_file_results,
+    }
 
 
 def load_evaluation_queries(path: Path) -> dict[str, Any]:
@@ -81,6 +182,26 @@ def retrieval_metrics(
     return metrics
 
 
+def failed_retrieval_metrics(
+    relevant_ids: Iterable[str],
+) -> dict[str, int | float | None]:
+    """Return explicitly unavailable metrics for a failed retrieval run."""
+    relevant_count = len(set(relevant_ids))
+    return {
+        "relevant_count": relevant_count,
+        "relevant_at_5": None,
+        "precision_at_5": None,
+        "max_precision_at_5": min(relevant_count, 5) / 5,
+        "recall_at_5": None,
+        "relevant_at_10": None,
+        "precision_at_10": None,
+        "max_precision_at_10": min(relevant_count, 10) / 10,
+        "recall_at_10": None,
+        "relevant_at_r": None,
+        "r_precision": None,
+    }
+
+
 def _mean(values: Iterable[float | None]) -> float | None:
     present = [value for value in values if value is not None]
     return statistics.fmean(present) if present else None
@@ -88,20 +209,17 @@ def _mean(values: Iterable[float | None]) -> float | None:
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Return macro averages, excluding undefined metrics for zero-relevance queries."""
+    evaluated = [row for row in rows if row.get("status", "ok") == "ok"]
     return {
         "query_count": len(rows),
-        "queries_with_relevant_dreams": sum(row["relevant_count"] > 0 for row in rows),
+        "evaluated_query_count": len(evaluated),
+        "error_query_count": len(rows) - len(evaluated),
+        "queries_with_relevant_dreams": sum(
+            row["relevant_count"] > 0 for row in evaluated
+        ),
         **{
-            metric: _mean(row[metric] for row in rows)
-            for metric in (
-                "precision_at_5",
-                "max_precision_at_5",
-                "recall_at_5",
-                "precision_at_10",
-                "max_precision_at_10",
-                "recall_at_10",
-                "r_precision",
-            )
+            metric: _mean(row[metric] for row in evaluated)
+            for metric in SCORED_METRICS
         },
     }
 
@@ -123,43 +241,99 @@ def evaluate_queries(
         progress = f"[{number}/{len(queries)}]"
         print(f"{progress} Starting: {item['query']}", flush=True)
         started = perf_counter()
-        response = agent.answer(
-            item["query"],
-            chat_model=chat_model,
-            num_ctx=num_ctx,
-            num_predict=num_predict,
-            temperature=temperature,
-            max_tool_calls=max_tool_calls,
-            synthesize=False,
-        )
+        try:
+            response = agent.answer(
+                item["query"],
+                chat_model=chat_model,
+                num_ctx=num_ctx,
+                num_predict=num_predict,
+                temperature=temperature,
+                max_tool_calls=max_tool_calls,
+                synthesize=False,
+            )
+        except Exception as exc:
+            retrieval_seconds = round(perf_counter() - started, 3)
+            executions = tuple(getattr(exc, "completed_executions", ()))
+            pending_calls = tuple(getattr(exc, "pending_tool_calls", ()))
+            rows.append(
+                {
+                    "query": item["query"],
+                    "category": item["category"],
+                    "status": "error",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    **failed_retrieval_metrics(relevant_ids),
+                    "returned_count": 0,
+                    "retrieval_seconds": retrieval_seconds,
+                    "retrieved_dream_ids": [],
+                    "relevant_dream_ids": relevant_ids,
+                    "tool_calls": [
+                        tool_execution_report(execution)
+                        for execution in executions
+                    ],
+                    "unexecuted_tool_calls": [
+                        {"name": call.name, "arguments": dict(call.arguments)}
+                        for call in pending_calls
+                    ],
+                }
+            )
+            print(
+                f"{progress} ERROR after {retrieval_seconds:.3f}s: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            continue
+
         ranked = DreamRagAgent.rank_dream_evidence(response.tool_executions)
         retrieved_ids = [dream["dream_id"] for dream in ranked]
         retrieval_seconds = round(perf_counter() - started, 3)
+        tool_calls = [
+            tool_execution_report(execution)
+            for execution in response.tool_executions
+        ]
+        tool_errors = [call for call in tool_calls if not call["ok"]]
+        if tool_errors:
+            error = "; ".join(
+                f"{call['name']}: {call['error'] or 'unknown tool error'}"
+                for call in tool_errors
+            )
+            status = "error"
+            metrics = failed_retrieval_metrics(relevant_ids)
+        else:
+            error = None
+            status = "ok"
+            metrics = retrieval_metrics(retrieved_ids, relevant_ids)
         rows.append(
             {
                 "query": item["query"],
                 "category": item["category"],
-                **retrieval_metrics(retrieved_ids, relevant_ids),
+                "status": status,
+                "error_type": "ToolExecutionError" if tool_errors else None,
+                "error": error,
+                **metrics,
                 "returned_count": len(retrieved_ids),
                 "retrieval_seconds": retrieval_seconds,
                 "retrieved_dream_ids": retrieved_ids,
                 "relevant_dream_ids": relevant_ids,
-                "tool_calls": [
-                    tool_execution_report(execution)
-                    for execution in response.tool_executions
-                ],
+                "tool_calls": tool_calls,
                 "unexecuted_tool_calls": [
                     {"name": call.name, "arguments": dict(call.arguments)}
                     for call in response.unexecuted_tool_calls
                 ],
             }
         )
-        print(
-            f"{progress} Finished in {retrieval_seconds:.3f}s: "
-            f"{len(response.tool_executions)} tool call(s), "
-            f"{len(retrieved_ids)} unique dream(s)",
-            flush=True,
-        )
+        if tool_errors:
+            print(
+                f"{progress} ERROR after {retrieval_seconds:.3f}s: {error}",
+                flush=True,
+            )
+        else:
+            print(
+                f"{progress} Finished in {retrieval_seconds:.3f}s: "
+                f"{len(response.tool_executions)} tool call(s), "
+                f"{len(retrieved_ids)} unique dream(s)",
+                flush=True,
+            )
     return rows
 
 
@@ -181,6 +355,7 @@ def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     payload = load_evaluation_queries(args.queries_path)
+    preflight_result = preflight(args)
     agent = dream_agent.build_agent(
         chroma_path=args.chroma_path,
         collection_name=args.collection_name,
@@ -207,6 +382,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "queries_path": str(args.queries_path),
         "journal_file": payload.get("journal_file"),
+        "preflight": preflight_result,
         "settings": {
             "chroma_path": args.chroma_path,
             "collection_name": args.collection_name,
@@ -242,12 +418,14 @@ def _display(value: Any) -> str:
 
 def _summary_table(rows: Iterable[tuple[str, dict[str, Any]]]) -> list[str]:
     lines = [
-        "| group | queries | P@5 | max P@5 | R@5 | P@10 | max P@10 | R@10 | R-precision |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| group | queries | evaluated | errors | P@5 | max P@5 | R@5 | P@10 | max P@10 | R@10 | R-precision |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for label, summary in rows:
         lines.append(
             f"| {label} | {summary['query_count']} | "
+            f"{summary['evaluated_query_count']} | "
+            f"{summary['error_query_count']} | "
             f"{_display(summary['precision_at_5'])} | "
             f"{_display(summary['max_precision_at_5'])} | "
             f"{_display(summary['recall_at_5'])} | "
@@ -272,7 +450,9 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- Agent chat model: `{settings['chat_model']}`",
         f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
         f"- Results per semantic search: `{settings['results_per_semantic_search']}`",
+        f"- Preflight: `{report['preflight']['status']}`",
         "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
+        "- Queries with agent or tool errors are marked as errors and excluded from all metric averages.",
         "- Undefined recall and R-precision for queries with no relevant dreams are shown as `n/a` and excluded from macro averages.",
         "- Maximum P@k is `min(number of relevant dreams, k) / k`.",
         "",
@@ -286,18 +466,21 @@ def markdown_report(report: dict[str, Any]) -> str:
         "",
         "## Per-query results",
         "",
-        "| query | category | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| query | category | status | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in report["queries"]:
         query = row["query"].replace("|", "\\|").replace("\n", " ")
+        error = str(row.get("error") or "").replace("|", "\\|")
         lines.append(
-            f"| {query} | {row['category']} | {row['relevant_count']} | "
-            f"{row['relevant_at_5']} | {_display(row['precision_at_5'])} | "
+            f"| {query} | {row['category']} | {row.get('status', 'ok')} | "
+            f"{row['relevant_count']} | {_display(row['relevant_at_5'])} | "
+            f"{_display(row['precision_at_5'])} | "
             f"{_display(row['max_precision_at_5'])} | {_display(row['recall_at_5'])} | "
-            f"{row['relevant_at_10']} | {_display(row['precision_at_10'])} | "
+            f"{_display(row['relevant_at_10'])} | {_display(row['precision_at_10'])} | "
             f"{_display(row['max_precision_at_10'])} | {_display(row['recall_at_10'])} | "
-            f"{_display(row['r_precision'])} |"
+            f"{_display(row['r_precision'])} | "
+            f"{error} |"
         )
     lines.extend(
         [
@@ -310,13 +493,19 @@ def markdown_report(report: dict[str, Any]) -> str:
     )
     for row in report["queries"]:
         query = row["query"].replace("|", "\\|").replace("\n", " ")
-        calls = "; ".join(
-            f"`{call['name']}({json.dumps(call['arguments'], ensure_ascii=False, sort_keys=True)})`"
-            for call in row["tool_calls"]
-        )
+        calls = "; ".join(_format_tool_call(call) for call in row["tool_calls"])
         escaped_calls = calls.replace("|", "\\|") or "none"
         lines.append(f"| {query} | {escaped_calls} |")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _format_tool_call(call: dict[str, Any]) -> str:
+    rendered = (
+        f"`{call['name']}({json.dumps(call['arguments'], ensure_ascii=False, sort_keys=True)})`"
+    )
+    if not call["ok"]:
+        rendered += f" **ERROR:** {call['error'] or 'unknown tool error'}"
+    return rendered
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -387,7 +576,10 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     validate_args(parser, args)
-    report = run(args)
+    try:
+        report = run(args)
+    except EvaluationPreflightError as exc:
+        parser.exit(2, f"error: {exc}\n")
     created = datetime.now().astimezone()
     stem = created.strftime("benchmark_%Y-%m-%d_%H-%M-%S-%f")
     json_path = args.output_dir / f"{stem}.json"

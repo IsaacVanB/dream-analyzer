@@ -377,7 +377,11 @@ The evaluator gives each query to the same tool-planning agent used by
 filters, retrieve exact tags or date ranges, and use character and analytical
 tools. Dreams returned by multiple calls are deduplicated and ranked with the
 agent's reciprocal-rank fusion. Final prose synthesis is skipped because it
-cannot change retrieval. The reports retain the generated tool calls and contain
+cannot change retrieval. Before contacting Ollama, a preflight validates the
+Chroma path, collection, embedding-model metadata, and all tool data files. A
+preflight failure exits before any queries run. Agent or tool failures during a
+query are reported as errors and excluded from aggregate metrics rather than
+being scored as unsuccessful retrievals. The reports retain the generated tool calls and contain
 per-query and macro-averaged precision and recall at 5 and 10, R-precision,
 category summaries, and the maximum possible precision at each cutoff given the
 number of known relevant dreams. Recall and R-precision are undefined for

@@ -3,12 +3,86 @@ from __future__ import annotations
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 from cli import evaluate_retrieval
 from dream_analysis.agent import AgentResponse, ToolExecution
 
 
 class RetrievalMetricTests(unittest.TestCase):
+    @staticmethod
+    def preflight_args(root: Path) -> SimpleNamespace:
+        chroma_path = root / "chroma"
+        chroma_path.mkdir()
+        paths = {
+            "dreams_path": root / "dreams.jsonl",
+            "structured_dreams_path": root / "structured.jsonl",
+            "characters_path": root / "characters.json",
+        }
+        paths["dreams_path"].write_text("", encoding="utf-8")
+        paths["structured_dreams_path"].write_text("", encoding="utf-8")
+        paths["characters_path"].write_text("[]", encoding="utf-8")
+        return SimpleNamespace(
+            chroma_path=str(chroma_path),
+            collection_name="dreams",
+            embed_model="embed",
+            **paths,
+        )
+
+    def test_preflight_validates_collection_and_tool_files(self) -> None:
+        class Collection:
+            name = "dreams"
+            metadata = {"embedding_model": "embed"}
+
+            @staticmethod
+            def count():
+                return 12
+
+        class Client:
+            @staticmethod
+            def list_collections():
+                return [Collection()]
+
+            @staticmethod
+            def get_collection(*, name):
+                self.assertEqual(name, "dreams")
+                return Collection()
+
+        with TemporaryDirectory() as temporary_directory:
+            result = evaluate_retrieval.preflight(
+                self.preflight_args(Path(temporary_directory)),
+                chroma_client=Client(),
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["collection_count"], 12)
+
+    def test_preflight_reports_available_collection_and_missing_file(self) -> None:
+        class Collection:
+            name = "dreams_with_underscores"
+
+        class Client:
+            @staticmethod
+            def list_collections():
+                return [Collection()]
+
+            @staticmethod
+            def get_collection(*, name):
+                raise ValueError(f"Collection {name} does not exist")
+
+        with TemporaryDirectory() as temporary_directory:
+            args = self.preflight_args(Path(temporary_directory))
+            args.structured_dreams_path.unlink()
+            with self.assertRaises(evaluate_retrieval.EvaluationPreflightError) as raised:
+                evaluate_retrieval.preflight(args, chroma_client=Client())
+
+        message = str(raised.exception)
+        self.assertIn("no queries were run", message)
+        self.assertIn("structured dreams file does not exist", message)
+        self.assertIn("Available collections: dreams_with_underscores", message)
+
     def test_metrics_at_cutoffs_and_r_precision(self) -> None:
         relevant = ["a", "c", "e"]
         retrieved = ["a", "x", "c", "y", "z", "e"]
@@ -81,12 +155,52 @@ class RetrievalMetricTests(unittest.TestCase):
             )
 
         self.assertTrue(agent.calls[0][1]["synthesize"] is False)
+        self.assertEqual(rows[0]["status"], "ok")
         self.assertEqual(rows[0]["retrieved_dream_ids"][0], "shared")
         self.assertEqual(rows[0]["r_precision"], 1.0)
         self.assertEqual(rows[0]["tool_calls"][0]["arguments"], {"query": "one"})
         self.assertIn("[1/1] Starting: original query", output.getvalue())
         self.assertIn("[1/1] Finished in", output.getvalue())
         self.assertIn("2 tool call(s), 3 unique dream(s)", output.getvalue())
+
+    def test_tool_failure_marks_query_error_and_excludes_its_metrics(self) -> None:
+        class FailingAgent:
+            @staticmethod
+            def answer(query, **kwargs):
+                return AgentResponse(
+                    answer="",
+                    tool_executions=(
+                        ToolExecution(
+                            "search_dreams",
+                            {"query": query},
+                            {"ok": False, "error": "collection missing"},
+                        ),
+                    ),
+                )
+
+        with redirect_stdout(StringIO()):
+            rows = evaluate_retrieval.evaluate_queries(
+                [
+                    {
+                        "query": "dogs",
+                        "category": "direct",
+                        "relevant_dream_ids": ["a"],
+                    }
+                ],
+                agent=FailingAgent(),
+                chat_model="chat",
+                max_tool_calls=3,
+                num_ctx=4096,
+                num_predict=200,
+                temperature=0,
+            )
+
+        summary = evaluate_retrieval.summarize(rows)
+        self.assertEqual(rows[0]["status"], "error")
+        self.assertIsNone(rows[0]["precision_at_5"])
+        self.assertEqual(summary["evaluated_query_count"], 0)
+        self.assertEqual(summary["error_query_count"], 1)
+        self.assertIsNone(summary["precision_at_5"])
 
     def test_markdown_reports_maximum_precision(self) -> None:
         row = {
@@ -105,10 +219,13 @@ class RetrievalMetricTests(unittest.TestCase):
                 "max_tool_calls": 3,
                 "results_per_semantic_search": 10,
             },
+            "preflight": {"status": "ok"},
             "summary": summary,
             "category_summaries": {"direct": summary},
             "queries": [row],
         }
+        row["status"] = "ok"
+        row["error"] = None
         row["tool_calls"] = []
         row["unexecuted_tool_calls"] = []
 
@@ -117,7 +234,7 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertIn("max P@5", markdown)
         self.assertIn("max P@10", markdown)
         self.assertIn("R-precision", markdown)
-        self.assertIn("| dogs | direct | 2 |", markdown)
+        self.assertIn("| dogs | direct | ok | 2 |", markdown)
 
 
 if __name__ == "__main__":
