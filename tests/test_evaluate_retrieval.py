@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
 from cli import evaluate_retrieval
 from dream_analysis.agent import AgentResponse, ToolExecution
@@ -60,26 +62,31 @@ class RetrievalMetricTests(unittest.TestCase):
 
         agent = FakeAgent()
 
-        rows = evaluate_retrieval.evaluate_queries(
-            [
-                {
-                    "query": "original query",
-                    "category": "test",
-                    "relevant_dream_ids": ["shared"],
-                },
-            ],
-            agent=agent,
-            chat_model="chat",
-            max_tool_calls=3,
-            num_ctx=4096,
-            num_predict=200,
-            temperature=0,
-        )
+        output = StringIO()
+        with redirect_stdout(output):
+            rows = evaluate_retrieval.evaluate_queries(
+                [
+                    {
+                        "query": "original query",
+                        "category": "test",
+                        "relevant_dream_ids": ["shared"],
+                    },
+                ],
+                agent=agent,
+                chat_model="chat",
+                max_tool_calls=3,
+                num_ctx=4096,
+                num_predict=200,
+                temperature=0,
+            )
 
         self.assertTrue(agent.calls[0][1]["synthesize"] is False)
         self.assertEqual(rows[0]["retrieved_dream_ids"][0], "shared")
         self.assertEqual(rows[0]["r_precision"], 1.0)
         self.assertEqual(rows[0]["tool_calls"][0]["arguments"], {"query": "one"})
+        self.assertIn("[1/1] Starting: original query", output.getvalue())
+        self.assertIn("[1/1] Finished in", output.getvalue())
+        self.assertIn("2 tool call(s), 3 unique dream(s)", output.getvalue())
 
     def test_markdown_reports_maximum_precision(self) -> None:
         row = {

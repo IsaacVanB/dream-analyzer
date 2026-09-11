@@ -120,7 +120,8 @@ def evaluate_queries(
     rows: list[dict[str, Any]] = []
     for number, item in enumerate(queries, start=1):
         relevant_ids = item["relevant_dream_ids"]
-        print(f"[{number}/{len(queries)}] {item['query']}")
+        progress = f"[{number}/{len(queries)}]"
+        print(f"{progress} Starting: {item['query']}", flush=True)
         started = perf_counter()
         response = agent.answer(
             item["query"],
@@ -133,13 +134,14 @@ def evaluate_queries(
         )
         ranked = DreamRagAgent.rank_dream_evidence(response.tool_executions)
         retrieved_ids = [dream["dream_id"] for dream in ranked]
+        retrieval_seconds = round(perf_counter() - started, 3)
         rows.append(
             {
                 "query": item["query"],
                 "category": item["category"],
                 **retrieval_metrics(retrieved_ids, relevant_ids),
                 "returned_count": len(retrieved_ids),
-                "retrieval_seconds": round(perf_counter() - started, 3),
+                "retrieval_seconds": retrieval_seconds,
                 "retrieved_dream_ids": retrieved_ids,
                 "relevant_dream_ids": relevant_ids,
                 "tool_calls": [
@@ -151,6 +153,12 @@ def evaluate_queries(
                     for call in response.unexecuted_tool_calls
                 ],
             }
+        )
+        print(
+            f"{progress} Finished in {retrieval_seconds:.3f}s: "
+            f"{len(response.tool_executions)} tool call(s), "
+            f"{len(retrieved_ids)} unique dream(s)",
+            flush=True,
         )
     return rows
 
