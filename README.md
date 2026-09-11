@@ -126,7 +126,8 @@ directions and should not be compared directly.
 | `retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `basic_rag.py` | Chroma distance | The generated or supplied retrieval query is ranked by Chroma. |
 | `dream-analyzer ask` | Chroma distance | `search_dreams` uses Chroma ranking; optional dates filter that ranked search. |
-| `evaluate_retrieval.py` | Configurable | Defaults to Chroma distance; `--retrieval-metric cosine` uses cosine similarity and `both` compares them. |
+| `evaluate_retrieval.py` | Chroma distance | Runs the labeled query benchmark and reports P@5/10, recall@5/10, and R-precision. |
+| `evaluate_retrieval_llm.py` | Configurable | Defaults to Chroma distance; `--retrieval-metric cosine` uses cosine similarity and `both` compares them. |
 | `compare_models.py rag` | Chroma distance | Uses the same retrieval path as `basic_rag.py`. |
 | `dream-analyzer analyze ... --related-dreams ...` | Cosine similarity | Higher is more similar; `--similarity-threshold` is a cosine threshold. |
 | `compare_models.py analyze` | Cosine similarity | Uses the same related-dream path as `analyze_dream.py`. |
@@ -361,15 +362,31 @@ python3 src/cli/compare_models.py rag \
   --retrieval-query "hidden room hallway extra room concealed door behind wall"
 ```
 
-Evaluate each embedding model's top retrievals with Gemma:
+Evaluate retrieval against the known relevant dreams in
+`data/retrieval_eval_queries.json`:
 
 ```bash
-python3 src/cli/evaluate_retrieval.py "hidden room hallway concealed door" --top-k 8
+python3 src/cli/evaluate_retrieval.py
 python3 src/cli/evaluate_retrieval.py \
+  --collection-name dreams_qwen3_embedding \
+  --embed-model qwen3-embedding
+```
+
+The Markdown and JSON reports contain per-query and macro-averaged precision
+and recall at 5 and 10, R-precision, category summaries, and the maximum possible
+precision at each cutoff given the number of known relevant dreams. Recall and
+R-precision are undefined for queries with no known relevant dreams; reports
+show these as `n/a` and exclude them from the corresponding macro averages.
+
+Evaluate each embedding model's top retrievals with Gemma as an LLM judge:
+
+```bash
+python3 src/cli/evaluate_retrieval_llm.py "hidden room hallway concealed door" --top-k 8
+python3 src/cli/evaluate_retrieval_llm.py \
   "hidden room hallway concealed door" \
   --top-k 8 \
   --retrieval-metric both
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   --dream-id dream-2022-1-22-0 \
   --focus "discovering a hidden room that reveals a disturbing secret" \
   --retrieval-metric both \

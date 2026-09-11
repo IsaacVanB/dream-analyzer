@@ -113,7 +113,8 @@ The commands currently use two different scoring paths:
 | `src/cli/retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `src/cli/basic_rag.py` | Chroma distance | Lower is closer. |
 | `dream-analyzer ask` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
-| `src/cli/evaluate_retrieval.py` | Configurable | Chroma distance by default; cosine similarity or both are selectable. |
+| `src/cli/evaluate_retrieval.py` | Chroma distance | Runs the labeled retrieval benchmark. |
+| `src/cli/evaluate_retrieval_llm.py` | Configurable | Chroma distance by default; cosine similarity or both are selectable. |
 | `src/cli/compare_models.py rag` | Chroma distance | Lower is closer. |
 | `dream-analyzer analyze` with related dreams enabled | Cosine similarity | Higher is more similar. |
 | `src/cli/compare_models.py analyze` | Cosine similarity | Higher is more similar. |
@@ -442,6 +443,24 @@ The runner defaults to temperature `0` for a controlled first comparison. Run
 
 ## `src/cli/evaluate_retrieval.py`
 
+Runs every query in `data/retrieval_eval_queries.json` against the configured
+Chroma collection. The JSON and Markdown reports include recall and precision
+at 5 and 10, R-precision, macro and category averages, and the maximum possible
+precision at each cutoff based on the number of known relevant dreams.
+
+```bash
+python3 src/cli/evaluate_retrieval.py
+python3 src/cli/evaluate_retrieval.py \
+  --collection-name dreams_qwen3_embedding \
+  --embed-model qwen3-embedding
+```
+
+The evaluator retrieves at least 10 results and expands the result depth to R
+when a query has more than 10 known relevant dreams. Recall and R-precision are
+shown as `n/a` for queries with no known relevant dreams.
+
+## `src/cli/evaluate_retrieval_llm.py`
+
 Embeds one retrieval prompt with both `nomic-embed-text` and
 `qwen3-embedding`, retrieves the top-k dreams from their matching collections,
 and asks `gemma3:12b` to score every result from 1 (irrelevant) to 5 (directly
@@ -450,7 +469,7 @@ model name. JSON and Markdown reports are saved under
 `outputs/retrieval_evaluations/`.
 
 ```bash
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   "hidden room hallway extra room concealed door behind wall" \
   --top-k 8
 ```
@@ -459,7 +478,7 @@ Compare the current Chroma-distance and explicit-cosine retrieval paths for
 both embedding models:
 
 ```bash
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   "hidden room hallway extra room concealed door behind wall" \
   --retrieval-metric both \
   --top-k 8
@@ -477,7 +496,7 @@ Use the complete text of an existing dream as the retrieval and relevance
 target. The target dream itself is excluded from the results:
 
 ```bash
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   --dream-id dream-2022-1-22-0 \
   --retrieval-metric both \
   --top-k 8
@@ -487,7 +506,7 @@ For a long or multi-scene dream, specify which part should control the LLM's
 relevance judgment:
 
 ```bash
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   --dream-id dream-2022-1-22-0 \
   --focus "discovering a hidden room that reveals a disturbing family secret" \
   --top-k 8
@@ -497,11 +516,11 @@ Alternatively, use an exact passage from the dream or generate an evaluation
 focus:
 
 ```bash
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   --dream-id dream-2022-1-22-0 \
   --focus-passage "I opened the concealed door behind the wall"
 
-python3 src/cli/evaluate_retrieval.py \
+python3 src/cli/evaluate_retrieval_llm.py \
   --dream-id dream-2022-1-22-0 \
   --generate-focus
 ```

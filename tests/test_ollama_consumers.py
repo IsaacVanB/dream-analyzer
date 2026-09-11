@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from cli import cluster_dreams, evaluate_retrieval, structure_dreams
+from cli import cluster_dreams, evaluate_retrieval_llm, structure_dreams
 
 
 class FakeStructuredGateway:
@@ -72,7 +72,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
     def test_retrieval_focus_generation_uses_gateway_schema(self) -> None:
         gateway = FakeStructuredGateway([{"focus": "distinctive hidden room conflict"}])
 
-        focus = evaluate_retrieval.generate_focus(
+        focus = evaluate_retrieval_llm.generate_focus(
             "I found a room.",
             model="judge-model",
             num_ctx=8192,
@@ -80,7 +80,9 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
         )
 
         self.assertEqual(focus, "distinctive hidden room conflict")
-        self.assertEqual(gateway.calls[0]["schema"], evaluate_retrieval.FOCUS_SCHEMA)
+        self.assertEqual(
+            gateway.calls[0]["schema"], evaluate_retrieval_llm.FOCUS_SCHEMA
+        )
         self.assertEqual(gateway.calls[0]["model"], "judge-model")
 
     def test_retrieval_evaluation_retains_domain_validation(self) -> None:
@@ -107,7 +109,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
             }
         ]
 
-        evaluations = evaluate_retrieval.evaluate_relevance(
+        evaluations = evaluate_retrieval_llm.evaluate_relevance(
             "hidden room",
             retrieved,
             judge_model="judge-model",
@@ -117,11 +119,11 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
         self.assertEqual(evaluations[0]["relevance"], 4)
         self.assertEqual(
             gateway.calls[0]["schema"],
-            evaluate_retrieval.EVALUATION_SCHEMA,
+            evaluate_retrieval_llm.EVALUATION_SCHEMA,
         )
 
     def test_metric_parser_preserves_chroma_default_and_accepts_both(self) -> None:
-        parser = evaluate_retrieval.build_parser()
+        parser = evaluate_retrieval_llm.build_parser()
 
         default_args = parser.parse_args(["hidden rooms"])
         comparison_args = parser.parse_args(
@@ -130,7 +132,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
 
         self.assertEqual(default_args.retrieval_metric, "chroma")
         self.assertEqual(
-            evaluate_retrieval.selected_metrics(comparison_args.retrieval_metric),
+            evaluate_retrieval_llm.selected_metrics(comparison_args.retrieval_metric),
             ("chroma", "cosine"),
         )
 
@@ -160,7 +162,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
             for index in range(1, 4)
         ]
 
-        evaluations = evaluate_retrieval.evaluate_in_batches(
+        evaluations = evaluate_retrieval_llm.evaluate_in_batches(
             "hidden rooms",
             retrieved,
             batch_size=2,
@@ -198,11 +200,11 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
         ]
 
         with patch.object(
-            evaluate_retrieval.basic_rag,
+            evaluate_retrieval_llm.basic_rag,
             "retrieve_dreams",
             return_value=chroma_results,
         ) as chroma_retrieve:
-            chroma = evaluate_retrieval.retrieve_candidates(
+            chroma = evaluate_retrieval_llm.retrieve_candidates(
                 "target text",
                 metric="chroma",
                 top_k=1,
@@ -212,11 +214,11 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
                 embed_model="embed",
             )
         with patch.object(
-            evaluate_retrieval.analyze_dream,
+            evaluate_retrieval_llm.analyze_dream,
             "retrieve_related_dreams",
             return_value=cosine_results,
         ) as cosine_retrieve:
-            cosine = evaluate_retrieval.retrieve_candidates(
+            cosine = evaluate_retrieval_llm.retrieve_candidates(
                 "target text",
                 metric="cosine",
                 top_k=1,
@@ -236,7 +238,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
         )
 
     def test_metric_comparison_reports_overlap_and_relevance_delta(self) -> None:
-        embed_model, collection_name = evaluate_retrieval.EMBEDDING_INDEXES[0]
+        embed_model, collection_name = evaluate_retrieval_llm.EMBEDDING_INDEXES[0]
 
         def retrieval_run(metric, ids, mean_relevance):
             return {
@@ -248,7 +250,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
                 "results": [{"dream_id": dream_id} for dream_id in ids],
             }
 
-        comparisons = evaluate_retrieval.compare_metric_results(
+        comparisons = evaluate_retrieval_llm.compare_metric_results(
             [
                 retrieval_run("chroma", ["a", "b"], 3.5),
                 retrieval_run("cosine", ["b", "c"], 4.0),
@@ -311,7 +313,7 @@ class OllamaConsumerMigrationTests(unittest.TestCase):
             ],
         }
 
-        markdown = evaluate_retrieval.markdown_report(report)
+        markdown = evaluate_retrieval_llm.markdown_report(report)
 
         self.assertIn("## embed-model — Chroma distance", markdown)
         self.assertIn("| rank | dream_id | date | distance |", markdown)

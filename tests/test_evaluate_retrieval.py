@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+import unittest
+
+from cli import evaluate_retrieval
+
+
+class RetrievalMetricTests(unittest.TestCase):
+    def test_metrics_at_cutoffs_and_r_precision(self) -> None:
+        relevant = ["a", "c", "e"]
+        retrieved = ["a", "x", "c", "y", "z", "e"]
+
+        metrics = evaluate_retrieval.retrieval_metrics(retrieved, relevant)
+
+        self.assertEqual(metrics["precision_at_5"], 2 / 5)
+        self.assertEqual(metrics["recall_at_5"], 2 / 3)
+        self.assertEqual(metrics["max_precision_at_5"], 3 / 5)
+        self.assertEqual(metrics["precision_at_10"], 3 / 10)
+        self.assertEqual(metrics["recall_at_10"], 1.0)
+        self.assertEqual(metrics["max_precision_at_10"], 3 / 10)
+        self.assertEqual(metrics["r_precision"], 2 / 3)
+
+    def test_zero_relevant_query_has_defined_precision_only(self) -> None:
+        metrics = evaluate_retrieval.retrieval_metrics(["a", "b"], [])
+
+        self.assertEqual(metrics["precision_at_5"], 0.0)
+        self.assertEqual(metrics["max_precision_at_5"], 0.0)
+        self.assertIsNone(metrics["recall_at_5"])
+        self.assertIsNone(metrics["r_precision"])
+
+    def test_evaluator_retrieves_to_largest_of_ten_and_r(self) -> None:
+        calls = []
+
+        def retrieve(query, **kwargs):
+            calls.append((query, kwargs))
+            return [{"dream_id": "a"}]
+
+        rows = evaluate_retrieval.evaluate_queries(
+            [
+                {
+                    "query": "small",
+                    "category": "test",
+                    "relevant_dream_ids": ["a"],
+                },
+                {
+                    "query": "large",
+                    "category": "test",
+                    "relevant_dream_ids": [str(index) for index in range(12)],
+                },
+            ],
+            chroma_path="db",
+            collection_name="dreams",
+            embed_model="embed",
+            retrieve=retrieve,
+        )
+
+        self.assertEqual(calls[0][1]["top_k"], 10)
+        self.assertEqual(calls[1][1]["top_k"], 12)
+        self.assertEqual(rows[0]["r_precision"], 1.0)
+
+    def test_markdown_reports_maximum_precision(self) -> None:
+        row = {
+            "query": "dogs",
+            "category": "direct",
+            **evaluate_retrieval.retrieval_metrics(["a"], ["a", "b"]),
+        }
+        summary = evaluate_retrieval.summarize([row])
+        report = {
+            "created_at": "2026-09-11T12:00:00-04:00",
+            "queries_path": "queries.json",
+            "settings": {"collection_name": "dreams", "embed_model": "embed"},
+            "summary": summary,
+            "category_summaries": {"direct": summary},
+            "queries": [row],
+        }
+
+        markdown = evaluate_retrieval.markdown_report(report)
+
+        self.assertIn("max P@5", markdown)
+        self.assertIn("max P@10", markdown)
+        self.assertIn("R-precision", markdown)
+        self.assertIn("| dogs | direct | 2 |", markdown)
+
+
+if __name__ == "__main__":
+    unittest.main()
