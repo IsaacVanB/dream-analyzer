@@ -459,6 +459,7 @@ def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
         "ok": bool(execution.result.get("ok")),
         "cached": execution.cached,
         "result_count": result.get("result_count"),
+        "scope_correction": result.get("scope_correction"),
         "semantic_reranked": bool(result.get("semantic_reranked")),
         "semantic_rerank_query": result.get("semantic_rerank_query"),
         "semantic_rerank_indexed_count": result.get(
@@ -655,6 +656,8 @@ def _format_tool_call(call: dict[str, Any]) -> str:
         rendered += f" **ERROR:** {call['error'] or 'unknown tool error'}"
     elif call.get("semantic_reranked"):
         rendered += f" [semantically reranked by {call['semantic_rerank_query']!r}]"
+    if call.get("scope_correction"):
+        rendered += " [invented date bounds removed]"
     return rendered
 
 

@@ -107,6 +107,22 @@ class DreamRagAgent:
 
     minimum_synthesis_words = 105
     reciprocal_rank_constant = 60
+    _date_constraint_pattern = re.compile(
+        r"(?:"
+        r"\b(?:19|20)\d{2}\b|"
+        r"\b\d{1,4}[-/]\d{1,2}(?:[-/]\d{1,4})?\b|"
+        r"\b(?:january|february|march|april|june|july|august|"
+        r"september|october|november|december)\b|"
+        r"\b(?-i:May)\b|"
+        r"\b(?:in|during|from|before|after|since)\s+may\b|"
+        r"\b(?:today|yesterday|recent|recently|earliest|latest)\b|"
+        r"\b(?:last|previous|past|this|next)\s+"
+        r"(?:\d+\s+)?(?:night|day|week|month|quarter|season|year)s?\b|"
+        r"\b(?:spring|summer|autumn|fall|winter)\b|"
+        r"\b(?:before|after|since|during)\s+(?:19|20)?\d{2}\b"
+        r")",
+        re.IGNORECASE,
+    )
 
     def __init__(
         self,
@@ -271,9 +287,13 @@ class DreamRagAgent:
                 continue
 
             remaining_calls = max_tool_calls - len(executions)
-            accepted_calls = tool_calls[:remaining_calls]
+            requested_calls = tool_calls[:remaining_calls]
+            accepted_calls = [
+                self._enforce_date_scope(call, question=question.strip())
+                for call in requested_calls
+            ]
             overflow_calls = tool_calls[remaining_calls:]
-            for call in accepted_calls:
+            for requested_call, call in zip(requested_calls, accepted_calls):
                 cache_key = self._tool_cache_key(call)
                 cached = cache_key in cached_results
                 if cached:
@@ -303,6 +323,21 @@ class DreamRagAgent:
                         dict(result),
                         dict(report_result),
                     )
+                if dict(requested_call.arguments) != dict(call.arguments):
+                    correction = {
+                        "type": "removed_invented_date_bounds",
+                        "message": (
+                            "start_date and end_date were removed because the "
+                            "original question has no explicit time constraint."
+                        ),
+                        "requested_arguments": dict(requested_call.arguments),
+                        "executed_arguments": dict(call.arguments),
+                    }
+                    result = {**result, "scope_correction": correction}
+                    report_result = {
+                        **report_result,
+                        "scope_correction": correction,
+                    }
                 executions.append(
                     ToolExecution(
                         name=call.name,
@@ -409,6 +444,28 @@ class DreamRagAgent:
             if isinstance(query, str) and query.strip():
                 return query.strip()
         return question
+
+    @classmethod
+    def _enforce_date_scope(
+        cls,
+        call: OllamaToolCall,
+        *,
+        question: str,
+    ) -> OllamaToolCall:
+        """Remove invented bounds from semantic searches deterministically."""
+        if call.name != "search_dreams" or cls._question_has_date_constraint(
+            question
+        ):
+            return call
+        arguments = dict(call.arguments)
+        arguments.pop("start_date", None)
+        arguments.pop("end_date", None)
+        return OllamaToolCall(name=call.name, arguments=arguments)
+
+    @classmethod
+    def _question_has_date_constraint(cls, question: str) -> bool:
+        """Return whether the user's wording explicitly constrains time."""
+        return cls._date_constraint_pattern.search(question) is not None
 
     @staticmethod
     def _validate_analytical_result(result: Mapping[str, Any]) -> None:

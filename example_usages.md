@@ -319,7 +319,10 @@ The `search_dreams` tool supports optional inclusive `start_date` and `end_date`
 arguments in `YYYY-MM-DD` format. The agent resolves relative wording using the
 current date and treats "last month" as the previous calendar month. Date bounds
 are applied together with semantic terms, so a question about school dreams from
-last month searches for school content only inside that month.
+last month searches for school content only inside that month. Before executing
+the call, the agent removes date bounds if the original user question contains
+no explicit calendar or relative-time constraint. Corrected calls are labeled
+in debug output and Markdown tool traces.
 
 `get_character_mentions` uses the `named_characters` extracted by
 `structure_dreams.py`, not the manually edited character lookup. Names match
@@ -451,7 +454,9 @@ use date filters, retrieve exact tags or date ranges, and call character or
 analytical tools. Results from dream-returning calls are combined with the same
 reciprocal-rank fusion used for answer synthesis. Exhaustive date and exact-tag
 sets are semantically reranked first; every match is retained, and unindexed
-matches are placed after indexed matches. The final prose answer is not generated
+matches are placed after indexed matches. Any `search_dreams` date bounds that
+are unsupported by the original evaluation query are removed before execution
+and identified in the tool trace. The final prose answer is not generated
 during evaluation. A fail-fast preflight first checks the Chroma path,
 collection, embedding-model metadata, and tool data files. Missing structured
 data is allowed and disables only `get_character_mentions`; malformed structured

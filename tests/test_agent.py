@@ -435,6 +435,60 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(tool_result["start_date"], "2026-07-01")
         self.assertEqual(tool_result["end_date"], "2026-07-31")
 
+    def test_agent_strips_invented_date_bounds_from_semantic_search(self) -> None:
+        agent, client, index = self.make_agent(
+            [
+                tool_response(
+                    "search_dreams",
+                    {
+                        "query": "dogs",
+                        "start_date": "2024-01-01",
+                        "end_date": "2024-12-31",
+                    },
+                ),
+                final_response("SEARCH_COMPLETE"),
+                final_response(),
+            ]
+        )
+
+        response = agent.answer("dreams about dogs")
+
+        self.assertEqual(index.calls, [("dogs", 4, None, None)])
+        self.assertEqual(response.tool_executions[0].arguments, {"query": "dogs"})
+        correction = response.tool_executions[0].result["scope_correction"]
+        self.assertEqual(correction["type"], "removed_invented_date_bounds")
+        self.assertEqual(correction["executed_arguments"], {"query": "dogs"})
+        tool_result = json.loads(client.chat_calls[1]["messages"][-1]["content"])
+        self.assertIsNone(tool_result["start_date"])
+        self.assertIsNone(tool_result["end_date"])
+        self.assertEqual(
+            tool_result["scope_correction"]["type"],
+            "removed_invented_date_bounds",
+        )
+
+    def test_date_constraint_detection_covers_explicit_and_relative_dates(self) -> None:
+        constrained = (
+            "house dreams from 2024",
+            "dreams last month",
+            "dreams during July",
+            "dreams during May",
+            "dreams last night",
+            "dreams in the past 30 days",
+            "recent dreams",
+        )
+        for question in constrained:
+            with self.subTest(question=question):
+                self.assertTrue(DreamRagAgent._question_has_date_constraint(question))
+
+        self.assertFalse(
+            DreamRagAgent._question_has_date_constraint("dreams featuring Theo")
+        )
+        self.assertFalse(
+            DreamRagAgent._question_has_date_constraint(
+                "dreams that may involve dogs"
+            )
+        )
+
     def test_agent_exposes_and_dispatches_exact_tag_tool(self) -> None:
         client = SequencedOllamaClient(
             [

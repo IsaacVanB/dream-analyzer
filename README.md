@@ -270,7 +270,11 @@ The semantic and tag tools accept optional, inclusive `start_date` and
 `end_date` bounds in `YYYY-MM-DD` format. The agent
 translates relative language into those bounds using the current date; "last
 month" means the previous calendar month. Topic terms such as "school" remain
-part of the semantic query while the date bounds filter the results. Search
+part of the semantic query while the date bounds filter the results. As a
+deterministic safeguard, `search_dreams` date bounds are removed before
+execution unless the user's original question contains an explicit calendar or
+relative-time constraint. The tool result and debug/report trace identify any
+such correction. Search
 queries, result counts, and per-dream context are bounded before being returned
 to the model. The date-range tool requires both bounds and returns every match;
 before fusion, the agent semantically reranks that set without sampling or
@@ -389,7 +393,9 @@ does not require agent tool data files.
 The evaluator gives each query to the same tool-planning agent used by
 `dream-analyzer ask`. The chat model can generate semantic queries, apply date
 filters, retrieve exact tags or date ranges, and use character and analytical
-tools. Dreams returned by multiple calls are deduplicated and ranked with the
+tools. Date bounds invented for `search_dreams` when the labeled query has no
+temporal constraint are stripped before execution and marked in the tool trace.
+Dreams returned by multiple calls are deduplicated and ranked with the
 agent's reciprocal-rank fusion. Exhaustive date-range and exact-tag result sets
 are first semantically reranked against the latest generated semantic query, or
 the original question when no semantic query is available. Every exhaustive
