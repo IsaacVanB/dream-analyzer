@@ -952,6 +952,21 @@ class DreamRagAgentTests(unittest.TestCase):
         reminder = client.chat_calls[1]["messages"][-1]["content"]
         self.assertIn("Available tools: search_dreams", reminder)
 
+    def test_agent_can_stop_after_retrieval_without_synthesis(self) -> None:
+        agent, client, index = self.make_agent(
+            [
+                tool_response("search_dreams", {"query": "hidden room"}),
+                final_response("SEARCH_COMPLETE"),
+            ]
+        )
+
+        response = agent.answer("What hidden rooms recur?", synthesize=False)
+
+        self.assertEqual(response.answer, "")
+        self.assertEqual(len(response.tool_executions), 1)
+        self.assertEqual(len(client.chat_calls), 2)
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+
     def test_agent_rejects_two_answers_without_search(self) -> None:
         agent, _, index = self.make_agent(
             [final_response("First"), final_response("Second")]

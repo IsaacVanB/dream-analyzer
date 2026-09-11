@@ -113,7 +113,7 @@ The commands currently use two different scoring paths:
 | `src/cli/retrieve_dreams.py` | Chroma distance | Lower is closer. |
 | `src/cli/basic_rag.py` | Chroma distance | Lower is closer. |
 | `dream-analyzer ask` | Chroma distance | Lower is closer; date bounds optionally filter the ranked search. |
-| `src/cli/evaluate_retrieval.py` | Chroma distance | Runs the labeled retrieval benchmark. |
+| `src/cli/evaluate_retrieval.py` | Agent-selected tools | Runs the labeled retrieval benchmark through the dream-agent planner. |
 | `src/cli/evaluate_retrieval_llm.py` | Configurable | Chroma distance by default; cosine similarity or both are selectable. |
 | `src/cli/compare_models.py rag` | Chroma distance | Lower is closer. |
 | `dream-analyzer analyze` with related dreams enabled | Cosine similarity | Higher is more similar. |
@@ -443,10 +443,15 @@ The runner defaults to temperature `0` for a controlled first comparison. Run
 
 ## `src/cli/evaluate_retrieval.py`
 
-Runs every query in `data/retrieval_eval_queries.json` against the configured
-Chroma collection. The JSON and Markdown reports include recall and precision
-at 5 and 10, R-precision, macro and category averages, and the maximum possible
-precision at each cutoff based on the number of known relevant dreams.
+Runs every query in `data/retrieval_eval_queries.json` through the same tool
+planner used by `dream-analyzer ask`. The agent can generate semantic queries,
+use date filters, retrieve exact tags or date ranges, and call character or
+analytical tools. Results from dream-returning calls are combined with the same
+reciprocal-rank fusion used for answer synthesis. The final prose answer is not
+generated during evaluation. The JSON and Markdown reports include the tool
+trace, recall and precision at 5 and 10, R-precision, macro and category
+averages, and the maximum possible precision at each cutoff based on the number
+of known relevant dreams.
 
 ```bash
 python3 src/cli/evaluate_retrieval.py
@@ -455,9 +460,10 @@ python3 src/cli/evaluate_retrieval.py \
   --embed-model qwen3-embedding
 ```
 
-The evaluator retrieves at least 10 results and expands the result depth to R
-when a query has more than 10 known relevant dreams. Recall and R-precision are
-shown as `n/a` for queries with no known relevant dreams.
+Each semantic search returns 10 dreams by default, and each query may use up to
+three tool calls. These settings can be changed with `--top-k` (10–20) and
+`--max-tool-calls`. Recall and R-precision are shown as `n/a` for queries with
+no known relevant dreams.
 
 ## `src/cli/evaluate_retrieval_llm.py`
 

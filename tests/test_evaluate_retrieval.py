@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from cli import evaluate_retrieval
+from dream_analysis.agent import AgentResponse, ToolExecution
 
 
 class RetrievalMetricTests(unittest.TestCase):
@@ -28,35 +29,57 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertIsNone(metrics["recall_at_5"])
         self.assertIsNone(metrics["r_precision"])
 
-    def test_evaluator_retrieves_to_largest_of_ten_and_r(self) -> None:
-        calls = []
+    def test_evaluator_uses_agent_and_fuses_its_tool_results(self) -> None:
+        class FakeAgent:
+            def __init__(self):
+                self.calls = []
 
-        def retrieve(query, **kwargs):
-            calls.append((query, kwargs))
-            return [{"dream_id": "a"}]
+            def answer(self, query, **kwargs):
+                self.calls.append((query, kwargs))
+                first = {
+                    "ok": True,
+                    "dreams": [
+                        {"dream_id": "a", "distance": 0.1},
+                        {"dream_id": "shared", "distance": 0.2},
+                    ],
+                }
+                second = {
+                    "ok": True,
+                    "dreams": [
+                        {"dream_id": "b", "distance": 0.1},
+                        {"dream_id": "shared", "distance": 0.2},
+                    ],
+                }
+                return AgentResponse(
+                    answer="",
+                    tool_executions=(
+                        ToolExecution("search_dreams", {"query": "one"}, first),
+                        ToolExecution("search_dreams", {"query": "two"}, second),
+                    ),
+                )
+
+        agent = FakeAgent()
 
         rows = evaluate_retrieval.evaluate_queries(
             [
                 {
-                    "query": "small",
+                    "query": "original query",
                     "category": "test",
-                    "relevant_dream_ids": ["a"],
-                },
-                {
-                    "query": "large",
-                    "category": "test",
-                    "relevant_dream_ids": [str(index) for index in range(12)],
+                    "relevant_dream_ids": ["shared"],
                 },
             ],
-            chroma_path="db",
-            collection_name="dreams",
-            embed_model="embed",
-            retrieve=retrieve,
+            agent=agent,
+            chat_model="chat",
+            max_tool_calls=3,
+            num_ctx=4096,
+            num_predict=200,
+            temperature=0,
         )
 
-        self.assertEqual(calls[0][1]["top_k"], 10)
-        self.assertEqual(calls[1][1]["top_k"], 12)
+        self.assertTrue(agent.calls[0][1]["synthesize"] is False)
+        self.assertEqual(rows[0]["retrieved_dream_ids"][0], "shared")
         self.assertEqual(rows[0]["r_precision"], 1.0)
+        self.assertEqual(rows[0]["tool_calls"][0]["arguments"], {"query": "one"})
 
     def test_markdown_reports_maximum_precision(self) -> None:
         row = {
@@ -68,11 +91,19 @@ class RetrievalMetricTests(unittest.TestCase):
         report = {
             "created_at": "2026-09-11T12:00:00-04:00",
             "queries_path": "queries.json",
-            "settings": {"collection_name": "dreams", "embed_model": "embed"},
+            "settings": {
+                "collection_name": "dreams",
+                "embed_model": "embed",
+                "chat_model": "chat",
+                "max_tool_calls": 3,
+                "results_per_semantic_search": 10,
+            },
             "summary": summary,
             "category_summaries": {"direct": summary},
             "queries": [row],
         }
+        row["tool_calls"] = []
+        row["unexecuted_tool_calls"] = []
 
         markdown = evaluate_retrieval.markdown_report(report)
 

@@ -10,9 +10,10 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 
-from cli import basic_rag
+from cli import dream_agent
+from dream_analysis.agent import DreamRagAgent, ToolExecution
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 
 
@@ -108,48 +109,88 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def evaluate_queries(
     queries: list[dict[str, Any]],
     *,
-    chroma_path: str,
-    collection_name: str,
-    embed_model: str,
-    retrieve: Callable[..., list[dict[str, Any]]] = basic_rag.retrieve_dreams,
+    agent: DreamRagAgent,
+    chat_model: str,
+    max_tool_calls: int,
+    num_ctx: int,
+    num_predict: int,
+    temperature: float,
 ) -> list[dict[str, Any]]:
-    """Retrieve enough results for @10 and R-precision, then score every query."""
+    """Run the agent's tool planner and score its fused dream evidence."""
     rows: list[dict[str, Any]] = []
     for number, item in enumerate(queries, start=1):
         relevant_ids = item["relevant_dream_ids"]
-        retrieval_depth = max(max(CUTOFFS), len(relevant_ids))
         print(f"[{number}/{len(queries)}] {item['query']}")
         started = perf_counter()
-        retrieved = retrieve(
+        response = agent.answer(
             item["query"],
-            top_k=retrieval_depth,
-            chroma_path=chroma_path,
-            collection_name=collection_name,
-            embed_model=embed_model,
+            chat_model=chat_model,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            temperature=temperature,
+            max_tool_calls=max_tool_calls,
+            synthesize=False,
         )
-        retrieved_ids = [str(result["dream_id"]) for result in retrieved]
+        ranked = DreamRagAgent.rank_dream_evidence(response.tool_executions)
+        retrieved_ids = [dream["dream_id"] for dream in ranked]
         rows.append(
             {
                 "query": item["query"],
                 "category": item["category"],
                 **retrieval_metrics(retrieved_ids, relevant_ids),
-                "retrieval_depth": retrieval_depth,
                 "returned_count": len(retrieved_ids),
                 "retrieval_seconds": round(perf_counter() - started, 3),
                 "retrieved_dream_ids": retrieved_ids,
                 "relevant_dream_ids": relevant_ids,
+                "tool_calls": [
+                    tool_execution_report(execution)
+                    for execution in response.tool_executions
+                ],
+                "unexecuted_tool_calls": [
+                    {"name": call.name, "arguments": dict(call.arguments)}
+                    for call in response.unexecuted_tool_calls
+                ],
             }
         )
     return rows
 
 
+def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
+    """Keep the agent's generated queries and filters without journal text."""
+    result = execution.report_result or execution.result
+    return {
+        "name": execution.name,
+        "arguments": dict(execution.arguments),
+        "ok": bool(execution.result.get("ok")),
+        "cached": execution.cached,
+        "result_count": result.get("result_count"),
+        "dream_ids": [
+            str(dream.get("dream_id")) for dream in result.get("dreams", []) or []
+        ],
+        "error": execution.result.get("error"),
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     payload = load_evaluation_queries(args.queries_path)
-    rows = evaluate_queries(
-        payload["queries"],
+    agent = dream_agent.build_agent(
         chroma_path=args.chroma_path,
         collection_name=args.collection_name,
         embed_model=args.embed_model,
+        top_k=args.top_k,
+        max_chars_per_dream=args.max_chars_per_dream,
+        dreams_path=args.dreams_path,
+        structured_dreams_path=args.structured_dreams_path,
+        characters_path=args.characters_path,
+    )
+    rows = evaluate_queries(
+        payload["queries"],
+        agent=agent,
+        chat_model=args.chat_model,
+        max_tool_calls=args.max_tool_calls,
+        num_ctx=args.num_ctx,
+        num_predict=args.num_predict,
+        temperature=args.temperature,
     )
     by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -162,6 +203,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "chroma_path": args.chroma_path,
             "collection_name": args.collection_name,
             "embed_model": args.embed_model,
+            "chat_model": args.chat_model,
+            "dreams_path": str(args.dreams_path),
+            "structured_dreams_path": str(args.structured_dreams_path),
+            "characters_path": str(args.characters_path),
+            "results_per_semantic_search": args.top_k,
+            "max_tool_calls": args.max_tool_calls,
+            "max_chars_per_dream": args.max_chars_per_dream,
+            "num_ctx": args.num_ctx,
+            "num_predict": args.num_predict,
+            "temperature": args.temperature,
             "cutoffs": list(CUTOFFS),
         },
         "summary": summarize(rows),
@@ -210,6 +261,10 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- Queries: `{report['queries_path']}`",
         f"- Chroma collection: `{settings['collection_name']}`",
         f"- Embedding model: `{settings['embed_model']}`",
+        f"- Agent chat model: `{settings['chat_model']}`",
+        f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
+        f"- Results per semantic search: `{settings['results_per_semantic_search']}`",
+        "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
         "- Undefined recall and R-precision for queries with no relevant dreams are shown as `n/a` and excluded from macro averages.",
         "- Maximum P@k is `min(number of relevant dreams, k) / k`.",
         "",
@@ -236,23 +291,94 @@ def markdown_report(report: dict[str, Any]) -> str:
             f"{_display(row['max_precision_at_10'])} | {_display(row['recall_at_10'])} | "
             f"{_display(row['r_precision'])} |"
         )
+    lines.extend(
+        [
+            "",
+            "## Agent retrieval trace",
+            "",
+            "| query | generated tool calls |",
+            "|---|---|",
+        ]
+    )
+    for row in report["queries"]:
+        query = row["query"].replace("|", "\\|").replace("\n", " ")
+        calls = "; ".join(
+            f"`{call['name']}({json.dumps(call['arguments'], ensure_ascii=False, sort_keys=True)})`"
+            for call in row["tool_calls"]
+        )
+        escaped_calls = calls.replace("|", "\\|") or "none"
+        lines.append(f"| {query} | {escaped_calls} |")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate dream retrieval using labeled relevance judgments."
+        description=(
+            "Evaluate dream-agent tool retrieval using labeled relevance judgments."
+        )
     )
     parser.add_argument("--queries-path", type=Path, default=QUERIES_PATH)
-    parser.add_argument("--chroma-path", default=basic_rag.CHROMA_PATH)
-    parser.add_argument("--collection-name", default=basic_rag.COLLECTION_NAME)
-    parser.add_argument("--embed-model", default=basic_rag.EMBED_MODEL)
+    parser.add_argument(
+        "--dreams-path",
+        type=Path,
+        default=dream_agent.DEFAULT_SETTINGS.dreams_path,
+    )
+    parser.add_argument(
+        "--structured-dreams-path",
+        type=Path,
+        default=dream_agent.STRUCTURED_DREAMS_PATH,
+    )
+    parser.add_argument(
+        "--characters-path",
+        type=Path,
+        default=dream_agent.CHARACTERS_PATH,
+    )
+    parser.add_argument(
+        "--chroma-path",
+        default=str(dream_agent.DEFAULT_SETTINGS.index.path),
+    )
+    parser.add_argument(
+        "--collection-name", default=dream_agent.DEFAULT_SETTINGS.index.collection_name
+    )
+    parser.add_argument(
+        "--embed-model", default=dream_agent.DEFAULT_SETTINGS.ollama.embedding_model
+    )
+    parser.add_argument(
+        "--chat-model",
+        default=dream_agent.DEFAULT_SETTINGS.ollama.chat_model,
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=10,
+        help="Maximum dreams returned by each semantic search call.",
+    )
+    parser.add_argument("--max-tool-calls", type=int, default=3)
+    parser.add_argument("--max-chars-per-dream", type=int, default=2500)
+    parser.add_argument("--num-ctx", type=int, default=8192)
+    parser.add_argument("--num-predict", type=int, default=700)
+    parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     return parser
 
 
+def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if not 10 <= args.top_k <= 20:
+        parser.error("--top-k must be between 10 and 20 for evaluation at 10")
+    if args.max_tool_calls < 1:
+        parser.error("--max-tool-calls must be positive")
+    if args.max_chars_per_dream < 1:
+        parser.error("--max-chars-per-dream must be positive")
+    if args.num_ctx < 1:
+        parser.error("--num-ctx must be positive")
+    if args.num_predict < 1:
+        parser.error("--num-predict must be positive")
+
+
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    validate_args(parser, args)
     report = run(args)
     created = datetime.now().astimezone()
     stem = created.strftime("benchmark_%Y-%m-%d_%H-%M-%S-%f")

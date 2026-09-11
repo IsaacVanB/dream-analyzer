@@ -148,6 +148,7 @@ class DreamRagAgent:
         temperature: float = 0.1,
         max_tool_calls: int = 3,
         max_synthesis_dreams: int = 10,
+        synthesize: bool = True,
     ) -> AgentResponse:
         if not isinstance(question, str) or not question.strip():
             raise ValueError("question cannot be empty")
@@ -255,6 +256,14 @@ class DreamRagAgent:
                     )
                     tool_reminder_sent = True
                     continue
+                if not synthesize:
+                    return AgentResponse(
+                        answer="",
+                        tool_executions=tuple(executions),
+                        assistant_messages=tuple(assistant_messages),
+                        turn_traces=tuple(turn_traces),
+                        unexecuted_tool_calls=tuple(unexecuted_calls),
+                    )
                 force_reason = (
                     "The model finished requesting searches. Synthesize a final "
                     "answer from the ranked, bounded evidence set now."
@@ -328,6 +337,14 @@ class DreamRagAgent:
                 )
 
             if overflow_calls or len(executions) >= max_tool_calls:
+                if not synthesize:
+                    return AgentResponse(
+                        answer="",
+                        tool_executions=tuple(executions),
+                        assistant_messages=tuple(assistant_messages),
+                        turn_traces=tuple(turn_traces),
+                        unexecuted_tool_calls=tuple(unexecuted_calls),
+                    )
                 force_reason = (
                     f"The budget of {max_tool_calls} tool calls is exhausted. "
                     "Do not request or wait for more searches."
@@ -471,6 +488,66 @@ class DreamRagAgent:
         trace_prompt = f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
         return messages, trace_prompt
 
+    @classmethod
+    def rank_dream_evidence(
+        cls,
+        executions: Sequence[ToolExecution],
+    ) -> list[dict[str, Any]]:
+        """Rank unique dreams from agent tool calls using synthesis-time RRF."""
+        dreams: dict[str, dict[str, Any]] = {}
+        ranked_searches: set[str] = set()
+        first_seen = 0
+        for index, execution in enumerate(executions, start=1):
+            if not execution.result.get("ok"):
+                continue
+            search_key = json.dumps(
+                {
+                    "name": execution.name,
+                    "arguments": dict(execution.arguments),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+            if search_key in ranked_searches:
+                continue
+            ranked_searches.add(search_key)
+
+            full_result = execution.report_result or execution.result
+            for rank, dream in enumerate(full_result.get("dreams", []) or [], start=1):
+                dream_id = str(dream.get("dream_id", "unknown"))
+                if dream_id not in dreams:
+                    first_seen += 1
+                    dreams[dream_id] = {
+                        "dream_id": dream_id,
+                        "date": dream.get("date", "unknown"),
+                        "best_distance": cls._numeric_distance(
+                            dream.get("distance")
+                        ),
+                        "text": str(dream.get("text", "")),
+                        "searches": [index],
+                        "rrf_score": 0.0,
+                        "first_seen": first_seen,
+                    }
+                else:
+                    dreams[dream_id]["searches"].append(index)
+                    distance = cls._numeric_distance(dream.get("distance"))
+                    dreams[dream_id]["best_distance"] = min(
+                        dreams[dream_id]["best_distance"], distance
+                    )
+                dreams[dream_id]["rrf_score"] += 1.0 / (
+                    cls.reciprocal_rank_constant + rank
+                )
+
+        return sorted(
+            dreams.values(),
+            key=lambda dream: (
+                -dream["rrf_score"],
+                dream["best_distance"],
+                dream["first_seen"],
+            ),
+        )
+
     @staticmethod
     def _format_synthesis_evidence(
         executions: list[ToolExecution],
@@ -482,9 +559,7 @@ class DreamRagAgent:
         search_lines: list[str] = []
         errors: list[str] = []
         analytical_blocks: list[str] = []
-        dreams: dict[str, dict[str, Any]] = {}
         ranked_searches: set[str] = set()
-        first_seen = 0
         for index, execution in enumerate(executions, start=1):
             arguments = json.dumps(
                 dict(execution.arguments),
@@ -533,45 +608,10 @@ class DreamRagAgent:
                     )
                 )
 
-            full_result = execution.report_result or execution.result
-            for rank, dream in enumerate(
-                full_result.get("dreams", []) or [],
-                start=1,
-            ):
-                dream_id = str(dream.get("dream_id", "unknown"))
-                if dream_id not in dreams:
-                    first_seen += 1
-                    dreams[dream_id] = {
-                        "date": dream.get("date", "unknown"),
-                        "best_distance": DreamRagAgent._numeric_distance(
-                            dream.get("distance")
-                        ),
-                        "text": str(dream.get("text", "")),
-                        "searches": [index],
-                        "rrf_score": 0.0,
-                        "first_seen": first_seen,
-                    }
-                else:
-                    dreams[dream_id]["searches"].append(index)
-                    distance = DreamRagAgent._numeric_distance(
-                        dream.get("distance")
-                    )
-                    dreams[dream_id]["best_distance"] = min(
-                        dreams[dream_id]["best_distance"],
-                        distance,
-                    )
-                dreams[dream_id]["rrf_score"] += 1.0 / (
-                    DreamRagAgent.reciprocal_rank_constant + rank
-                )
-
-        ranked_dreams = sorted(
-            dreams.items(),
-            key=lambda item: (
-                -item[1]["rrf_score"],
-                item[1]["best_distance"],
-                item[1]["first_seen"],
-            ),
-        )
+        ranked_dreams = [
+            (dream["dream_id"], dream)
+            for dream in DreamRagAgent.rank_dream_evidence(executions)
+        ]
         prefix_lines = [
             f"Completed tool calls: {len(executions)}",
             f"Distinct searches used for ranking: {len(ranked_searches)}",
