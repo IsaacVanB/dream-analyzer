@@ -403,6 +403,55 @@ class DreamIndex:
                 break
         return matches
 
+    def rank_ids(
+        self,
+        query: str,
+        dream_ids: Sequence[str],
+    ) -> list[SearchResult]:
+        """Semantically rank a specified set of indexed dream IDs."""
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("query cannot be empty")
+        allowed_ids = {str(dream_id) for dream_id in dream_ids}
+        if not allowed_ids:
+            return []
+
+        collection = self.client.get_collection(name=self.collection_name)
+        validate_collection_embedding_model(
+            collection,
+            collection_name=self.collection_name,
+            embedding_model=self.embedding_model,
+        )
+        collection_count = collection.count()
+        if collection_count == 0:
+            return []
+        query_embedding = self.ollama.embed_one(
+            query.strip(),
+            model=self.embedding_model,
+        )
+        raw = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=collection_count,
+            include=["documents", "metadatas", "distances"],
+        )
+        matches: list[SearchResult] = []
+        for dream_id, document, metadata, distance in zip(
+            raw["ids"][0],
+            raw["documents"][0],
+            raw["metadatas"][0],
+            raw["distances"][0],
+        ):
+            if str(dream_id) not in allowed_ids:
+                continue
+            matches.append(
+                SearchResult(
+                    dream_id=str(dream_id),
+                    document=str(document or ""),
+                    metadata=dict(metadata or {}),
+                    distance=float(distance),
+                )
+            )
+        return matches
+
     def related(
         self,
         text: str,

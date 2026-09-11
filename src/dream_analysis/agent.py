@@ -292,7 +292,13 @@ class DreamRagAgent:
                         "note": result["note"],
                     }
                 else:
-                    result, report_result = self._execute(call)
+                    result, report_result = self._execute(
+                        call,
+                        rerank_query=self._rerank_query(
+                            question=question.strip(),
+                            executions=executions,
+                        ),
+                    )
                     cached_results[cache_key] = (
                         dict(result),
                         dict(report_result),
@@ -353,6 +359,8 @@ class DreamRagAgent:
     def _execute(
         self,
         call: OllamaToolCall,
+        *,
+        rerank_query: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         tool = self._tools_by_name.get(call.name)
         if tool is None:
@@ -365,6 +373,15 @@ class DreamRagAgent:
             result, report_result = tool.execute_with_report_data(
                 dict(call.arguments)
             )
+            if result.get("synthesis_include_all_matches"):
+                search_tool = self._tools_by_name.get("search_dreams")
+                rerank = getattr(search_tool, "rerank_exhaustive_results", None)
+                if callable(rerank):
+                    result, report_result = rerank(
+                        rerank_query,
+                        result,
+                        report_result,
+                    )
             self._validate_analytical_result(result)
             self._validate_analytical_result(report_result)
         except Exception as exc:
@@ -377,6 +394,21 @@ class DreamRagAgent:
             {"ok": True, **result},
             {"ok": True, **report_result},
         )
+
+    @staticmethod
+    def _rerank_query(
+        *,
+        question: str,
+        executions: Sequence[ToolExecution],
+    ) -> str:
+        """Prefer the model's latest semantic query over the full user question."""
+        for execution in reversed(executions):
+            if execution.name != "search_dreams":
+                continue
+            query = execution.arguments.get("query")
+            if isinstance(query, str) and query.strip():
+                return query.strip()
+        return question
 
     @staticmethod
     def _validate_analytical_result(result: Mapping[str, Any]) -> None:

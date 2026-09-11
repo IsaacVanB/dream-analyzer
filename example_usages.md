@@ -343,7 +343,9 @@ Exact duplicate calls reuse their cached result without another Chroma query,
 although each model request still consumes one slot in `--max-tool-calls`. Every
 answer uses a fresh tools-disabled final request. The agent deduplicates the
 candidate pool and combines rankings from distinct queries with reciprocal-rank
-fusion, while repeated queries do not add ranking weight. Only the highest-ranked
+fusion, while repeated queries do not add ranking weight. Exhaustive date-range
+and exact-tag sets are semantically reranked without dropping matches before
+they enter that fusion. Only the highest-ranked
 `--max-synthesis-dreams` entries are eligible for the final prompt. At least 105
 words are retained for every included dream (or its complete text when shorter),
 and lower-ranked dreams are omitted when the context cannot preserve that
@@ -447,8 +449,10 @@ Runs every query in `data/retrieval_eval_queries.json` through the same tool
 planner used by `dream-analyzer ask`. The agent can generate semantic queries,
 use date filters, retrieve exact tags or date ranges, and call character or
 analytical tools. Results from dream-returning calls are combined with the same
-reciprocal-rank fusion used for answer synthesis. The final prose answer is not
-generated during evaluation. A fail-fast preflight first checks the Chroma path,
+reciprocal-rank fusion used for answer synthesis. Exhaustive date and exact-tag
+sets are semantically reranked first; every match is retained, and unindexed
+matches are placed after indexed matches. The final prose answer is not generated
+during evaluation. A fail-fast preflight first checks the Chroma path,
 collection, embedding-model metadata, and tool data files. Missing structured
 data is allowed and disables only `get_character_mentions`; malformed structured
 data remains a preflight error. Tool or agent failures are marked as query errors

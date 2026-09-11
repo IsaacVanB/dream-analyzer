@@ -104,6 +104,19 @@ class DreamIndexTests(unittest.TestCase):
         with self.assertRaises(EmbeddingModelMismatchError):
             other_index.search("room")
 
+    def test_rank_ids_semantically_orders_only_the_requested_dreams(self) -> None:
+        self.index.rebuild(self.dreams)
+
+        matches = self.index.rank_ids(
+            "room room",
+            ["school-dream", "room-dream", "not-indexed"],
+        )
+
+        self.assertEqual(
+            [match.dream_id for match in matches],
+            ["room-dream", "school-dream"],
+        )
+
     def test_search_applies_inclusive_date_bounds_before_limiting(self) -> None:
         self.index.rebuild(self.dreams)
 

@@ -364,6 +364,14 @@ def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
         "ok": bool(execution.result.get("ok")),
         "cached": execution.cached,
         "result_count": result.get("result_count"),
+        "semantic_reranked": bool(result.get("semantic_reranked")),
+        "semantic_rerank_query": result.get("semantic_rerank_query"),
+        "semantic_rerank_indexed_count": result.get(
+            "semantic_rerank_indexed_count"
+        ),
+        "semantic_rerank_unindexed_count": result.get(
+            "semantic_rerank_unindexed_count"
+        ),
         "dream_ids": [
             str(dream.get("dream_id")) for dream in result.get("dreams", []) or []
         ],
@@ -523,6 +531,8 @@ def _format_tool_call(call: dict[str, Any]) -> str:
     )
     if not call["ok"]:
         rendered += f" **ERROR:** {call['error'] or 'unknown tool error'}"
+    elif call.get("semantic_reranked"):
+        rendered += f" [semantically reranked by {call['semantic_rerank_query']!r}]"
     return rendered
 
 

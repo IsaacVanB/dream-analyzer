@@ -31,6 +31,12 @@ class SearchableDreamIndex(Protocol):
         end_date: date | None = None,
     ) -> list[SearchResult]: ...
 
+    def rank_ids(
+        self,
+        query: str,
+        dream_ids: list[str] | tuple[str, ...],
+    ) -> list[SearchResult]: ...
+
 
 class TaggedDreamRepository(Protocol):
     def tagged(
@@ -208,6 +214,45 @@ class DreamSearchTool:
             "text": text,
             "truncated": truncated,
         }
+
+    def rerank_exhaustive_results(
+        self,
+        query: str,
+        bounded_result: dict[str, Any],
+        report_result: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Semantically rerank an exhaustive tool result without dropping matches."""
+        dreams = report_result.get("dreams", []) or []
+        original_ids = [str(dream.get("dream_id")) for dream in dreams]
+        ranked = self.index.rank_ids(query, original_ids)
+        ranked_ids = [item.dream_id for item in ranked]
+        distances = {item.dream_id: item.distance for item in ranked}
+        ranked_set = set(ranked_ids)
+        ordered_ids = ranked_ids + [
+            dream_id for dream_id in original_ids if dream_id not in ranked_set
+        ]
+
+        def reorder(payload: dict[str, Any]) -> dict[str, Any]:
+            by_id = {
+                str(dream.get("dream_id")): dream
+                for dream in payload.get("dreams", []) or []
+            }
+            reordered = []
+            for dream_id in ordered_ids:
+                dream = dict(by_id[dream_id])
+                if dream_id in distances:
+                    dream["distance"] = round(distances[dream_id], 6)
+                reordered.append(dream)
+            return {
+                **payload,
+                "dreams": reordered,
+                "semantic_reranked": True,
+                "semantic_rerank_query": query,
+                "semantic_rerank_indexed_count": len(ranked_ids),
+                "semantic_rerank_unindexed_count": len(ordered_ids) - len(ranked_ids),
+            }
+
+        return reorder(bounded_result), reorder(report_result)
 
 
 class DreamTagTool:

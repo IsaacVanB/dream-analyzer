@@ -37,6 +37,7 @@ class SequencedOllamaClient:
 class FakeIndex:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int, date | None, date | None]] = []
+        self.rank_calls: list[tuple[str, list[str]]] = []
 
     def search(
         self,
@@ -54,6 +55,18 @@ class FakeIndex:
                 metadata={"date": "1/2/2024"},
                 distance=0.125,
             )
+        ]
+
+    def rank_ids(self, query: str, dream_ids: list[str]) -> list[SearchResult]:
+        self.rank_calls.append((query, dream_ids))
+        return [
+            SearchResult(
+                dream_id=dream_id,
+                document=f"Text for {dream_id}",
+                metadata={"date": "7/1/2025"},
+                distance=rank / 10,
+            )
+            for rank, dream_id in enumerate(reversed(dream_ids), start=1)
         ]
 
 
@@ -520,6 +533,48 @@ class DreamRagAgentTests(unittest.TestCase):
             response.tool_executions[0].name, "get_dreams_by_date_range"
         )
         self.assertIn("DREAM_ID: dated-1", response.turn_traces[-1].request_prompt)
+
+    def test_agent_semantically_reranks_exhaustive_results_before_rrf(self) -> None:
+        class DateRepository:
+            @staticmethod
+            def between(start=None, end=None):
+                return [
+                    Dream(dream_id="first", date="7/1/2025", text="School"),
+                    Dream(dream_id="second", date="7/2/2025", text="House"),
+                ]
+
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "get_dreams_by_date_range",
+                    {"start_date": "2025-07-01", "end_date": "2025-07-31"},
+                ),
+                final_response("SEARCH_COMPLETE"),
+                final_response("House dreams were found."),
+            ]
+        )
+        index = FakeIndex()
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[DreamSearchTool(index), DreamDateRangeTool(DateRepository())],
+        )
+
+        response = agent.answer("Find house dreams from July 2025.")
+
+        execution = response.tool_executions[0]
+        self.assertTrue(execution.result["semantic_reranked"])
+        self.assertEqual(
+            execution.result["semantic_rerank_query"],
+            "Find house dreams from July 2025.",
+        )
+        self.assertEqual(
+            [dream["dream_id"] for dream in execution.result["dreams"]],
+            ["second", "first"],
+        )
+        self.assertLess(
+            response.turn_traces[-1].request_prompt.index("DREAM_ID: second"),
+            response.turn_traces[-1].request_prompt.index("DREAM_ID: first"),
+        )
 
     def test_agent_dispatches_dream_statistics_tool(self) -> None:
         client = SequencedOllamaClient(

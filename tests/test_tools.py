@@ -21,6 +21,7 @@ class FakeIndex:
     def __init__(self, results: list[SearchResult]) -> None:
         self.results = results
         self.calls: list[tuple[str, int, date | None, date | None]] = []
+        self.rank_calls: list[tuple[str, list[str]]] = []
 
     def search(
         self,
@@ -32,6 +33,11 @@ class FakeIndex:
     ) -> list[SearchResult]:
         self.calls.append((query, limit, start_date, end_date))
         return self.results
+
+    def rank_ids(self, query: str, dream_ids: list[str]) -> list[SearchResult]:
+        self.rank_calls.append((query, dream_ids))
+        allowed = set(dream_ids)
+        return [item for item in self.results if item.dream_id in allowed]
 
 
 def result(text: str = "A hidden room appeared.") -> SearchResult:
@@ -83,6 +89,44 @@ class DreamSearchToolTests(unittest.TestCase):
         self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
         self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
         self.assertFalse(report["dreams"][0]["truncated"])
+
+    def test_semantically_reranks_exhaustive_results_without_dropping_ids(self) -> None:
+        ranked = [
+            SearchResult(
+                dream_id="two",
+                document="water house",
+                metadata={"date": "1/2/2024"},
+                distance=0.1,
+            ),
+            SearchResult(
+                dream_id="one",
+                document="school",
+                metadata={"date": "1/1/2024"},
+                distance=0.4,
+            ),
+        ]
+        index = FakeIndex(ranked)
+        tool = DreamSearchTool(index)
+        exhaustive = {
+            "synthesis_include_all_matches": True,
+            "dreams": [
+                {"dream_id": "one", "text": "school"},
+                {"dream_id": "unindexed", "text": "new dream"},
+                {"dream_id": "two", "text": "water house"},
+            ],
+        }
+
+        bounded, report = tool.rerank_exhaustive_results(
+            "house water", exhaustive, exhaustive
+        )
+
+        self.assertEqual(index.rank_calls, [("house water", ["one", "unindexed", "two"])])
+        self.assertEqual(
+            [dream["dream_id"] for dream in report["dreams"]],
+            ["two", "one", "unindexed"],
+        )
+        self.assertEqual(bounded["semantic_rerank_indexed_count"], 2)
+        self.assertEqual(bounded["semantic_rerank_unindexed_count"], 1)
 
     def test_execute_passes_normalized_inclusive_date_bounds(self) -> None:
         index = FakeIndex([result()])

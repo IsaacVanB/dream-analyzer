@@ -272,8 +272,9 @@ translates relative language into those bounds using the current date; "last
 month" means the previous calendar month. Topic terms such as "school" remain
 part of the semantic query while the date bounds filter the results. Search
 queries, result counts, and per-dream context are bounded before being returned
-to the model. The date-range tool requires both bounds and does not rank or
-sample its results semantically. `--output` optionally saves the question, settings, searches,
+to the model. The date-range tool requires both bounds and returns every match;
+before fusion, the agent semantically reranks that set without sampling or
+dropping records. `--output` optionally saves the question, settings, searches,
 selected date ranges, retrieved citations, the full text of every unique dream
 returned across the searches, and the answer as Markdown. Repeated results remain
 listed in their search tables, but their full text appears only once. The full
@@ -285,7 +286,10 @@ again, but still count toward `--max-tool-calls`. Every answer is produced by a
 fresh final request with tools disabled, rather than allowing all accumulated
 tool results to clog the answer prompt. Results from distinct searches are
 deduplicated and ranked with reciprocal-rank fusion; duplicate queries do not
-increase a dream's score. At most `--max-synthesis-dreams` unique dreams
+increase a dream's score. Exhaustive date-range and exact-tag sets are
+semantically reranked before fusion using the latest generated search query, or
+the original question if no generated query exists. At most
+`--max-synthesis-dreams` unique dreams
 (default `10`) enter the final prompt. The evidence builder preserves at least
 105 words from every included dream, includes complete text where space permits,
 and drops lower-ranked dreams rather than shrinking included evidence below that
@@ -378,8 +382,11 @@ The evaluator gives each query to the same tool-planning agent used by
 `dream-analyzer ask`. The chat model can generate semantic queries, apply date
 filters, retrieve exact tags or date ranges, and use character and analytical
 tools. Dreams returned by multiple calls are deduplicated and ranked with the
-agent's reciprocal-rank fusion. Final prose synthesis is skipped because it
-cannot change retrieval. Before contacting Ollama, a preflight validates the
+agent's reciprocal-rank fusion. Exhaustive date-range and exact-tag result sets
+are first semantically reranked against the latest generated semantic query, or
+the original question when no semantic query is available. Every exhaustive
+match is retained, with records missing from the vector index placed last. Final
+prose synthesis is skipped because it cannot change retrieval. Before contacting Ollama, a preflight validates the
 Chroma path, collection, embedding-model metadata, and tool data files. Missing
 structured dream data disables `get_character_mentions` without preventing the
 evaluation; malformed structured data still fails validation. Other preflight
