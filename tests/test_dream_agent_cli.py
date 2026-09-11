@@ -147,6 +147,36 @@ class DreamAgentCliTests(unittest.TestCase):
 
         self.assertEqual(args.structured_dreams_path, Path("data/features.jsonl"))
 
+    def test_build_agent_omits_character_mentions_without_structured_data(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            structured_path = root / "structured.jsonl"
+            with patch.object(dream_agent, "DreamIndex", return_value=object()):
+                without_structured = dream_agent.build_agent(
+                    chroma_path=str(root / "chroma"),
+                    collection_name="dreams",
+                    embed_model="embed",
+                    top_k=10,
+                    max_chars_per_dream=100,
+                    structured_dreams_path=structured_path,
+                )
+                structured_path.write_text("", encoding="utf-8")
+                with_structured = dream_agent.build_agent(
+                    chroma_path=str(root / "chroma"),
+                    collection_name="dreams",
+                    embed_model="embed",
+                    top_k=10,
+                    max_chars_per_dream=100,
+                    structured_dreams_path=structured_path,
+                )
+
+        self.assertNotIn(
+            "get_character_mentions", [tool.name for tool in without_structured.tools]
+        )
+        self.assertIn(
+            "get_character_mentions", [tool.name for tool in with_structured.tools]
+        )
+
     def test_parser_accepts_a_character_dictionary_path(self) -> None:
         args = dream_agent.build_parser().parse_args(
             [

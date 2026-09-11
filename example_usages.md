@@ -449,12 +449,13 @@ use date filters, retrieve exact tags or date ranges, and call character or
 analytical tools. Results from dream-returning calls are combined with the same
 reciprocal-rank fusion used for answer synthesis. The final prose answer is not
 generated during evaluation. A fail-fast preflight first checks the Chroma path,
-collection, embedding-model metadata, and the parsed, structured, and character
-data files. Tool or agent failures are marked as query errors and excluded from
-metric averages. The JSON and Markdown reports include the tool trace, recall
-and precision at 5 and 10, R-precision, macro and category averages, and the
-maximum possible precision at each cutoff based on the number of known relevant
-dreams.
+collection, embedding-model metadata, and tool data files. Missing structured
+data is allowed and disables only `get_character_mentions`; malformed structured
+data remains a preflight error. Tool or agent failures are marked as query errors
+and excluded from metric averages. The JSON and Markdown reports include the
+tool trace, recall and precision at 5 and 10, R-precision, macro and category
+averages, and the maximum possible precision at each cutoff based on the number
+of known relevant dreams.
 
 ```bash
 python3 src/cli/evaluate_retrieval.py

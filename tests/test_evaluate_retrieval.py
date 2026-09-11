@@ -51,15 +51,24 @@ class RetrievalMetricTests(unittest.TestCase):
                 return Collection()
 
         with TemporaryDirectory() as temporary_directory:
+            args = self.preflight_args(Path(temporary_directory))
+            args.structured_dreams_path.unlink()
             result = evaluate_retrieval.preflight(
-                self.preflight_args(Path(temporary_directory)),
+                args,
                 chroma_client=Client(),
             )
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["collection_count"], 12)
+        self.assertEqual(
+            result["data_files"]["structured dreams"]["status"], "unavailable"
+        )
+        self.assertEqual(
+            result["data_files"]["structured dreams"]["effect"],
+            "get_character_mentions disabled",
+        )
 
-    def test_preflight_reports_available_collection_and_missing_file(self) -> None:
+    def test_preflight_reports_available_collection(self) -> None:
         class Collection:
             name = "dreams_with_underscores"
 
@@ -80,7 +89,7 @@ class RetrievalMetricTests(unittest.TestCase):
 
         message = str(raised.exception)
         self.assertIn("no queries were run", message)
-        self.assertIn("structured dreams file does not exist", message)
+        self.assertNotIn("structured dreams file does not exist", message)
         self.assertIn("Available collections: dreams_with_underscores", message)
 
     def test_metrics_at_cutoffs_and_r_precision(self) -> None:

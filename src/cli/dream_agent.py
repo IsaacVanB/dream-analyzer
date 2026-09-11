@@ -59,7 +59,6 @@ def build_agent(
 ) -> DreamRagAgent:
     gateway = OllamaGateway()
     repository = DreamRepository(dreams_path)
-    structured_repository = StructuredDreamRepository(structured_dreams_path)
     character_repository = CharacterDictionaryRepository(characters_path)
     index = DreamIndex(
         path=chroma_path,
@@ -67,22 +66,30 @@ def build_agent(
         embedding_model=embed_model,
         ollama_gateway=gateway,
     )
-    return DreamRagAgent(
-        ollama_gateway=gateway,
-        tools=[
-            DreamSearchTool(
-                index,
-                result_limit=top_k,
-                max_chars_per_dream=max_chars_per_dream,
-            ),
-            DreamDateRangeTool(
+    tools = [
+        DreamSearchTool(
+            index,
+            result_limit=top_k,
+            max_chars_per_dream=max_chars_per_dream,
+        ),
+        DreamDateRangeTool(
+            repository,
+            max_chars_per_dream=max_chars_per_dream,
+        ),
+        DreamStatisticsTool(repository),
+        TagTrendTool(repository),
+        CharacterContextTool(character_repository),
+    ]
+    structured_path = Path(structured_dreams_path)
+    if structured_path.is_file():
+        tools.append(
+            CharacterMentionsTool(
                 repository,
-                max_chars_per_dream=max_chars_per_dream,
-            ),
-            DreamStatisticsTool(repository),
-            TagTrendTool(repository),
-            CharacterContextTool(character_repository),
-            CharacterMentionsTool(repository, structured_repository),
+                StructuredDreamRepository(structured_path),
+            )
+        )
+    tools.extend(
+        [
             DreamTagTool(
                 repository,
                 max_chars_per_dream=max_chars_per_dream,
@@ -91,8 +98,9 @@ def build_agent(
                 repository,
                 max_chars_per_dream=max_chars_per_dream,
             ),
-        ],
+        ]
     )
+    return DreamRagAgent(ollama_gateway=gateway, tools=tools)
 
 
 def build_parser(
@@ -558,6 +566,7 @@ def _markdown_code_block(value: Any) -> str:
 
 
 def report_settings(args: argparse.Namespace) -> dict[str, Any]:
+    structured_path = Path(args.structured_dreams_path)
     return {
         "Chat model": args.chat_model,
         "Embedding model": args.embed_model,
@@ -565,6 +574,9 @@ def report_settings(args: argparse.Namespace) -> dict[str, Any]:
         "Chroma path": args.chroma_path,
         "Dreams path": args.dreams_path,
         "Structured dreams path": args.structured_dreams_path,
+        "Character mentions tool": (
+            "enabled" if structured_path.is_file() else "disabled (file unavailable)"
+        ),
         "Characters path": args.characters_path,
         "Results per search": args.top_k,
         "Maximum model characters per dream": args.max_chars_per_dream,

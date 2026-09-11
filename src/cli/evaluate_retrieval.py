@@ -50,14 +50,10 @@ def preflight(
 ) -> dict[str, Any]:
     """Validate retrieval dependencies without invoking either Ollama model."""
     errors: list[str] = []
-    data_files = {
+    required_data_files = {
         "parsed dreams": (
             Path(args.dreams_path),
             DreamRepository(args.dreams_path),
-        ),
-        "structured dreams": (
-            Path(args.structured_dreams_path),
-            StructuredDreamRepository(args.structured_dreams_path),
         ),
         "character dictionary": (
             Path(args.characters_path),
@@ -65,7 +61,7 @@ def preflight(
         ),
     }
     data_file_results: dict[str, dict[str, Any]] = {}
-    for label, (path, repository) in data_files.items():
+    for label, (path, repository) in required_data_files.items():
         if not path.is_file():
             errors.append(f"{label} file does not exist: {path}")
             continue
@@ -78,6 +74,28 @@ def preflight(
             "path": str(path),
             "record_count": record_count,
         }
+
+    structured_path = Path(args.structured_dreams_path)
+    if not structured_path.is_file():
+        data_file_results["structured dreams"] = {
+            "path": str(structured_path),
+            "status": "unavailable",
+            "effect": "get_character_mentions disabled",
+        }
+    else:
+        try:
+            structured_count = len(StructuredDreamRepository(structured_path).all())
+        except Exception as exc:
+            errors.append(
+                f"cannot load structured dreams file {structured_path}: {exc}"
+            )
+        else:
+            data_file_results["structured dreams"] = {
+                "path": str(structured_path),
+                "status": "available",
+                "record_count": structured_count,
+                "effect": "get_character_mentions enabled",
+            }
 
     chroma_path = Path(args.chroma_path)
     collection = None

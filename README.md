@@ -321,6 +321,8 @@ uses current parsed-journal dates, so a corrected date does not require
 restructuring the dream. Model-facing character results retain at most 20 dream
 IDs per character, while saved reports retain complete lists. Use
 `--structured-dreams-path` to select another structured JSONL file.
+When that file does not exist, the agent omits `get_character_mentions`; all
+other available retrieval tools continue to work.
 
 Character context defaults to `data/characters.json`; use `--characters-path`
 to select another dictionary. Both a top-level character array and the
@@ -378,10 +380,12 @@ filters, retrieve exact tags or date ranges, and use character and analytical
 tools. Dreams returned by multiple calls are deduplicated and ranked with the
 agent's reciprocal-rank fusion. Final prose synthesis is skipped because it
 cannot change retrieval. Before contacting Ollama, a preflight validates the
-Chroma path, collection, embedding-model metadata, and all tool data files. A
-preflight failure exits before any queries run. Agent or tool failures during a
-query are reported as errors and excluded from aggregate metrics rather than
-being scored as unsuccessful retrievals. The reports retain the generated tool calls and contain
+Chroma path, collection, embedding-model metadata, and tool data files. Missing
+structured dream data disables `get_character_mentions` without preventing the
+evaluation; malformed structured data still fails validation. Other preflight
+failures exit before any queries run. Agent or tool failures during a query are
+reported as errors and excluded from aggregate metrics rather than being scored
+as unsuccessful retrievals. The reports retain the generated tool calls and contain
 per-query and macro-averaged precision and recall at 5 and 10, R-precision,
 category summaries, and the maximum possible precision at each cutoff given the
 number of known relevant dreams. Recall and R-precision are undefined for
