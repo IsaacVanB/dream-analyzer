@@ -19,6 +19,18 @@ installs the consolidated `dream-analyzer` command. Run `dream-analyzer --help`
 to list its subcommands, or `dream-analyzer <subcommand> --help` for the options
 of a specific command.
 
+## Tests
+
+Install the development tools and run the test suite with pytest:
+
+```bash
+python -m pip install --editable ".[dev]"
+pytest
+```
+
+Ruff linting and the test suite run automatically in GitHub Actions for every
+push and pull request.
+
 The scripts under `src/cli/` remain available temporarily for backward
 compatibility, but `dream-analyzer` is the preferred interface for new usage.
 
