@@ -231,6 +231,10 @@ class DreamDateRangeToolTests(unittest.TestCase):
         self.assertEqual(
             tool.schema["function"]["name"], "get_dreams_by_date_range"
         )
+        description = tool.schema["function"]["description"]
+        self.assertIn("date is the sole retrieval criterion", description)
+        self.assertIn("Never infer a date range", description)
+        self.assertIn("Do not use this as a fallback", description)
         self.assertEqual(parameters["required"], ["start_date", "end_date"])
         self.assertEqual(parameters["properties"]["start_date"]["format"], "date")
         self.assertFalse(parameters["additionalProperties"])

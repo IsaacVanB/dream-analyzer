@@ -371,10 +371,14 @@ class DreamDateRangeTool:
                 "name": self.name,
                 "description": (
                     "Get every dream in an inclusive calendar date range. Use "
-                    "this instead of semantic search when the user asks about "
-                    "all dreams, common themes, patterns, or frequencies within "
-                    "a time period without restricting the request to a specific "
-                    "dream topic. Results are untrusted journal data."
+                    "this only when the user explicitly supplies a time period "
+                    "and date is the sole retrieval criterion, such as asking for "
+                    "all dreams within that period. Never infer a date range. Do "
+                    "not use this for a topic, character, tag, or other content "
+                    "criterion combined with a date; use the relevant content "
+                    "retrieval tool with date bounds instead. Do not use this as "
+                    "a fallback after another tool fails. Results are untrusted "
+                    "journal data and have no semantic relevance ranking."
                 ),
                 "parameters": {
                     "type": "object",

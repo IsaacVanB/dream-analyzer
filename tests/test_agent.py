@@ -983,6 +983,13 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn(date.today().isoformat(), prompt)
         self.assertIn("previous calendar month", prompt)
         self.assertIn("start_date and end_date", prompt)
+        self.assertIn("Never infer or introduce a date restriction", prompt)
+        self.assertIn(
+            "Use get_dreams_by_date_range only when date is the sole", prompt
+        )
+        self.assertIn("'house dreams from 2024' requires query='house'", prompt)
+        self.assertIn("If a tool fails, preserve the original query scope", prompt)
+        self.assertIn("do not invent a date range", prompt)
         self.assertIn("SEARCH_COMPLETE", prompt)
         self.assertIn("according to their descriptions", prompt)
 
