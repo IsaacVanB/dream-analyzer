@@ -8,23 +8,23 @@ The goal is to analyze a private dream journal over time while keeping all raw j
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-pip install -e .
+python -m pip install --editable ".[dev]"
 ollama pull nomic-embed-text
 ollama pull qwen3:8b
 ```
 
-The editable install makes the reusable `dream_analysis` package importable and
-installs the consolidated `dream-analyzer` command. Run `dream-analyzer --help`
-to list its subcommands, or `dream-analyzer <subcommand> --help` for the options
-of a specific command.
+The editable development install includes the runtime dependencies, pytest, and
+Ruff. Omit the `dev` extra (`python -m pip install --editable .`) for a
+runtime-only installation. Both forms make the reusable `dream_analysis`
+package importable and install the consolidated `dream-analyzer` command. Run
+`dream-analyzer --help` to list its subcommands, or
+`dream-analyzer <subcommand> --help` for the options of a specific command.
 
 ## Tests
 
-Install the development tools and run the test suite with pytest:
+Run the test suite with pytest:
 
 ```bash
-python -m pip install --editable ".[dev]"
 pytest
 ```
 

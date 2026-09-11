@@ -155,7 +155,7 @@ def project_and_cluster(
         import umap
     except ImportError as exc:
         raise RuntimeError(
-            "Clustering dependencies are missing. Run: pip install -r requirements.txt"
+            "Clustering dependencies are missing. Reinstall dream-analysis."
         ) from exc
 
     if vectors.shape[0] < 3:
