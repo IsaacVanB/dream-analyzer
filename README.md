@@ -36,6 +36,11 @@ push and pull request.
 The scripts under `src/cli/` remain available temporarily for backward
 compatibility, but `dream-analyzer` is the preferred interface for new usage.
 
+All application-authored system prompts and rendered user-prompt templates are
+centralized in `src/dream_analysis/prompts.py`. Callers supply dynamic values
+such as questions, dream text, evidence, and the current date through the
+renderer functions in that module.
+
 At least one embedding model and chat model are needed. Ollama must be running locally at `http://localhost:11434`.
 
 ## Workflow

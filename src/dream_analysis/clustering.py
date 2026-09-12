@@ -17,6 +17,7 @@ from sklearn.preprocessing import normalize
 
 from dream_analysis.index import extract_dream_text
 from dream_analysis.ollama_client import OllamaGateway
+from dream_analysis.prompts import cluster_label_prompt
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,13 +271,11 @@ def llm_label(
 ) -> str:
     """Ask Ollama for a short content-only label for one cluster."""
     excerpts = "\n\n".join(text[:700] for text in texts)
-    prompt = f"""Give this dream cluster a short, descriptive theme label of 2-7 words.
-Do not diagnose or infer hidden psychological meaning. Describe only recurring content.
-Distinctive terms: {', '.join(terms)}
-Overrepresented tags: {', '.join(tag for tag, _, _ in tags) or 'none'}
-Representative dreams:
-{excerpts}
-Return only the label."""
+    prompt = cluster_label_prompt(
+        terms=", ".join(terms),
+        tags=", ".join(tag for tag, _, _ in tags) or "none",
+        excerpts=excerpts,
+    )
     ollama_gateway = gateway or OllamaGateway()
     response = ollama_gateway.chat(
         model=model,

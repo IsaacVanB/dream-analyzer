@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from dream_analysis.ollama_client import OllamaGateway
 from dream_analysis.imports import dream_text_hash
+from dream_analysis.prompts import STRUCTURING_SYSTEM_PROMPT, structuring_user_prompt
 from dream_analysis.repository import DreamRepository
 
 
@@ -92,16 +93,7 @@ ARRAY_FIELDS = {
 }
 BOOLEAN_FIELDS = {"lucidity"}
 
-SYSTEM_PROMPT = (
-    "Extract structured, descriptive features from a dream report. Use only "
-    "information supported by the supplied text. Do not apply dream dictionaries, "
-    "diagnose the dreamer, infer real-world events, or assign symbolic meanings. "
-    "Use concise lowercase phrases in arrays except named_characters, preserve "
-    "the capitalization of names, remove duplicates, and use empty arrays when a "
-    "category has no evidence. Do not invent identities. Themes should describe "
-    "observable narrative patterns such as being chased, failing a task, or "
-    "discovering a hidden space—not speculative psychological interpretations."
-)
+SYSTEM_PROMPT = STRUCTURING_SYSTEM_PROMPT
 
 
 def load_dreams(path: Path | str) -> list[dict[str, Any]]:
@@ -148,47 +140,12 @@ def build_extraction_messages(dream: Mapping[str, Any]) -> list[dict[str, str]]:
             f"Dream {dream.get('dream_id', '<unknown>')} has no valid text."
         )
 
-    user_prompt = f"""
-DREAM_ID: {dream.get('dream_id', 'unknown')}
-DATE: {dream.get('date', 'unknown')}
-JOURNAL_TAGS: {', '.join(str(tag) for tag in dream.get('tags', [])) or 'none'}
-
-DREAM TEXT:
-{text}
-
-Extraction guidance:
-- `setting`: distinct physical or social locations.
-- `characters`: unnamed characters expressed as roles, such as mother, unknown
-  man, teacher, dog, or former classmate. Do not duplicate named characters here.
-- `named_characters`: only characters explicitly called by a proper name in the
-  report, preserving how the name is capitalized. Include named real people,
-  public figures, fictional characters, animals, or other personified entities.
-  Do not infer a name from a role or description.
-- `emotions`: stated or strongly evidenced feelings only.
-- `themes`: concrete recurring situations, goals, conflicts, or transformations.
-- `objects`: salient physical objects, not every incidental noun.
-- `actions`: major actions that move the dream forward.
-- `sensory_details`: notable colors, sounds, textures, bodily sensations, or weather.
-- `dream_mechanics`: impossible transformations, false awakenings, unstable spaces,
-  time discontinuity, altered physics, or other explicitly dreamlike mechanics.
-- `tone`: one concise dominant tone, or `unclear`.
-- `lucidity`: true only when the dreamer knows they are dreaming.
-- `violence`, `sexual_content`, `threat_level`, `social_conflict`, and
-  `bizarreness` use none, low, moderate, or high.
-- `social_conflict`: none for no interpersonal friction; low for mild tension,
-  awkwardness, or disagreement; moderate for sustained hostility, rejection,
-  coercion, humiliation, or betrayal; high for severe domination, interpersonal
-  danger, or violent conflict.
-- `agency`: how effectively the dreamer makes consequential choices.
-- `bizarreness`: none for ordinary and physically plausible events; low for a
-  small number of odd but coherent details; moderate for clear impossibilities,
-  transformations, or unstable space/time; high when radical impossibility or
-  incoherence pervades the dream.
-- `perspective`: first_person, third_person, mixed, or unclear.
-- `ending`: resolved, unresolved, interrupted, or unclear.
-- `memory_quality`: fragmentary, partial, or detailed based on the report itself.
-- `summary`: one or two factual sentences covering the central events.
-"""
+    user_prompt = structuring_user_prompt(
+        dream_id=dream.get("dream_id", "unknown"),
+        dream_date=dream.get("date", "unknown"),
+        tags=", ".join(str(tag) for tag in dream.get("tags", [])) or "none",
+        dream_text=text,
+    )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
