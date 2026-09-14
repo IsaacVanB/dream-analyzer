@@ -2,10 +2,31 @@
 
 # Dream Analyzer
 
-Small local pipeline for parsing a dream journal, embedding dreams with Ollama,
-storing them in ChromaDB, and asking retrieval-augmented questions.  
-The goal is to analyze a private dream journal over time while keeping all raw journal data local. The project is designed to support semantic dream retrieval, theme extraction, longitudinal analysis, graphing, and eventually a CLI/GUI interface where a user can ask natural-language questions about their dream journal.  
-🚧🛠️ This project is a work in progress. 🛠️🚧
+A privacy-first local LLM application for semantic retrieval, longitudinal analysis, and natural-language exploration of a personal dream journal.  
+
+Dream Analyzer combines local LLMs and embeddings through Ollama, ChromaDB vector retrieval, deterministic analytical services, structured feature extraction, clustering, and a tool-calling agent. Journal data and model inference remain local.  
+
+The project is designed around a simple goal: turn a large, long-running journal into a dataset that can be searched and analyzed through natural-language questions without sending private journal text to external AI services.  
+
+# Features
+- Semantic dream retrieval with local embeddings and ChromaDB
+- Retrieval-augmented analysis with cited dream IDs and dates
+- Tool-calling LLM agent for:
+  - semantic search
+  - exact dream lookup
+  - tag filtering
+  - date-range retrieval
+  - journal statistics
+  - tag-trend analysis
+  - character mentions and context
+- Structured extraction of dream content into validated records
+- UMAP + HDBSCAN clustering for recurring-theme discovery
+- Longitudinal statistics and normalized tag-frequency analysis
+- Incremental journal/index synchronization without rebuilding unchanged data
+- Retrieval and local-model comparison utilities
+- Reusable Python services separated from CLI orchestration
+
+A synthetic journal with 151 dreams from 2022–2026 is included for testing and demonstration.
 
 ## Setup
 
