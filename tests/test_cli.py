@@ -24,6 +24,7 @@ class ConsolidatedCliTests(unittest.TestCase):
             "stats",
             "trends",
             "cluster",
+            "evaluate-retrieval",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -76,6 +77,18 @@ class ConsolidatedCliTests(unittest.TestCase):
 
         parsed = parser.parse_args(["cluster", "--min-cluster-size", "7"])
         self.assertEqual(parsed.min_cluster_size, 7)
+
+        parsed = parser.parse_args(
+            [
+                "evaluate-retrieval",
+                "--retrieval-mode",
+                "hybrid",
+                "--experiment-name",
+                "hybrid v1",
+            ]
+        )
+        self.assertEqual(parsed.retrieval_mode, "hybrid")
+        self.assertEqual(parsed.experiment_name, "hybrid v1")
 
 
 if __name__ == "__main__":

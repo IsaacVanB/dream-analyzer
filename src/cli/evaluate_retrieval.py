@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import subprocess
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from dream_analysis.repository import (
     DreamRepository,
     StructuredDreamRepository,
 )
+from dream_analysis.retrieval_leaderboard import file_sha256, write_leaderboard
 
 
 QUERIES_PATH = Path("data/retrieval_eval_queries.json")
@@ -291,6 +293,12 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row for row in rows if isinstance(row.get("strategy_match"), bool)
     ]
     strategy_correct = sum(row["strategy_match"] for row in strategy_evaluated)
+    retrieval_seconds = [
+        float(row["retrieval_seconds"])
+        for row in evaluated
+        if isinstance(row.get("retrieval_seconds"), (int, float))
+        and not isinstance(row.get("retrieval_seconds"), bool)
+    ]
     return {
         "query_count": len(rows),
         "evaluated_query_count": len(evaluated),
@@ -305,11 +313,38 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if strategy_evaluated
             else None
         ),
+        "mean_retrieval_seconds": (
+            statistics.fmean(retrieval_seconds) if retrieval_seconds else None
+        ),
         **{
             metric: _mean(row[metric] for row in evaluated)
             for metric in SCORED_METRICS
         },
     }
+
+
+def source_control_metadata() -> dict[str, Any]:
+    """Return best-effort Git provenance without failing an evaluation."""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {"git_commit": None, "git_dirty": None}
+    git_commit = commit.stdout.strip() if commit.returncode == 0 else None
+    git_dirty = bool(status.stdout.strip()) if status.returncode == 0 else None
+    return {"git_commit": git_commit, "git_dirty": git_dirty}
 
 
 def infer_agent_strategy(tool_names: Iterable[str]) -> str:
@@ -846,6 +881,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "queries_path": str(args.queries_path),
         "journal_file": payload.get("journal_file"),
+        "experiment": {
+            "name": getattr(args, "experiment_name", None),
+            "note": getattr(args, "experiment_note", None),
+        },
+        "fingerprints": {
+            "queries_sha256": file_sha256(args.queries_path),
+            "dreams_sha256": file_sha256(args.dreams_path),
+        },
+        "source_control": source_control_metadata(),
         "preflight": preflight_result,
         "settings": {
             "retrieval_mode": args.retrieval_mode,
@@ -937,6 +981,28 @@ def markdown_report(report: dict[str, Any]) -> str:
         "- Undefined recall and R-precision for queries with no relevant dreams are shown as `n/a` and excluded from macro averages.",
         "- Maximum P@k is `min(number of relevant dreams, k) / k`.",
     ]
+    experiment = report.get("experiment") or {}
+    fingerprints = report.get("fingerprints") or {}
+    source_control = report.get("source_control") or {}
+    metadata_lines = []
+    if experiment.get("name"):
+        metadata_lines.append(f"- Experiment: `{experiment['name']}`")
+    if experiment.get("note"):
+        metadata_lines.append(f"- Experiment note: {experiment['note']}")
+    if fingerprints.get("queries_sha256"):
+        metadata_lines.append(
+            f"- Query-suite fingerprint: `{fingerprints['queries_sha256']}`"
+        )
+    if fingerprints.get("dreams_sha256"):
+        metadata_lines.append(
+            f"- Dream-corpus fingerprint: `{fingerprints['dreams_sha256']}`"
+        )
+    if source_control.get("git_commit"):
+        dirty = "dirty" if source_control.get("git_dirty") else "clean"
+        metadata_lines.append(
+            f"- Git revision: `{source_control['git_commit']}` ({dirty})"
+        )
+    lines[6:6] = metadata_lines
     if retrieval_mode in {"agent", "embedding", "hybrid"}:
         lines[5:5] = [
             f"- Chroma collection: `{settings['collection_name']}`",
@@ -1044,13 +1110,15 @@ def _format_tool_call(call: dict[str, Any]) -> str:
     return rendered
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Evaluate agentic, semantic, BM25, or fixed hybrid dream retrieval using labeled "
-            "relevance judgments."
-        )
+def build_parser(
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.ArgumentParser:
+    description = (
+        "Evaluate agentic, semantic, BM25, or fixed hybrid dream retrieval "
+        "using labeled relevance judgments."
     )
+    parser = parser or argparse.ArgumentParser(description=description)
+    parser.description = description
     parser.add_argument("--queries-path", type=Path, default=QUERIES_PATH)
     parser.add_argument(
         "--retrieval-mode",
@@ -1102,6 +1170,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-predict", type=int, default=700)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument(
+        "--experiment-name",
+        help="Short label shown in the running retrieval leaderboard.",
+    )
+    parser.add_argument(
+        "--experiment-note",
+        help="Optional note describing what changed in this experiment.",
+    )
+    parser.add_argument(
+        "--rebuild-leaderboard",
+        action="store_true",
+        help="Rebuild leaderboard artifacts from existing benchmark JSON files.",
+    )
     return parser
 
 
@@ -1118,9 +1199,20 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--num-predict must be positive")
 
 
-def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+def run_command(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> dict[str, Any]:
+    """Run one benchmark or rebuild only the cross-experiment leaderboard."""
+    if args.rebuild_leaderboard:
+        leaderboard_json, leaderboard_markdown = write_leaderboard(args.output_dir)
+        print(f"Wrote {leaderboard_json}")
+        print(f"Wrote {leaderboard_markdown}")
+        return {
+            "leaderboard_json": leaderboard_json,
+            "leaderboard_markdown": leaderboard_markdown,
+        }
+
     validate_args(parser, args)
     try:
         report = run(args)
@@ -1133,8 +1225,24 @@ def main() -> None:
     markdown_path = args.output_dir / f"{stem}.md"
     write_json_atomic(json_path, report)
     write_text_atomic(markdown_path, markdown_report(report))
+    leaderboard_json, leaderboard_markdown = write_leaderboard(args.output_dir)
     print(f"Wrote {json_path}")
     print(f"Wrote {markdown_path}")
+    print(f"Updated {leaderboard_json}")
+    print(f"Updated {leaderboard_markdown}")
+    return {
+        "report": report,
+        "json_path": json_path,
+        "markdown_path": markdown_path,
+        "leaderboard_json": leaderboard_json,
+        "leaderboard_markdown": leaderboard_markdown,
+    }
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    run_command(args, parser)
 
 
 if __name__ == "__main__":

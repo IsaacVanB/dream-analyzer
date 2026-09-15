@@ -101,8 +101,28 @@ dream-analyzer analyze     # Analyze one dream
 dream-analyzer stats       # Compute journal statistics
 dream-analyzer trends      # Plot tag trends over time
 dream-analyzer cluster     # Discover recurring themes
+dream-analyzer evaluate-retrieval  # Benchmark retrieval and update its leaderboard
 ```
 
 Run `dream-analyzer <subcommand> --help` for command-specific options. Additional
 utilities under `src/cli/` cover journal synchronization, structured extraction,
 character lookup, retrieval evaluation, and model comparison.
+
+Retrieval evaluations write their individual JSON and Markdown reports under
+`outputs/retrieval_evaluations/` and rebuild `leaderboard.json` and
+`leaderboard.md` after every successful run. Label experiments so the running
+report remains easy to scan:
+
+```bash
+dream-analyzer evaluate-retrieval \
+  --retrieval-mode hybrid \
+  --experiment-name "hybrid baseline" \
+  --experiment-note "Verbatim semantic and BM25 queries with RRF"
+```
+
+Rebuild the leaderboard from existing benchmark JSON reports without running a
+new evaluation:
+
+```bash
+dream-analyzer evaluate-retrieval --rebuild-leaderboard
+```

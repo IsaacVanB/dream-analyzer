@@ -12,6 +12,7 @@ from cli import (
     cluster_dreams,
     compute_stats,
     dream_agent,
+    evaluate_retrieval,
     parse_dreams,
     plot_tags,
 )
@@ -91,6 +92,13 @@ def build_parser() -> argparse.ArgumentParser:
         "cluster indexed dream embeddings",
         cluster_dreams.build_parser,
         cluster_dreams.run_command,
+    )
+    _add_command(
+        subparsers,
+        "evaluate-retrieval",
+        "benchmark dream retrieval and update its leaderboard",
+        evaluate_retrieval.build_parser,
+        evaluate_retrieval.run_command,
     )
     return parser
 
