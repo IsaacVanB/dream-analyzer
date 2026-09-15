@@ -174,6 +174,10 @@ class DreamAgentCliTests(unittest.TestCase):
             "get_character_mentions", [tool.name for tool in without_structured.tools]
         )
         self.assertIn(
+            "search_dreams_by_keywords",
+            [tool.name for tool in without_structured.tools],
+        )
+        self.assertIn(
             "get_character_mentions", [tool.name for tool in with_structured.tools]
         )
 

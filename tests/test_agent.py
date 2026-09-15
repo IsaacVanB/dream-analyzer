@@ -10,13 +10,15 @@ from dream_analysis.agent import (
     DreamRagAgent,
     ToolExecution,
 )
+from dream_analysis.bm25 import DreamBm25Index
 from dream_analysis.models import Dream, SearchResult
-from dream_analysis.ollama_client import OllamaGateway
+from dream_analysis.ollama_client import OllamaGateway, OllamaToolCall
 from dream_analysis.tools import (
     CharacterContextTool,
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
+    DreamKeywordSearchTool,
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
@@ -465,6 +467,65 @@ class DreamRagAgentTests(unittest.TestCase):
             tool_result["scope_correction"]["type"],
             "removed_invented_date_bounds",
         )
+
+    def test_agent_strips_invented_date_bounds_from_keyword_search(self) -> None:
+        client = SequencedOllamaClient(
+            [
+                tool_response(
+                    "search_dreams_by_keywords",
+                    {
+                        "query": "dogs",
+                        "start_date": "2024-01-01",
+                        "end_date": "2024-12-31",
+                    },
+                ),
+                final_response("SEARCH_COMPLETE"),
+                final_response(),
+            ]
+        )
+        keyword_index = DreamBm25Index(
+            [
+                Dream(
+                    dream_id="dog-dream",
+                    date="1/2/2024",
+                    text="A dog ran through the house.",
+                    date_sort=date(2024, 1, 2),
+                )
+            ]
+        )
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[DreamKeywordSearchTool(keyword_index)],
+        )
+
+        response = agent.answer("dreams about dogs")
+
+        execution = response.tool_executions[0]
+        self.assertEqual(execution.arguments, {"query": "dogs"})
+        self.assertEqual(execution.result["result_count"], 1)
+        self.assertEqual(
+            execution.result["scope_correction"]["type"],
+            "removed_invented_date_bounds",
+        )
+        self.assertIsNone(execution.result["start_date"])
+        self.assertIsNone(execution.result["end_date"])
+
+    def test_agent_preserves_explicit_date_bounds_for_keyword_search(self) -> None:
+        call = OllamaToolCall(
+            name="search_dreams_by_keywords",
+            arguments={
+                "query": "dogs",
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+            },
+        )
+
+        accepted = DreamRagAgent._enforce_date_scope(
+            call,
+            question="dog dreams from 2024",
+        )
+
+        self.assertEqual(accepted, call)
 
     def test_date_constraint_detection_covers_explicit_and_relative_dates(self) -> None:
         constrained = (
@@ -1226,6 +1287,10 @@ class DreamRagAgentTests(unittest.TestCase):
         )
         self.assertIn("'house dreams from 2024' requires query='house'", prompt)
         self.assertIn("If a tool fails, preserve the original query scope", prompt)
+        self.assertIn("Use search_dreams for concepts", prompt)
+        self.assertIn("Use search_dreams_by_keywords for literal names", prompt)
+        self.assertIn("do not call both automatically", prompt)
+        self.assertIn("Formulate each query for its retriever", prompt)
         self.assertIn("do not invent a date range", prompt)
         self.assertIn("SEARCH_COMPLETE", prompt)
         self.assertIn("according to their descriptions", prompt)

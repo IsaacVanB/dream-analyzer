@@ -118,6 +118,9 @@ class DreamRagAgent:
 
     minimum_synthesis_words = 105
     reciprocal_rank_constant = 60
+    date_scoped_search_tools = frozenset(
+        {"search_dreams", "search_dreams_by_keywords"}
+    )
     _date_constraint_pattern = re.compile(
         r"(?:"
         r"\b(?:19|20)\d{2}\b|"
@@ -457,9 +460,10 @@ class DreamRagAgent:
         *,
         question: str,
     ) -> OllamaToolCall:
-        """Remove invented bounds from semantic searches deterministically."""
-        if call.name != "search_dreams" or cls._question_has_date_constraint(
-            question
+        """Remove invented bounds from topical searches deterministically."""
+        if (
+            call.name not in cls.date_scoped_search_tools
+            or cls._question_has_date_constraint(question)
         ):
             return call
         arguments = dict(call.arguments)

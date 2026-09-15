@@ -19,6 +19,7 @@ from dream_analysis.agent import (
     ToolRequest,
 )
 from dream_analysis.artifacts import write_text_atomic
+from dream_analysis.bm25 import DreamBm25Index
 from dream_analysis.config import Settings
 from dream_analysis.index import DreamIndex
 from dream_analysis.ollama_client import OllamaGateway
@@ -32,6 +33,7 @@ from dream_analysis.tools import (
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
+    DreamKeywordSearchTool,
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
@@ -69,6 +71,11 @@ def build_agent(
     tools = [
         DreamSearchTool(
             index,
+            result_limit=top_k,
+            max_chars_per_dream=max_chars_per_dream,
+        ),
+        DreamKeywordSearchTool(
+            DreamBm25Index(repository.all()),
             result_limit=top_k,
             max_chars_per_dream=max_chars_per_dream,
         ),
