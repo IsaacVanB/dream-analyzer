@@ -17,6 +17,7 @@ import chromadb
 from cli import basic_rag, dream_agent
 from dream_analysis.agent import DreamRagAgent, ToolExecution
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
+from dream_analysis.bm25 import DreamBm25Index
 from dream_analysis.index import validate_collection_embedding_model
 from dream_analysis.repository import (
     CharacterDictionaryRepository,
@@ -28,7 +29,17 @@ from dream_analysis.repository import (
 QUERIES_PATH = Path("data/retrieval_eval_queries.json")
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
 CUTOFFS = (5, 10)
-RETRIEVAL_MODES = ("agent", "embedding")
+RETRIEVAL_MODES = ("agent", "embedding", "bm25", "hybrid")
+EXPECTED_STRATEGIES = {
+    "semantic": frozenset({"semantic"}),
+    "bm25": frozenset({"bm25"}),
+    "hybrid": frozenset({"hybrid"}),
+    "bm25_or_hybrid": frozenset({"bm25", "hybrid"}),
+    "semantic_or_hybrid": frozenset({"semantic", "hybrid"}),
+    "hybrid_or_reasoned_filter": frozenset({"hybrid", "reasoned_filter"}),
+}
+SEMANTIC_TOOL = "search_dreams"
+BM25_TOOL = "search_dreams_by_keywords"
 SCORED_METRICS = (
     "precision_at_5",
     "max_precision_at_5",
@@ -51,31 +62,34 @@ def preflight(
 ) -> dict[str, Any]:
     """Validate retrieval dependencies without invoking either Ollama model."""
     errors: list[str] = []
-    data_file_results = (
-        _preflight_agent_data(args, errors)
-        if getattr(args, "retrieval_mode", "agent") == "agent"
-        else {}
-    )
+    retrieval_mode = getattr(args, "retrieval_mode", "agent")
+    if retrieval_mode == "agent":
+        data_file_results = _preflight_agent_data(args, errors)
+    elif retrieval_mode in {"bm25", "hybrid"}:
+        data_file_results = _preflight_bm25_data(args, errors)
+    else:
+        data_file_results = {}
 
-    chroma_path = Path(args.chroma_path)
     collection = None
     collection_count = None
     available_collections: list[str] = []
-    if not chroma_path.exists():
-        errors.append(f"Chroma path does not exist: {chroma_path}")
-    else:
-        try:
-            client = chroma_client or chromadb.PersistentClient(path=chroma_path)
-            available_collections = sorted(
-                str(item.name) for item in client.list_collections()
-            )
-            collection = client.get_collection(name=args.collection_name)
-        except Exception as exc:
-            available = ", ".join(available_collections) or "none"
-            errors.append(
-                f"cannot open Chroma collection {args.collection_name!r}: {exc}. "
-                f"Available collections: {available}"
-            )
+    if retrieval_mode in {"agent", "embedding", "hybrid"}:
+        chroma_path = Path(args.chroma_path)
+        if not chroma_path.exists():
+            errors.append(f"Chroma path does not exist: {chroma_path}")
+        else:
+            try:
+                client = chroma_client or chromadb.PersistentClient(path=chroma_path)
+                available_collections = sorted(
+                    str(item.name) for item in client.list_collections()
+                )
+                collection = client.get_collection(name=args.collection_name)
+            except Exception as exc:
+                available = ", ".join(available_collections) or "none"
+                errors.append(
+                    f"cannot open Chroma collection {args.collection_name!r}: "
+                    f"{exc}. Available collections: {available}"
+                )
 
     if collection is not None:
         try:
@@ -95,10 +109,32 @@ def preflight(
         )
     return {
         "status": "ok",
-        "retrieval_mode": getattr(args, "retrieval_mode", "agent"),
+        "retrieval_mode": retrieval_mode,
         "collection_count": collection_count,
         "available_collections": available_collections,
         "data_files": data_file_results,
+    }
+
+
+def _preflight_bm25_data(
+    args: argparse.Namespace,
+    errors: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Validate the parsed dream file needed by lexical retrieval."""
+    path = Path(args.dreams_path)
+    if not path.is_file():
+        errors.append(f"parsed dreams file does not exist: {path}")
+        return {}
+    try:
+        record_count = len(DreamRepository(path).all())
+    except Exception as exc:
+        errors.append(f"cannot load parsed dreams file {path}: {exc}")
+        return {}
+    return {
+        "parsed dreams": {
+            "path": str(path),
+            "record_count": record_count,
+        }
     }
 
 
@@ -172,6 +208,7 @@ def load_evaluation_queries(path: Path) -> dict[str, Any]:
             raise ValueError(f"Query record {index} must be an object.")
         query = item.get("query")
         category = item.get("category")
+        expected_strategy = item.get("expected_strategy")
         relevant_ids = item.get("relevant_dream_ids")
         if not isinstance(query, str) or not query.strip():
             raise ValueError(f"Query record {index} has no valid query.")
@@ -180,6 +217,12 @@ def load_evaluation_queries(path: Path) -> dict[str, Any]:
         seen_queries.add(query)
         if not isinstance(category, str) or not category.strip():
             raise ValueError(f"Query {query!r} has no valid category.")
+        if expected_strategy not in EXPECTED_STRATEGIES:
+            allowed = ", ".join(sorted(EXPECTED_STRATEGIES))
+            raise ValueError(
+                f"Query {query!r} has invalid expected_strategy "
+                f"{expected_strategy!r}; expected one of: {allowed}."
+            )
         if not isinstance(relevant_ids, list) or not all(
             isinstance(dream_id, str) and dream_id for dream_id in relevant_ids
         ):
@@ -244,6 +287,10 @@ def _mean(values: Iterable[float | None]) -> float | None:
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Return macro averages, excluding undefined metrics for zero-relevance queries."""
     evaluated = [row for row in rows if row.get("status", "ok") == "ok"]
+    strategy_evaluated = [
+        row for row in rows if isinstance(row.get("strategy_match"), bool)
+    ]
+    strategy_correct = sum(row["strategy_match"] for row in strategy_evaluated)
     return {
         "query_count": len(rows),
         "evaluated_query_count": len(evaluated),
@@ -251,10 +298,60 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "queries_with_relevant_dreams": sum(
             row["relevant_count"] > 0 for row in evaluated
         ),
+        "strategy_evaluated_count": len(strategy_evaluated),
+        "strategy_correct_count": strategy_correct,
+        "strategy_accuracy": (
+            strategy_correct / len(strategy_evaluated)
+            if strategy_evaluated
+            else None
+        ),
         **{
             metric: _mean(row[metric] for row in evaluated)
             for metric in SCORED_METRICS
         },
+    }
+
+
+def infer_agent_strategy(tool_names: Iterable[str]) -> str:
+    """Classify an agent's retrieval route from the tools it requested."""
+    names = {str(name) for name in tool_names}
+    uses_semantic = SEMANTIC_TOOL in names
+    uses_bm25 = BM25_TOOL in names
+    if uses_semantic and uses_bm25:
+        return "hybrid"
+    if uses_semantic:
+        return "semantic"
+    if uses_bm25:
+        return "bm25"
+    if names:
+        return "reasoned_filter"
+    return "none"
+
+
+def evaluate_agent_strategy(
+    expected_strategy: Any,
+    tool_names: Iterable[str],
+    *,
+    observable: bool = True,
+) -> dict[str, str | bool | None]:
+    """Compare one observed route with the labeled acceptable strategies."""
+    if not isinstance(expected_strategy, str):
+        return {
+            "expected_strategy": None,
+            "actual_strategy": None,
+            "strategy_match": None,
+        }
+    if not observable:
+        return {
+            "expected_strategy": expected_strategy,
+            "actual_strategy": None,
+            "strategy_match": None,
+        }
+    actual_strategy = infer_agent_strategy(tool_names)
+    return {
+        "expected_strategy": expected_strategy,
+        "actual_strategy": actual_strategy,
+        "strategy_match": actual_strategy in EXPECTED_STRATEGIES[expected_strategy],
     }
 
 
@@ -289,10 +386,17 @@ def evaluate_queries(
             retrieval_seconds = round(perf_counter() - started, 3)
             executions = tuple(getattr(exc, "completed_executions", ()))
             pending_calls = tuple(getattr(exc, "pending_tool_calls", ()))
+            requested_tool_names = [execution.name for execution in executions]
+            requested_tool_names.extend(call.name for call in pending_calls)
             rows.append(
                 {
                     "query": item["query"],
                     "category": item["category"],
+                    **evaluate_agent_strategy(
+                        item.get("expected_strategy"),
+                        requested_tool_names,
+                        observable=bool(requested_tool_names),
+                    ),
                     "status": "error",
                     "error_type": type(exc).__name__,
                     "error": str(exc),
@@ -325,6 +429,12 @@ def evaluate_queries(
             tool_execution_report(execution)
             for execution in response.tool_executions
         ]
+        requested_tool_names = [
+            execution.name for execution in response.tool_executions
+        ]
+        requested_tool_names.extend(
+            call.name for call in response.unexecuted_tool_calls
+        )
         tool_errors = [call for call in tool_calls if not call["ok"]]
         if tool_errors:
             error = "; ".join(
@@ -341,6 +451,10 @@ def evaluate_queries(
             {
                 "query": item["query"],
                 "category": item["category"],
+                **evaluate_agent_strategy(
+                    item.get("expected_strategy"),
+                    requested_tool_names,
+                ),
                 "status": status,
                 "error_type": "ToolExecutionError" if tool_errors else None,
                 "error": error,
@@ -401,6 +515,7 @@ def evaluate_embedding_queries(
                 {
                     "query": item["query"],
                     "category": item["category"],
+                    "expected_strategy": item.get("expected_strategy"),
                     "status": "error",
                     "error_type": type(exc).__name__,
                     "error": str(exc),
@@ -428,6 +543,7 @@ def evaluate_embedding_queries(
             {
                 "query": item["query"],
                 "category": item["category"],
+                "expected_strategy": item.get("expected_strategy"),
                 "status": "ok",
                 "error_type": None,
                 "error": None,
@@ -444,6 +560,210 @@ def evaluate_embedding_queries(
         )
         print(
             f"{progress} Finished embedding baseline in "
+            f"{retrieval_seconds:.3f}s: {len(retrieved_ids)} dream(s)",
+            flush=True,
+        )
+    return rows
+
+
+def evaluate_bm25_queries(
+    queries: list[dict[str, Any]],
+    *,
+    index: DreamBm25Index,
+) -> list[dict[str, Any]]:
+    """Search each labeled query verbatim with the fixed BM25 index."""
+    rows: list[dict[str, Any]] = []
+    for number, item in enumerate(queries, start=1):
+        query = item["query"]
+        relevant_ids = item["relevant_dream_ids"]
+        retrieval_depth = max(max(CUTOFFS), len(relevant_ids))
+        progress = f"[{number}/{len(queries)}]"
+        print(f"{progress} Starting BM25 baseline: {query}", flush=True)
+        started = perf_counter()
+        try:
+            retrieved = index.search(query, limit=retrieval_depth)
+        except Exception as exc:
+            retrieval_seconds = round(perf_counter() - started, 3)
+            rows.append(
+                {
+                    "query": query,
+                    "category": item["category"],
+                    "expected_strategy": item.get("expected_strategy"),
+                    "status": "error",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    **failed_retrieval_metrics(relevant_ids),
+                    "retrieval_query": query,
+                    "retrieval_depth": retrieval_depth,
+                    "returned_count": 0,
+                    "retrieval_seconds": retrieval_seconds,
+                    "retrieved_dream_ids": [],
+                    "relevant_dream_ids": relevant_ids,
+                    "tool_calls": [],
+                    "unexecuted_tool_calls": [],
+                }
+            )
+            print(
+                f"{progress} ERROR after {retrieval_seconds:.3f}s: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            continue
+
+        retrieved_ids = [result.dream_id for result in retrieved]
+        retrieval_seconds = round(perf_counter() - started, 3)
+        rows.append(
+            {
+                "query": query,
+                "category": item["category"],
+                "expected_strategy": item.get("expected_strategy"),
+                "status": "ok",
+                "error_type": None,
+                "error": None,
+                **retrieval_metrics(retrieved_ids, relevant_ids),
+                "retrieval_query": query,
+                "retrieval_depth": retrieval_depth,
+                "returned_count": len(retrieved_ids),
+                "retrieval_seconds": retrieval_seconds,
+                "retrieved_dream_ids": retrieved_ids,
+                "relevant_dream_ids": relevant_ids,
+                "tool_calls": [],
+                "unexecuted_tool_calls": [],
+            }
+        )
+        print(
+            f"{progress} Finished BM25 baseline in {retrieval_seconds:.3f}s: "
+            f"{len(retrieved_ids)} dream(s)",
+            flush=True,
+        )
+    return rows
+
+
+def _fuse_fixed_hybrid_ids(
+    semantic_ids: list[str],
+    bm25_ids: list[str],
+    *,
+    limit: int,
+) -> list[str]:
+    """Fuse fixed semantic and BM25 lists with the agent's RRF implementation."""
+    executions = (
+        ToolExecution(
+            name="search_dreams",
+            arguments={"query": "fixed semantic baseline"},
+            result={
+                "ok": True,
+                "retrieval_method": "semantic",
+                "dreams": [
+                    {"dream_id": dream_id, "retrieval_method": "semantic"}
+                    for dream_id in semantic_ids
+                ],
+            },
+        ),
+        ToolExecution(
+            name="search_dreams_by_keywords",
+            arguments={"query": "fixed BM25 baseline"},
+            result={
+                "ok": True,
+                "retrieval_method": "bm25",
+                "dreams": [
+                    {"dream_id": dream_id, "retrieval_method": "bm25"}
+                    for dream_id in bm25_ids
+                ],
+            },
+        ),
+    )
+    ranked = DreamRagAgent.rank_dream_evidence(executions)
+    return [str(dream["dream_id"]) for dream in ranked[:limit]]
+
+
+def evaluate_hybrid_queries(
+    queries: list[dict[str, Any]],
+    *,
+    index: DreamBm25Index,
+    chroma_path: str,
+    collection_name: str,
+    embed_model: str,
+    retrieve: Callable[..., list[dict[str, Any]]] = basic_rag.retrieve_dreams,
+) -> list[dict[str, Any]]:
+    """Fuse verbatim semantic and BM25 queries as a fixed hybrid baseline."""
+    rows: list[dict[str, Any]] = []
+    for number, item in enumerate(queries, start=1):
+        query = item["query"]
+        relevant_ids = item["relevant_dream_ids"]
+        retrieval_depth = max(max(CUTOFFS), len(relevant_ids))
+        progress = f"[{number}/{len(queries)}]"
+        print(f"{progress} Starting fixed hybrid baseline: {query}", flush=True)
+        started = perf_counter()
+        try:
+            semantic = retrieve(
+                query,
+                top_k=retrieval_depth,
+                chroma_path=chroma_path,
+                collection_name=collection_name,
+                embed_model=embed_model,
+            )
+            bm25 = index.search(query, limit=retrieval_depth)
+            semantic_ids = [str(result["dream_id"]) for result in semantic]
+            bm25_ids = [result.dream_id for result in bm25]
+            retrieved_ids = _fuse_fixed_hybrid_ids(
+                semantic_ids,
+                bm25_ids,
+                limit=retrieval_depth,
+            )
+        except Exception as exc:
+            retrieval_seconds = round(perf_counter() - started, 3)
+            rows.append(
+                {
+                    "query": query,
+                    "category": item["category"],
+                    "expected_strategy": item.get("expected_strategy"),
+                    "status": "error",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    **failed_retrieval_metrics(relevant_ids),
+                    "retrieval_query": query,
+                    "retrieval_depth": retrieval_depth,
+                    "returned_count": 0,
+                    "retrieval_seconds": retrieval_seconds,
+                    "retrieved_dream_ids": [],
+                    "semantic_dream_ids": [],
+                    "bm25_dream_ids": [],
+                    "relevant_dream_ids": relevant_ids,
+                    "tool_calls": [],
+                    "unexecuted_tool_calls": [],
+                }
+            )
+            print(
+                f"{progress} ERROR after {retrieval_seconds:.3f}s: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            continue
+
+        retrieval_seconds = round(perf_counter() - started, 3)
+        rows.append(
+            {
+                "query": query,
+                "category": item["category"],
+                "expected_strategy": item.get("expected_strategy"),
+                "status": "ok",
+                "error_type": None,
+                "error": None,
+                **retrieval_metrics(retrieved_ids, relevant_ids),
+                "retrieval_query": query,
+                "retrieval_depth": retrieval_depth,
+                "returned_count": len(retrieved_ids),
+                "retrieval_seconds": retrieval_seconds,
+                "retrieved_dream_ids": retrieved_ids,
+                "semantic_dream_ids": semantic_ids,
+                "bm25_dream_ids": bm25_ids,
+                "relevant_dream_ids": relevant_ids,
+                "tool_calls": [],
+                "unexecuted_tool_calls": [],
+            }
+        )
+        print(
+            f"{progress} Finished fixed hybrid baseline in "
             f"{retrieval_seconds:.3f}s: {len(retrieved_ids)} dream(s)",
             flush=True,
         )
@@ -499,9 +819,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             num_predict=args.num_predict,
             temperature=args.temperature,
         )
-    else:
+    elif args.retrieval_mode == "embedding":
         rows = evaluate_embedding_queries(
             payload["queries"],
+            chroma_path=args.chroma_path,
+            collection_name=args.collection_name,
+            embed_model=args.embed_model,
+        )
+    elif args.retrieval_mode == "bm25":
+        rows = evaluate_bm25_queries(
+            payload["queries"],
+            index=DreamBm25Index(DreamRepository(args.dreams_path).all()),
+        )
+    else:
+        rows = evaluate_hybrid_queries(
+            payload["queries"],
+            index=DreamBm25Index(DreamRepository(args.dreams_path).all()),
             chroma_path=args.chroma_path,
             collection_name=args.collection_name,
             embed_model=args.embed_model,
@@ -523,7 +856,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "dreams_path": str(args.dreams_path),
             "structured_dreams_path": str(args.structured_dreams_path),
             "characters_path": str(args.characters_path),
+            "results_per_agent_search": args.top_k,
             "results_per_semantic_search": args.top_k,
+            "baseline_retrieval_depth": "max(10, relevant_count)",
             "max_tool_calls": args.max_tool_calls,
             "max_chars_per_dream": args.max_chars_per_dream,
             "num_ctx": args.num_ctx,
@@ -543,6 +878,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 def _display(value: Any) -> str:
     if value is None:
         return "n/a"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
     if isinstance(value, float):
         return f"{value:.3f}"
     return str(value)
@@ -569,6 +906,22 @@ def _summary_table(rows: Iterable[tuple[str, dict[str, Any]]]) -> list[str]:
     return lines
 
 
+def _strategy_summary_table(
+    rows: Iterable[tuple[str, dict[str, Any]]],
+) -> list[str]:
+    lines = [
+        "| group | labeled routes | correct | accuracy |",
+        "|---|---:|---:|---:|",
+    ]
+    for label, summary in rows:
+        lines.append(
+            f"| {label} | {summary['strategy_evaluated_count']} | "
+            f"{summary['strategy_correct_count']} | "
+            f"{_display(summary['strategy_accuracy'])} |"
+        )
+    return lines
+
+
 def markdown_report(report: dict[str, Any]) -> str:
     """Render aggregate and per-query retrieval metrics as Markdown."""
     settings = report["settings"]
@@ -579,25 +932,42 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- Created: `{report['created_at']}`",
         f"- Queries: `{report['queries_path']}`",
         f"- Retrieval mode: `{retrieval_mode}`",
-        f"- Chroma collection: `{settings['collection_name']}`",
-        f"- Embedding model: `{settings['embed_model']}`",
         f"- Preflight: `{report['preflight']['status']}`",
         "- Queries with agent or tool errors are marked as errors and excluded from all metric averages.",
         "- Undefined recall and R-precision for queries with no relevant dreams are shown as `n/a` and excluded from macro averages.",
         "- Maximum P@k is `min(number of relevant dreams, k) / k`.",
     ]
+    if retrieval_mode in {"agent", "embedding", "hybrid"}:
+        lines[5:5] = [
+            f"- Chroma collection: `{settings['collection_name']}`",
+            f"- Embedding model: `{settings['embed_model']}`",
+        ]
     if retrieval_mode == "agent":
+        results_per_agent_search = settings.get(
+            "results_per_agent_search",
+            settings.get("results_per_semantic_search"),
+        )
         lines.extend(
             [
                 f"- Agent chat model: `{settings['chat_model']}`",
                 f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
-                f"- Results per semantic search: `{settings['results_per_semantic_search']}`",
+                f"- Results per agent search: `{results_per_agent_search}`",
                 "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
+                "- Routing accuracy compares requested retrieval tools with each query's expected_strategy, independently of retrieval success.",
+                "- reasoned_filter means the agent requested non-topical deterministic tools without semantic or BM25 search; errors with no observable tool route are excluded.",
             ]
+        )
+    elif retrieval_mode == "embedding":
+        lines.append(
+            "- Each benchmark query is embedded verbatim and ranked directly by Chroma; no chat model or agent tools are used."
+        )
+    elif retrieval_mode == "bm25":
+        lines.append(
+            "- Each benchmark query is sent verbatim to the in-memory BM25 index; no embedding or chat model is used."
         )
     else:
         lines.append(
-            "- Each benchmark query is embedded verbatim and ranked directly by Chroma; no chat model or agent tools are used."
+            "- Each benchmark query is sent verbatim to both Chroma and BM25, then their rankings are fused with reciprocal-rank fusion; no chat model is used."
         )
     lines.extend(
         [
@@ -633,10 +1003,18 @@ def markdown_report(report: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
+                "## Agent routing accuracy",
+                "",
+                *_strategy_summary_table([("all", report["summary"])]),
+                "",
+                "### Routing accuracy by category",
+                "",
+                *_strategy_summary_table(report["category_summaries"].items()),
+                "",
                 "## Agent retrieval trace",
                 "",
-                "| query | generated tool calls |",
-                "|---|---|",
+                "| query | expected strategy | actual strategy | match | generated tool calls |",
+                "|---|---|---|---|---|",
             ]
         )
         for row in report["queries"]:
@@ -645,7 +1023,11 @@ def markdown_report(report: dict[str, Any]) -> str:
                 _format_tool_call(call) for call in row["tool_calls"]
             )
             escaped_calls = calls.replace("|", "\\|") or "none"
-            lines.append(f"| {query} | {escaped_calls} |")
+            lines.append(
+                f"| {query} | {row.get('expected_strategy') or 'n/a'} | "
+                f"{row.get('actual_strategy') or 'n/a'} | "
+                f"{_display(row.get('strategy_match'))} | {escaped_calls} |"
+            )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -665,7 +1047,7 @@ def _format_tool_call(call: dict[str, Any]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate agentic or embedding-only dream retrieval using labeled "
+            "Evaluate agentic, semantic, BM25, or fixed hybrid dream retrieval using labeled "
             "relevance judgments."
         )
     )
@@ -674,7 +1056,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--retrieval-mode",
         choices=RETRIEVAL_MODES,
         default="agent",
-        help="Use the dream agent (default) or direct query embeddings.",
+        help=(
+            "Use the dream agent (default), direct semantic embeddings, direct "
+            "BM25, or fixed semantic-plus-BM25 fusion."
+        ),
     )
     parser.add_argument(
         "--dreams-path",
@@ -709,7 +1094,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--top-k",
         type=int,
         default=10,
-        help="Maximum dreams returned by each semantic search call.",
+        help="Maximum dreams returned by each agent search call.",
     )
     parser.add_argument("--max-tool-calls", type=int, default=3)
     parser.add_argument("--max-chars-per-dream", type=int, default=2500)
