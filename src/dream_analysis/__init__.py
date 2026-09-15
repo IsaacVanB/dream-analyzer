@@ -12,6 +12,7 @@ from dream_analysis.agent import (
     ToolRequest,
 )
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
+from dream_analysis.bm25 import Bm25SearchResult, DreamBm25Index, tokenize_english
 from dream_analysis.characters import CharacterLookupService
 from dream_analysis.config import Settings
 from dream_analysis.dates import (
@@ -45,6 +46,7 @@ from dream_analysis.tools import (
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
+    DreamKeywordSearchTool,
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
@@ -54,6 +56,8 @@ from dream_analysis.tools import (
 __all__ = [
     "Dream",
     "DreamRagAgent",
+    "DreamBm25Index",
+    "DreamKeywordSearchTool",
     "DreamSearchTool",
     "DreamStatisticsTool",
     "DreamTagTool",
@@ -65,6 +69,7 @@ __all__ = [
     "CharacterContextTool",
     "CharacterMentionsTool",
     "CharacterDictionaryRepository",
+    "Bm25SearchResult",
     "DreamIndex",
     "DreamNotFoundError",
     "DreamRepository",
@@ -95,6 +100,7 @@ __all__ = [
     "AgentToolLimitError",
     "ToolExecution",
     "ToolRequest",
+    "tokenize_english",
     "validate_date_range",
     "CharacterLookupService",
     "write_json_atomic",

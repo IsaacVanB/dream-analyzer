@@ -4,12 +4,14 @@ import json
 import unittest
 from datetime import date
 
+from dream_analysis.bm25 import Bm25SearchResult
 from dream_analysis.models import Dream, SearchResult
 from dream_analysis.tools import (
     CharacterContextTool,
     CharacterMentionsTool,
     DreamByIdTool,
     DreamDateRangeTool,
+    DreamKeywordSearchTool,
     DreamSearchTool,
     DreamStatisticsTool,
     DreamTagTool,
@@ -170,6 +172,129 @@ class DreamSearchToolTests(unittest.TestCase):
             DreamSearchTool(FakeIndex([]), result_limit=21)
         with self.assertRaisesRegex(ValueError, "positive"):
             DreamSearchTool(FakeIndex([]), max_chars_per_dream=0)
+
+
+class FakeKeywordIndex:
+    def __init__(self, results: list[Bm25SearchResult]) -> None:
+        self.results = results
+        self.calls: list[tuple[str, int, date | None, date | None]] = []
+
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[Bm25SearchResult]:
+        self.calls.append((query, limit, start_date, end_date))
+        return self.results
+
+
+def keyword_result(text: str = "A green bicycle appeared.") -> Bm25SearchResult:
+    return Bm25SearchResult(
+        dream_id="dream-keyword-1",
+        date="1/2/2024",
+        document=text,
+        score=1.23456789,
+    )
+
+
+class DreamKeywordSearchToolTests(unittest.TestCase):
+    def test_schema_guides_keyword_selection_and_exposes_date_bounds(self) -> None:
+        tool = DreamKeywordSearchTool(FakeKeywordIndex([]))
+
+        function = tool.schema["function"]
+        parameters = function["parameters"]
+
+        self.assertEqual(function["name"], "search_dreams_by_keywords")
+        self.assertIn("content-bearing keywords", function["description"])
+        self.assertIn("semantic search", function["description"])
+        self.assertEqual(parameters["required"], ["query"])
+        self.assertEqual(
+            set(parameters["properties"]),
+            {"query", "start_date", "end_date"},
+        )
+        self.assertEqual(parameters["properties"]["start_date"]["format"], "date")
+        self.assertFalse(parameters["additionalProperties"])
+
+    def test_execute_returns_bounded_json_compatible_bm25_evidence(self) -> None:
+        index = FakeKeywordIndex([keyword_result("abcdefgh")])
+        tool = DreamKeywordSearchTool(
+            index,
+            result_limit=4,
+            max_chars_per_dream=4,
+        )
+
+        output = tool.execute({"query": "  green bicycle  "})
+
+        self.assertEqual(index.calls, [("green bicycle", 4, None, None)])
+        self.assertEqual(output["retrieval_method"], "bm25")
+        self.assertEqual(output["result_count"], 1)
+        self.assertEqual(output["dreams"][0]["retrieval_method"], "bm25")
+        self.assertEqual(output["dreams"][0]["score"], 1.234568)
+        self.assertEqual(output["dreams"][0]["text"], "abcd\n[TRUNCATED]")
+        self.assertTrue(output["dreams"][0]["truncated"])
+        json.dumps(output)
+
+    def test_report_data_preserves_full_text(self) -> None:
+        index = FakeKeywordIndex([keyword_result("abcdefgh")])
+        tool = DreamKeywordSearchTool(index, max_chars_per_dream=4)
+
+        bounded, report = tool.execute_with_report_data({"query": "bicycle"})
+
+        self.assertEqual(len(index.calls), 1)
+        self.assertEqual(bounded["dreams"][0]["text"], "abcd\n[TRUNCATED]")
+        self.assertEqual(report["dreams"][0]["text"], "abcdefgh")
+        self.assertFalse(report["dreams"][0]["truncated"])
+
+    def test_execute_passes_normalized_inclusive_date_bounds(self) -> None:
+        index = FakeKeywordIndex([keyword_result()])
+        tool = DreamKeywordSearchTool(index, result_limit=4)
+
+        output = tool.execute(
+            {
+                "query": "bicycle",
+                "start_date": "2024-02-01",
+                "end_date": "2024-02-29",
+            }
+        )
+
+        self.assertEqual(
+            index.calls,
+            [("bicycle", 4, date(2024, 2, 1), date(2024, 2, 29))],
+        )
+        self.assertEqual(output["start_date"], "2024-02-01")
+        self.assertEqual(output["end_date"], "2024-02-29")
+
+    def test_execute_rejects_invalid_queries_dates_and_extra_arguments(self) -> None:
+        tool = DreamKeywordSearchTool(FakeKeywordIndex([]))
+
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            tool.execute({"query": " "})
+        with self.assertRaisesRegex(ValueError, "unexpected arguments"):
+            tool.execute({"query": "house", "path": "/tmp"})
+        with self.assertRaisesRegex(ValueError, "Invalid start_date"):
+            tool.execute({"query": "house", "start_date": "last month"})
+        with self.assertRaisesRegex(ValueError, "start_date"):
+            tool.execute(
+                {
+                    "query": "house",
+                    "start_date": "2024-03-01",
+                    "end_date": "2024-02-01",
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "cannot exceed"):
+            tool.execute({"query": "x" * 501})
+
+    def test_constructor_bounds_result_and_context_sizes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "between 1 and 20"):
+            DreamKeywordSearchTool(FakeKeywordIndex([]), result_limit=21)
+        with self.assertRaisesRegex(ValueError, "positive"):
+            DreamKeywordSearchTool(
+                FakeKeywordIndex([]),
+                max_chars_per_dream=0,
+            )
 
 
 class FakeRepository:
