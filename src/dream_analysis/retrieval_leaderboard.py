@@ -75,6 +75,15 @@ def _compatibility(report: dict[str, Any]) -> tuple[str, str | None, str | None]
     return key, query_fingerprint, dream_fingerprint
 
 
+def _compatibility_key(
+    query_fingerprint: str | None,
+    dream_fingerprint: str | None,
+) -> str | None:
+    if query_fingerprint and dream_fingerprint:
+        return f"{query_fingerprint[:12]}-{dream_fingerprint[:12]}"
+    return None
+
+
 def _mean_latency(report: dict[str, Any]) -> float | None:
     summary_value = (report.get("summary") or {}).get("mean_retrieval_seconds")
     if isinstance(summary_value, (int, float)) and not isinstance(
@@ -199,7 +208,12 @@ def _category_best(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return winners
 
 
-def build_leaderboard(output_dir: Path | str) -> dict[str, Any]:
+def build_leaderboard(
+    output_dir: Path | str,
+    *,
+    current_query_fingerprint: str | None = None,
+    current_dream_fingerprint: str | None = None,
+) -> dict[str, Any]:
     """Read benchmark JSON files and return grouped leaderboard data."""
     directory = Path(output_dir)
     entries: list[dict[str, Any]] = []
@@ -218,17 +232,24 @@ def build_leaderboard(output_dir: Path | str) -> dict[str, Any]:
         entries.append(entry)
 
     entries.sort(key=lambda item: (str(item["created_at"]), item["source_json"]), reverse=True)
-    current_key = entries[0]["compatibility_key"] if entries else None
+    configured_current_key = _compatibility_key(
+        current_query_fingerprint,
+        current_dream_fingerprint,
+    )
+    current_key = configured_current_key or (
+        entries[0]["compatibility_key"] if entries else None
+    )
     grouped: dict[str, list[dict[str, Any]]] = {}
     for entry in entries:
         grouped.setdefault(entry["compatibility_key"], []).append(entry)
     ordered_keys = sorted(
         grouped,
-        key=lambda key: (
-            key != current_key,
-            str(grouped[key][0]["created_at"]),
-        ),
+        key=lambda key: str(grouped[key][0]["created_at"]),
+        reverse=True,
     )
+    if current_key in ordered_keys:
+        ordered_keys.remove(current_key)
+        ordered_keys.insert(0, current_key)
     groups = []
     for key in ordered_keys:
         group_entries = grouped[key]
@@ -296,13 +317,13 @@ def _group_markdown(group: dict[str, Any]) -> list[str]:
         f"- Query fingerprint: `{group['query_fingerprint'] or 'unknown'}`",
         f"- Dream corpus fingerprint: `{group['dream_fingerprint'] or 'unknown'}`",
         "",
-        "| Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Experiment | Mode | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for entry in group["experiments"]:
         lines.append(
             f"| {_experiment_link(entry)} | {_escape(entry['mode'])} | "
-            f"{_escape(entry['created_at'])} | {_display(entry['query_count'])} | "
+            f"{_display(entry['query_count'])} | "
             f"{_metric_cell(group, 'r_precision', entry)} | "
             f"{_metric_cell(group, 'recall_at_5', entry)} | "
             f"{_metric_cell(group, 'recall_at_10', entry)} | "
@@ -330,21 +351,29 @@ def markdown_leaderboard(leaderboard: dict[str, Any]) -> str:
         lines.extend(["No benchmark reports found.", ""])
         return "\n".join(lines).rstrip() + "\n"
 
-    current = next((group for group in groups if group.get("current")), groups[0])
+    current = next((group for group in groups if group.get("current")), None)
     lines.extend(["## Current best results", ""])
-    for metric, _, _ in METRICS:
-        winner = current.get("best", {}).get(metric)
-        if not winner:
-            continue
-        names = ", ".join(_escape(name) for name in winner["winner_names"])
-        lines.append(
-            f"- {winner['label']}: "
-            f"**{_display_metric(metric, winner['value'])}** — {names}"
+    if current is None:
+        lines.extend(
+            [
+                "No experiments match the currently configured query suite and dream corpus.",
+                "",
+            ]
         )
-    lines.extend(["", "## Current compatible experiments", ""])
-    lines.extend(_group_markdown(current))
+    else:
+        for metric, _, _ in METRICS:
+            winner = current.get("best", {}).get(metric)
+            if not winner:
+                continue
+            names = ", ".join(_escape(name) for name in winner["winner_names"])
+            lines.append(
+                f"- {winner['label']}: "
+                f"**{_display_metric(metric, winner['value'])}** — {names}"
+            )
+        lines.extend(["", "## Current compatible experiments", ""])
+        lines.extend(_group_markdown(current))
 
-    if current.get("category_best"):
+    if current is not None and current.get("category_best"):
         lines.extend(
             [
                 "",
@@ -380,10 +409,19 @@ def markdown_leaderboard(leaderboard: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_leaderboard(output_dir: Path | str) -> tuple[Path, Path]:
+def write_leaderboard(
+    output_dir: Path | str,
+    *,
+    current_query_fingerprint: str | None = None,
+    current_dream_fingerprint: str | None = None,
+) -> tuple[Path, Path]:
     """Rebuild and atomically write JSON and Markdown leaderboard artifacts."""
     directory = Path(output_dir)
-    leaderboard = build_leaderboard(directory)
+    leaderboard = build_leaderboard(
+        directory,
+        current_query_fingerprint=current_query_fingerprint,
+        current_dream_fingerprint=current_dream_fingerprint,
+    )
     json_path = directory / LEADERBOARD_JSON
     markdown_path = directory / LEADERBOARD_MARKDOWN
     write_json_atomic(json_path, leaderboard)

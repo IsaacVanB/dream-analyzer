@@ -1205,7 +1205,11 @@ def run_command(
 ) -> dict[str, Any]:
     """Run one benchmark or rebuild only the cross-experiment leaderboard."""
     if args.rebuild_leaderboard:
-        leaderboard_json, leaderboard_markdown = write_leaderboard(args.output_dir)
+        leaderboard_json, leaderboard_markdown = write_leaderboard(
+            args.output_dir,
+            current_query_fingerprint=file_sha256(args.queries_path),
+            current_dream_fingerprint=file_sha256(args.dreams_path),
+        )
         print(f"Wrote {leaderboard_json}")
         print(f"Wrote {leaderboard_markdown}")
         return {
@@ -1225,7 +1229,11 @@ def run_command(
     markdown_path = args.output_dir / f"{stem}.md"
     write_json_atomic(json_path, report)
     write_text_atomic(markdown_path, markdown_report(report))
-    leaderboard_json, leaderboard_markdown = write_leaderboard(args.output_dir)
+    leaderboard_json, leaderboard_markdown = write_leaderboard(
+        args.output_dir,
+        current_query_fingerprint=report["fingerprints"]["queries_sha256"],
+        current_dream_fingerprint=report["fingerprints"]["dreams_sha256"],
+    )
     print(f"Wrote {json_path}")
     print(f"Wrote {markdown_path}")
     print(f"Updated {leaderboard_json}")

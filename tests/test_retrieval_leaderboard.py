@@ -128,8 +128,40 @@ class RetrievalLeaderboardTests(unittest.TestCase):
         self.assertIn("**0.700**", markdown)
         self.assertIn("[hybrid experiment](<benchmark_hybrid.md>)", markdown)
         self.assertIn("Older or incompatible experiment groups", markdown)
+        self.assertNotIn("| Experiment | Mode | Created |", markdown)
         self.assertNotIn("P@5", markdown)
         self.assertNotIn("P@10", markdown)
+
+    def test_configured_current_suite_does_not_promote_incompatible_history(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            payload = report(
+                name="old suite",
+                created_at="2026-09-14T09:00:00-04:00",
+                query_fingerprint="o" * 64,
+                dream_fingerprint="d" * 64,
+                r_precision=0.99,
+                recall_at_5=0.99,
+                recall_at_10=0.99,
+                routing=0.99,
+                errors=0,
+                latency=0.01,
+                category_r_precision=0.99,
+            )
+            (root / "benchmark_old.json").write_text(
+                json.dumps(payload), encoding="utf-8"
+            )
+
+            leaderboard = build_leaderboard(
+                root,
+                current_query_fingerprint="n" * 64,
+                current_dream_fingerprint="d" * 64,
+            )
+            markdown = markdown_leaderboard(leaderboard)
+
+        self.assertFalse(any(group["current"] for group in leaderboard["groups"]))
+        self.assertIn("No experiments match the currently configured", markdown)
+        self.assertIn("Older or incompatible experiment groups", markdown)
 
     def test_writer_rebuilds_json_and_markdown_and_skips_bad_reports(self) -> None:
         with TemporaryDirectory() as temporary_directory:
