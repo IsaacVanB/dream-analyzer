@@ -437,15 +437,20 @@ def format_markdown_report(
             if "dreams" not in result:
                 continue
         has_distance = any("distance" in dream for dream in result.get("dreams", []))
+        has_score = any("score" in dream for dream in result.get("dreams", []))
         if has_distance:
             lines.extend(
                 ["| dream_id | date | distance |", "|---|---|---:|"]
             )
+        elif has_score:
+            lines.extend(["| dream_id | date | score |", "|---|---|---:|"])
         else:
             lines.extend(["| dream_id | date | tags |", "|---|---|---|"])
         for dream in result.get("dreams", []):
             if has_distance:
                 value = f"{float(dream['distance']):.4f}"
+            elif has_score:
+                value = f"{float(dream['score']):.4f}"
             else:
                 value = ", ".join(str(tag) for tag in dream.get("tags", []))
             lines.append(

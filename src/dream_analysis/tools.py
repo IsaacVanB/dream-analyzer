@@ -199,6 +199,7 @@ class DreamSearchTool:
             end_date=end_date,
         )
         common = {
+            "retrieval_method": "semantic",
             "query": query,
             "start_date": start_date.isoformat() if start_date else None,
             "end_date": end_date.isoformat() if end_date else None,
@@ -222,6 +223,7 @@ class DreamSearchTool:
         return {
             "dream_id": item.dream_id,
             "date": item.date,
+            "retrieval_method": "semantic",
             "distance": round(item.distance, 6),
             "text": text,
             "truncated": truncated,

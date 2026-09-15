@@ -1015,6 +1015,134 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertNotIn("DREAM_ID: dream-b", evidence)
         self.assertIn("Dreams omitted by synthesis limit: 2", evidence)
 
+    def test_hybrid_rrf_uses_ranks_not_native_score_scales(self) -> None:
+        keyword_result = {
+            "ok": True,
+            "retrieval_method": "bm25",
+            "dreams": [
+                {
+                    "dream_id": "keyword-first",
+                    "date": "1/1/2024",
+                    "retrieval_method": "bm25",
+                    "score": 0.000001,
+                    "text": "Keyword result.",
+                }
+            ],
+        }
+        semantic_result = {
+            "ok": True,
+            "retrieval_method": "semantic",
+            "dreams": [
+                {
+                    "dream_id": "semantic-second",
+                    "date": "1/2/2024",
+                    "retrieval_method": "semantic",
+                    "distance": -1000000,
+                    "text": "Semantic result.",
+                }
+            ],
+        }
+        executions = [
+            ToolExecution(
+                name="search_dreams_by_keywords",
+                arguments={"query": "bicycle"},
+                result=keyword_result,
+            ),
+            ToolExecution(
+                name="search_dreams",
+                arguments={"query": "riding"},
+                result=semantic_result,
+            ),
+        ]
+
+        ranked = DreamRagAgent.rank_dream_evidence(executions)
+
+        self.assertEqual(
+            [dream["dream_id"] for dream in ranked],
+            ["keyword-first", "semantic-second"],
+        )
+        self.assertEqual(ranked[0]["best_rank"], 1)
+        self.assertEqual(ranked[0]["retrieval_methods"], ["bm25"])
+        self.assertNotIn("best_distance", ranked[0])
+
+    def test_hybrid_rrf_promotes_shared_results_and_records_provenance(self) -> None:
+        def execution(
+            name: str,
+            method: str,
+            query: str,
+            dream_ids: list[str],
+        ) -> ToolExecution:
+            dreams = [
+                {
+                    "dream_id": dream_id,
+                    "date": "1/2/2024",
+                    "retrieval_method": method,
+                    "text": f"Full text for {dream_id}.",
+                }
+                for dream_id in dream_ids
+            ]
+            result = {
+                "ok": True,
+                "retrieval_method": method,
+                "dreams": dreams,
+            }
+            return ToolExecution(
+                name=name,
+                arguments={"query": query},
+                result=result,
+                report_result=result,
+            )
+
+        ranked = DreamRagAgent.rank_dream_evidence(
+            [
+                execution(
+                    "search_dreams_by_keywords",
+                    "bm25",
+                    "hidden room",
+                    ["keyword-only", "shared"],
+                ),
+                execution(
+                    "search_dreams",
+                    "semantic",
+                    "unexpected space",
+                    ["semantic-only", "shared"],
+                ),
+            ]
+        )
+
+        self.assertEqual(ranked[0]["dream_id"], "shared")
+        self.assertEqual(ranked[0]["searches"], [1, 2])
+        self.assertEqual(ranked[0]["retrieval_methods"], ["bm25", "semantic"])
+        self.assertEqual(
+            ranked[0]["sources"],
+            [
+                {"search": 1, "rank": 2, "retrieval_method": "bm25"},
+                {"search": 2, "rank": 2, "retrieval_method": "semantic"},
+            ],
+        )
+
+        evidence = DreamRagAgent._format_synthesis_evidence(
+            [
+                execution(
+                    "search_dreams_by_keywords",
+                    "bm25",
+                    "hidden room",
+                    ["keyword-only", "shared"],
+                ),
+                execution(
+                    "search_dreams",
+                    "semantic",
+                    "unexpected space",
+                    ["semantic-only", "shared"],
+                ),
+            ],
+            max_chars=4000,
+            max_dreams=1,
+        )
+        self.assertIn("BEST_RETRIEVAL_RANK: 2", evidence)
+        self.assertIn("RETRIEVAL_METHODS: bm25, semantic", evidence)
+        self.assertNotIn("BEST_DISTANCE", evidence)
+
     def test_synthesis_preserves_105_words_or_drops_lower_ranked_dreams(self) -> None:
         dreams = [
             {

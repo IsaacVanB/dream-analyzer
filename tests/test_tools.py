@@ -73,12 +73,14 @@ class DreamSearchToolTests(unittest.TestCase):
         output = tool.execute({"query": "  hidden room  "})
 
         self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+        self.assertEqual(output["retrieval_method"], "semantic")
         self.assertEqual(output["result_count"], 1)
         self.assertIsNone(output["start_date"])
         self.assertIsNone(output["end_date"])
         self.assertEqual(output["dreams"][0]["text"], "abcd\n[TRUNCATED]")
         self.assertTrue(output["dreams"][0]["truncated"])
         self.assertEqual(output["dreams"][0]["distance"], 0.123457)
+        self.assertEqual(output["dreams"][0]["retrieval_method"], "semantic")
         json.dumps(output)
 
     def test_execute_with_report_data_preserves_full_text(self) -> None:

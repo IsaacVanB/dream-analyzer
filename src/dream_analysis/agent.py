@@ -563,7 +563,7 @@ class DreamRagAgent:
         cls,
         executions: Sequence[ToolExecution],
     ) -> list[dict[str, Any]]:
-        """Rank unique dreams from agent tool calls using synthesis-time RRF."""
+        """Fuse ranked result lists without comparing retriever-native scores."""
         dreams: dict[str, dict[str, Any]] = {}
         ranked_searches: set[str] = set()
         first_seen = 0
@@ -586,25 +586,41 @@ class DreamRagAgent:
             full_result = execution.report_result or execution.result
             for rank, dream in enumerate(full_result.get("dreams", []) or [], start=1):
                 dream_id = str(dream.get("dream_id", "unknown"))
+                retrieval_method = cls._retrieval_method(
+                    execution,
+                    full_result,
+                    dream,
+                )
+                source = {
+                    "search": index,
+                    "rank": rank,
+                    "retrieval_method": retrieval_method,
+                }
                 if dream_id not in dreams:
                     first_seen += 1
                     dreams[dream_id] = {
                         "dream_id": dream_id,
                         "date": dream.get("date", "unknown"),
-                        "best_distance": cls._numeric_distance(
-                            dream.get("distance")
-                        ),
                         "text": str(dream.get("text", "")),
                         "searches": [index],
+                        "retrieval_methods": [retrieval_method],
+                        "sources": [source],
+                        "best_rank": rank,
                         "rrf_score": 0.0,
                         "first_seen": first_seen,
                     }
                 else:
                     dreams[dream_id]["searches"].append(index)
-                    distance = cls._numeric_distance(dream.get("distance"))
-                    dreams[dream_id]["best_distance"] = min(
-                        dreams[dream_id]["best_distance"], distance
+                    dreams[dream_id]["sources"].append(source)
+                    dreams[dream_id]["best_rank"] = min(
+                        dreams[dream_id]["best_rank"], rank
                     )
+                    if retrieval_method not in dreams[dream_id][
+                        "retrieval_methods"
+                    ]:
+                        dreams[dream_id]["retrieval_methods"].append(
+                            retrieval_method
+                        )
                 dreams[dream_id]["rrf_score"] += 1.0 / (
                     cls.reciprocal_rank_constant + rank
                 )
@@ -613,10 +629,29 @@ class DreamRagAgent:
             dreams.values(),
             key=lambda dream: (
                 -dream["rrf_score"],
-                dream["best_distance"],
+                dream["best_rank"],
                 dream["first_seen"],
             ),
         )
+
+    @staticmethod
+    def _retrieval_method(
+        execution: ToolExecution,
+        result: Mapping[str, Any],
+        dream: Mapping[str, Any],
+    ) -> str:
+        """Return explicit provenance, with compatibility for older results."""
+        for value in (
+            dream.get("retrieval_method"),
+            result.get("retrieval_method"),
+        ):
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        if "distance" in dream:
+            return "semantic"
+        if "score" in dream:
+            return "bm25"
+        return execution.name
 
     @staticmethod
     def _format_synthesis_evidence(
@@ -746,8 +781,6 @@ class DreamRagAgent:
         def build_packet() -> str:
             blocks = []
             for (dream_id, dream), text in zip(selected, texts):
-                distance = dream["best_distance"]
-                distance_text = "unknown" if distance == float("inf") else distance
                 truncated = len(text) < len(dream["text"])
                 if truncated:
                     text = f"{text}\n[TRUNCATED FOR SYNTHESIS]"
@@ -755,7 +788,9 @@ class DreamRagAgent:
                     f"DREAM_ID: {dream_id}\n"
                     f"DATE: {dream['date']}\n"
                     f"RRF_SCORE: {dream['rrf_score']:.6f}\n"
-                    f"BEST_DISTANCE: {distance_text}\n"
+                    f"BEST_RETRIEVAL_RANK: {dream['best_rank']}\n"
+                    "RETRIEVAL_METHODS: "
+                    f"{', '.join(dream['retrieval_methods'])}\n"
                     "RETRIEVED_BY_SEARCHES: "
                     f"{', '.join(str(value) for value in dream['searches'])}\n"
                     f"TEXT:\n{text}"
@@ -808,13 +843,6 @@ class DreamRagAgent:
             texts[index] = best
 
         return build_packet()
-
-    @staticmethod
-    def _numeric_distance(value: Any) -> float:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return float("inf")
 
     @staticmethod
     def _first_words(text: str, count: int) -> str:

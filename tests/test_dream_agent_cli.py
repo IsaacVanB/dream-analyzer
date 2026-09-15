@@ -241,6 +241,44 @@ class DreamAgentCliTests(unittest.TestCase):
         self.assertIn("Retrieved by searches: `1, 2`", report)
         self.assertEqual(report.count("A hidden room.\nThen I woke up."), 1)
 
+    def test_markdown_renders_keyword_scores_without_treating_them_as_tags(self) -> None:
+        result = {
+            "ok": True,
+            "retrieval_method": "bm25",
+            "query": "green bicycle",
+            "result_count": 1,
+            "dreams": [
+                {
+                    "dream_id": "keyword-dream",
+                    "date": "1/2/2024",
+                    "retrieval_method": "bm25",
+                    "score": 1.25,
+                    "text": "A green bicycle.",
+                    "truncated": False,
+                }
+            ],
+        }
+        response = AgentResponse(
+            answer="A bicycle appeared.",
+            tool_executions=(
+                ToolExecution(
+                    name="search_dreams_by_keywords",
+                    arguments={"query": "green bicycle"},
+                    result=result,
+                    report_result=result,
+                ),
+            ),
+        )
+
+        report = dream_agent.format_markdown_report(
+            "Did I mention a green bicycle?",
+            response,
+            settings={},
+        )
+
+        self.assertIn("| dream_id | date | score |", report)
+        self.assertIn("| keyword-dream | 1/2/2024 | 1.2500 |", report)
+
     def test_markdown_renders_full_analytical_results_and_warnings(self) -> None:
         report = dream_agent.format_markdown_report(
             "How many dreams were recorded?",

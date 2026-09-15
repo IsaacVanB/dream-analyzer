@@ -458,6 +458,7 @@ def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
         "arguments": dict(execution.arguments),
         "ok": bool(execution.result.get("ok")),
         "cached": execution.cached,
+        "retrieval_method": result.get("retrieval_method"),
         "result_count": result.get("result_count"),
         "scope_correction": result.get("scope_correction"),
         "semantic_reranked": bool(result.get("semantic_reranked")),
