@@ -28,7 +28,7 @@ The project is designed around a simple goal: turn a large, long-running journal
 - Retrieval and local-model comparison utilities
 - Reusable Python services separated from CLI orchestration
 
-A synthetic journal with 151 dreams from 2022–2026 is included for testing and demonstration.
+A synthetic journal with 176 dreams from 2022–2026 is included for testing and demonstration.
 
 ## Setup
 
