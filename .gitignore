@@ -5,6 +5,9 @@ outputs/*
 !outputs/plots/
 outputs/plots/*
 !outputs/plots/tags_by_month_normalized.png
+!outputs/retrieval_evaluations/
+outputs/retrieval_evaluations/*
+!outputs/retrieval_evaluations/leaderboard.md
 data/chroma_db
 .codex
 __pycache__/
