@@ -128,7 +128,7 @@ class RetrievalLeaderboardTests(unittest.TestCase):
         self.assertIn("**0.700**", markdown)
         self.assertIn("[hybrid experiment](<benchmark_hybrid.md>)", markdown)
         self.assertIn("Older or incompatible experiment groups", markdown)
-        self.assertNotIn("| Experiment | Mode | Created |", markdown)
+        self.assertIn("| Experiment | Mode | Created |", markdown)
         self.assertNotIn("P@5", markdown)
         self.assertNotIn("P@10", markdown)
 

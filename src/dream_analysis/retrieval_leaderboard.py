@@ -317,13 +317,13 @@ def _group_markdown(group: dict[str, Any]) -> list[str]:
         f"- Query fingerprint: `{group['query_fingerprint'] or 'unknown'}`",
         f"- Dream corpus fingerprint: `{group['dream_fingerprint'] or 'unknown'}`",
         "",
-        "| Experiment | Mode | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for entry in group["experiments"]:
         lines.append(
             f"| {_experiment_link(entry)} | {_escape(entry['mode'])} | "
-            f"{_display(entry['query_count'])} | "
+            f"{_escape(entry['created_at'])} | {_display(entry['query_count'])} | "
             f"{_metric_cell(group, 'r_precision', entry)} | "
             f"{_metric_cell(group, 'recall_at_5', entry)} | "
             f"{_metric_cell(group, 'recall_at_10', entry)} | "
