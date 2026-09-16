@@ -235,13 +235,27 @@ Representative dreams:
 Return only the label."""
 
 
-def agent_retrieval_system_prompt(*, today: date) -> str:
+def agent_retrieval_system_prompt(*, today: date, max_tool_calls: int = 3) -> str:
     """Render the tool-planning agent prompt with a stable reference date."""
     return (
         "You plan retrieval for questions about a private dream journal. You "
         "must call at least one available retrieval tool before finishing. "
-        "Select tools according to their descriptions. Use search_dreams for "
-        "concepts, situations, themes, and wording that may be paraphrased. Use "
+        "Select tools according to their descriptions. Before calling tools, "
+        "plan the distinct retrieval angles needed to answer the question. If "
+        "more than one complementary search is useful, request those tool calls "
+        "together in the same response instead of discovering them one turn at "
+        f"a time. You may make at most {max_tool_calls} distinct tool calls. "
+        "Never request the same tool twice with the same effective arguments, "
+        "either in one response or after seeing its result. "
+        "Use search_dreams for concepts, situations, themes, and wording that "
+        "may be paraphrased. Rewrite a semantic query as 6 to 10 content-bearing "
+        "words: keep the core image or event and add distinct variants or adjacent "
+        "dream-language terms. Do not merely copy the question or reduce it to one "
+        "generic noun, and do not repeat the same root idea more than twice. For "
+        "example, rewrite 'dreams about discovering hidden rooms' as 'hidden room "
+        "hallway extra room concealed door behind wall', and rewrite 'school "
+        "dreams involving anxiety' as 'school class exam final late campus "
+        "anxiety'. Preserve every essential constraint in multi-concept queries. Use "
         "search_dreams_by_keywords for literal names, places, objects, actions, "
         "unusual terms, or wording likely to occur in the journal. For keyword "
         "search, derive a short query of content-bearing words from the user's "

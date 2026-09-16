@@ -940,11 +940,11 @@ class DreamRagAgentTests(unittest.TestCase):
             ["exam"],
         )
 
-    def test_duplicate_search_reuses_cached_result_then_forces_answer(self) -> None:
+    def test_duplicate_search_is_rejected_then_forces_answer(self) -> None:
         agent, _, index = self.make_agent(
             [
                 tool_response("search_dreams", {"query": "hidden room"}),
-                tool_response("search_dreams", {"query": "hidden room"}),
+                tool_response("search_dreams", {"query": " HIDDEN   room "}),
                 final_response("The retrieved dream contains a hidden room."),
             ]
         )
@@ -952,13 +952,17 @@ class DreamRagAgentTests(unittest.TestCase):
         response = agent.answer("What hidden rooms recur?", max_tool_calls=2)
 
         self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+        self.assertEqual(len(response.tool_executions), 1)
         self.assertFalse(response.tool_executions[0].cached)
-        self.assertTrue(response.tool_executions[1].cached)
-        self.assertTrue(response.tool_executions[1].result["cached"])
+        self.assertEqual(len(response.unexecuted_tool_calls), 1)
+        self.assertEqual(
+            response.unexecuted_tool_calls[0].arguments["query"],
+            " HIDDEN   room ",
+        )
         self.assertTrue(response.forced_synthesis)
         self.assertIn(
-            "SEARCH 2 [cached duplicate]",
-            response.turn_traces[-1].request_prompt,
+            "repeated tool call was rejected",
+            response.forced_synthesis_reason,
         )
 
     def test_empty_answer_gets_one_forced_synthesis_retry(self) -> None:
@@ -1291,6 +1295,11 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn("Use search_dreams_by_keywords for literal names", prompt)
         self.assertIn("do not call both automatically", prompt)
         self.assertIn("Formulate each query for its retriever", prompt)
+        self.assertIn("6 to 10 content-bearing words", prompt)
+        self.assertIn("hidden room hallway extra room concealed door", prompt)
+        self.assertIn("request those tool calls together", prompt)
+        self.assertIn("at most 3 distinct tool calls", prompt)
+        self.assertIn("Never request the same tool twice", prompt)
         self.assertIn("do not invent a date range", prompt)
         self.assertIn("SEARCH_COMPLETE", prompt)
         self.assertIn("according to their descriptions", prompt)

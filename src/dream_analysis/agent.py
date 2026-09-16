@@ -192,7 +192,10 @@ class DreamRagAgent:
             raise ValueError("max_synthesis_dreams must be between 1 and 20")
 
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._system_prompt()},
+            {
+                "role": "system",
+                "content": self._system_prompt(max_tool_calls=max_tool_calls),
+            },
             {"role": "user", "content": question.strip()},
         ]
         executions: list[ToolExecution] = []
@@ -298,42 +301,36 @@ class DreamRagAgent:
                 continue
 
             remaining_calls = max_tool_calls - len(executions)
-            requested_calls = tool_calls[:remaining_calls]
-            accepted_calls = [
-                self._enforce_date_scope(call, question=question.strip())
-                for call in requested_calls
-            ]
-            overflow_calls = tool_calls[remaining_calls:]
-            for requested_call, call in zip(requested_calls, accepted_calls):
+            accepted_calls: list[tuple[OllamaToolCall, OllamaToolCall]] = []
+            duplicate_calls: list[tuple[OllamaToolCall, OllamaToolCall]] = []
+            overflow_calls: list[OllamaToolCall] = []
+            batch_keys: set[str] = set()
+            for requested_call in tool_calls:
+                call = self._enforce_date_scope(
+                    requested_call,
+                    question=question.strip(),
+                )
                 cache_key = self._tool_cache_key(call)
-                cached = cache_key in cached_results
-                if cached:
-                    cached_result, cached_report_result = cached_results[cache_key]
-                    result = {
-                        **cached_result,
-                        "cached": True,
-                        "note": (
-                            "Duplicate tool call; reused the previous result without "
-                            "searching again."
-                        ),
-                    }
-                    report_result = {
-                        **cached_report_result,
-                        "cached": True,
-                        "note": result["note"],
-                    }
+                if cache_key in cached_results or cache_key in batch_keys:
+                    duplicate_calls.append((requested_call, call))
+                elif len(accepted_calls) < remaining_calls:
+                    accepted_calls.append((requested_call, call))
+                    batch_keys.add(cache_key)
                 else:
-                    result, report_result = self._execute(
-                        call,
-                        rerank_query=self._rerank_query(
-                            question=question.strip(),
-                            executions=executions,
-                        ),
-                    )
-                    cached_results[cache_key] = (
-                        dict(result),
-                        dict(report_result),
-                    )
+                    overflow_calls.append(requested_call)
+
+            for requested_call, call in accepted_calls:
+                result, report_result = self._execute(
+                    call,
+                    rerank_query=self._rerank_query(
+                        question=question.strip(),
+                        executions=executions,
+                    ),
+                )
+                cached_results[self._tool_cache_key(call)] = (
+                    dict(result),
+                    dict(report_result),
+                )
                 if dict(requested_call.arguments) != dict(call.arguments):
                     correction = {
                         "type": "removed_invented_date_bounds",
@@ -354,7 +351,7 @@ class DreamRagAgent:
                         name=call.name,
                         arguments=dict(call.arguments),
                         result=result,
-                        cached=cached,
+                        cached=False,
                         report_result=report_result,
                     )
                 )
@@ -363,6 +360,31 @@ class DreamRagAgent:
                         "role": "tool",
                         "tool_name": call.name,
                         "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+
+            for requested_call, call in duplicate_calls:
+                request = ToolRequest(
+                    name=requested_call.name,
+                    arguments=dict(requested_call.arguments),
+                )
+                unexecuted_calls.append(request)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_name": requested_call.name,
+                        "content": json.dumps(
+                            {
+                                "ok": False,
+                                "error": (
+                                    "Duplicate tool call was not executed. Its "
+                                    "effective arguments match a completed or "
+                                    "already-requested call."
+                                ),
+                                "effective_arguments": dict(call.arguments),
+                            },
+                            ensure_ascii=False,
+                        ),
                     }
                 )
 
@@ -388,7 +410,20 @@ class DreamRagAgent:
                     }
                 )
 
-            if overflow_calls or len(executions) >= max_tool_calls:
+            if duplicate_calls:
+                if not synthesize:
+                    return AgentResponse(
+                        answer="",
+                        tool_executions=tuple(executions),
+                        assistant_messages=tuple(assistant_messages),
+                        turn_traces=tuple(turn_traces),
+                        unexecuted_tool_calls=tuple(unexecuted_calls),
+                    )
+                force_reason = (
+                    "A repeated tool call was rejected. Synthesize from the "
+                    "distinct searches already completed."
+                )
+            elif overflow_calls or len(executions) >= max_tool_calls:
                 if not synthesize:
                     return AgentResponse(
                         answer="",
@@ -506,12 +541,17 @@ class DreamRagAgent:
         names = ", ".join(tool.name for tool in self.tools)
         return agent_tool_reminder(names)
 
-    @staticmethod
-    def _tool_cache_key(call: OllamaToolCall) -> str:
+    @classmethod
+    def _tool_cache_key(cls, call: OllamaToolCall) -> str:
+        arguments = dict(call.arguments)
+        if call.name in cls.date_scoped_search_tools:
+            query = arguments.get("query")
+            if isinstance(query, str):
+                arguments["query"] = " ".join(query.split()).casefold()
         return json.dumps(
             {
                 "name": call.name,
-                "arguments": dict(call.arguments),
+                "arguments": arguments,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -856,5 +896,8 @@ class DreamRagAgent:
         return text[: matches[count - 1].end()].rstrip()
 
     @staticmethod
-    def _system_prompt() -> str:
-        return agent_retrieval_system_prompt(today=date.today())
+    def _system_prompt(*, max_tool_calls: int = 3) -> str:
+        return agent_retrieval_system_prompt(
+            today=date.today(),
+            max_tool_calls=max_tool_calls,
+        )
