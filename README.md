@@ -1,5 +1,5 @@
 [![CI](https://github.com/IsaacVanB/dream-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/IsaacVanB/dream-analyzer/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.12-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-red)
 
 # Dream Journal Analyzer
