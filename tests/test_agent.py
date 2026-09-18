@@ -1279,7 +1279,7 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn("Distinct searches used for ranking: 1", evidence)
         self.assertIn("TRUNCATED", evidence)
 
-    def test_synthesis_uses_rrf_and_limits_unique_dreams(self) -> None:
+    def test_synthesis_limits_unique_dreams_after_correlated_fusion(self) -> None:
         def execution(query: str, dream_ids: list[str]) -> ToolExecution:
             dreams = [
                 {
@@ -1307,8 +1307,8 @@ class DreamRagAgentTests(unittest.TestCase):
             max_dreams=1,
         )
 
-        self.assertIn("DREAM_ID: dream-shared", evidence)
-        self.assertNotIn("DREAM_ID: dream-a", evidence)
+        self.assertIn("DREAM_ID: dream-a", evidence)
+        self.assertNotIn("DREAM_ID: dream-shared", evidence)
         self.assertNotIn("DREAM_ID: dream-b", evidence)
         self.assertIn("Dreams omitted by synthesis limit: 2", evidence)
 
@@ -1361,6 +1361,68 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertEqual(ranked[0]["best_rank"], 1)
         self.assertEqual(ranked[0]["retrieval_methods"], ["bm25"])
         self.assertNotIn("best_distance", ranked[0])
+
+    def test_rrf_uses_only_best_vote_from_each_correlated_family(self) -> None:
+        def execution(
+            name: str,
+            method: str,
+            query: str,
+            dream_ids: list[str],
+        ) -> ToolExecution:
+            result = {
+                "ok": True,
+                "retrieval_method": method,
+                "dreams": [
+                    {
+                        "dream_id": dream_id,
+                        "date": "1/2/2024",
+                        "retrieval_method": method,
+                        "text": f"Full text for {dream_id}.",
+                    }
+                    for dream_id in dream_ids
+                ],
+            }
+            return ToolExecution(
+                name=name,
+                arguments={"query": query},
+                result=result,
+                report_result=result,
+            )
+
+        cases = (
+            ("semantic", "search_dreams"),
+            ("bm25", "search_dreams_by_keywords"),
+        )
+        for method, tool_name in cases:
+            with self.subTest(method=method):
+                ranked = DreamRagAgent.rank_dream_evidence(
+                    [
+                        execution(
+                            tool_name,
+                            method,
+                            "first query",
+                            ["unique-first", "shared"],
+                        ),
+                        execution(
+                            tool_name,
+                            method,
+                            "second query",
+                            ["shared", "unique-second"],
+                        ),
+                    ]
+                )
+                by_id = {dream["dream_id"]: dream for dream in ranked}
+
+                self.assertEqual(ranked[0]["dream_id"], "unique-first")
+                self.assertAlmostEqual(
+                    by_id["shared"]["rrf_score"],
+                    1.0 / (DreamRagAgent.reciprocal_rank_constant + 1),
+                )
+                self.assertEqual(len(by_id["shared"]["sources"]), 2)
+                self.assertNotIn(
+                    "correlated_rrf_contributions",
+                    by_id["shared"],
+                )
 
     def test_hybrid_rrf_promotes_shared_results_and_records_provenance(self) -> None:
         def execution(
@@ -1416,6 +1478,10 @@ class DreamRagAgentTests(unittest.TestCase):
                 {"search": 1, "rank": 2, "retrieval_method": "bm25"},
                 {"search": 2, "rank": 2, "retrieval_method": "semantic"},
             ],
+        )
+        self.assertAlmostEqual(
+            ranked[0]["rrf_score"],
+            2.0 / (DreamRagAgent.reciprocal_rank_constant + 2),
         )
 
         evidence = DreamRagAgent._format_synthesis_evidence(

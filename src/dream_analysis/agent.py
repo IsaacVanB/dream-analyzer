@@ -118,6 +118,7 @@ class DreamRagAgent:
 
     minimum_synthesis_words = 105
     reciprocal_rank_constant = 60
+    correlated_retrieval_families = frozenset({"semantic", "bm25"})
     semantic_search_tool = "search_dreams"
     semantic_query_overlap_threshold = 0.6
     semantic_query_stopwords = frozenset(
@@ -756,7 +757,7 @@ class DreamRagAgent:
         cls,
         executions: Sequence[ToolExecution],
     ) -> list[dict[str, Any]]:
-        """Fuse ranked result lists without comparing retriever-native scores."""
+        """Fuse ranks while capping repeated votes from correlated retrievers."""
         dreams: dict[str, dict[str, Any]] = {}
         ranked_searches: set[str] = set()
         first_seen = 0
@@ -800,6 +801,7 @@ class DreamRagAgent:
                         "sources": [source],
                         "best_rank": rank,
                         "rrf_score": 0.0,
+                        "correlated_rrf_contributions": {},
                         "first_seen": first_seen,
                     }
                 else:
@@ -814,11 +816,21 @@ class DreamRagAgent:
                         dreams[dream_id]["retrieval_methods"].append(
                             retrieval_method
                         )
-                dreams[dream_id]["rrf_score"] += 1.0 / (
-                    cls.reciprocal_rank_constant + rank
-                )
+                contribution = 1.0 / (cls.reciprocal_rank_constant + rank)
+                if retrieval_method in cls.correlated_retrieval_families:
+                    previous = dreams[dream_id]["correlated_rrf_contributions"].get(
+                        retrieval_method,
+                        0.0,
+                    )
+                    if contribution > previous:
+                        dreams[dream_id]["rrf_score"] += contribution - previous
+                        dreams[dream_id]["correlated_rrf_contributions"][
+                            retrieval_method
+                        ] = contribution
+                else:
+                    dreams[dream_id]["rrf_score"] += contribution
 
-        return sorted(
+        ranked = sorted(
             dreams.values(),
             key=lambda dream: (
                 -dream["rrf_score"],
@@ -826,6 +838,9 @@ class DreamRagAgent:
                 dream["first_seen"],
             ),
         )
+        for dream in ranked:
+            dream.pop("correlated_rrf_contributions", None)
+        return ranked
 
     @staticmethod
     def _retrieval_method(

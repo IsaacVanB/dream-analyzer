@@ -348,7 +348,7 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(rows[0]["bm25_dream_ids"], ["bm25-only", "shared"])
         self.assertEqual(rows[0]["r_precision"], 1.0)
 
-    def test_evaluator_uses_agent_and_fuses_its_tool_results(self) -> None:
+    def test_evaluator_uses_agent_and_fuses_independent_tool_results(self) -> None:
         class FakeAgent:
             def __init__(self):
                 self.calls = []
@@ -364,16 +364,21 @@ class RetrievalMetricTests(unittest.TestCase):
                 }
                 second = {
                     "ok": True,
+                    "retrieval_method": "bm25",
                     "dreams": [
-                        {"dream_id": "b", "distance": 0.1},
-                        {"dream_id": "shared", "distance": 0.2},
+                        {"dream_id": "b", "score": 2.0},
+                        {"dream_id": "shared", "score": 1.0},
                     ],
                 }
                 return AgentResponse(
                     answer="",
                     tool_executions=(
                         ToolExecution("search_dreams", {"query": "one"}, first),
-                        ToolExecution("search_dreams", {"query": "two"}, second),
+                        ToolExecution(
+                            "search_dreams_by_keywords",
+                            {"query": "two"},
+                            second,
+                        ),
                     ),
                 )
 
@@ -386,7 +391,7 @@ class RetrievalMetricTests(unittest.TestCase):
                     {
                         "query": "original query",
                         "category": "test",
-                        "expected_strategy": "semantic",
+                        "expected_strategy": "hybrid",
                         "relevant_dream_ids": ["shared"],
                     },
                 ],
@@ -402,8 +407,8 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "ok")
         self.assertEqual(rows[0]["retrieved_dream_ids"][0], "shared")
         self.assertEqual(rows[0]["r_precision"], 1.0)
-        self.assertEqual(rows[0]["expected_strategy"], "semantic")
-        self.assertEqual(rows[0]["actual_strategy"], "semantic")
+        self.assertEqual(rows[0]["expected_strategy"], "hybrid")
+        self.assertEqual(rows[0]["actual_strategy"], "hybrid")
         self.assertTrue(rows[0]["strategy_match"])
         self.assertEqual(rows[0]["tool_calls"][0]["arguments"], {"query": "one"})
         self.assertIn("[1/1] Starting: original query", output.getvalue())
