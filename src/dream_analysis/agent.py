@@ -21,7 +21,7 @@ from dream_analysis.prompts import (
     agent_tool_budget_reason,
     agent_tool_reminder,
 )
-from dream_analysis.tools import AgentTool
+from dream_analysis.tool_protocols import AgentTool
 
 
 class AgentSearchRequiredError(RuntimeError):
