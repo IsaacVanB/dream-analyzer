@@ -118,6 +118,28 @@ class DreamRagAgent:
 
     minimum_synthesis_words = 105
     reciprocal_rank_constant = 60
+    semantic_search_tool = "search_dreams"
+    semantic_query_overlap_threshold = 0.6
+    semantic_query_stopwords = frozenset(
+        {
+            "a",
+            "about",
+            "an",
+            "and",
+            "are",
+            "dream",
+            "dreams",
+            "for",
+            "from",
+            "in",
+            "involving",
+            "of",
+            "or",
+            "the",
+            "to",
+            "with",
+        }
+    )
     date_scoped_search_tools = frozenset(
         {"search_dreams", "search_dreams_by_keywords"}
     )
@@ -207,6 +229,7 @@ class DreamRagAgent:
             tuple[dict[str, Any], dict[str, Any]],
         ] = {}
         tool_reminder_sent = False
+        tool_results_exposed = False
         force_reason: str | None = None
 
         while True:
@@ -303,8 +326,12 @@ class DreamRagAgent:
             remaining_calls = max_tool_calls - len(executions)
             accepted_calls: list[tuple[OllamaToolCall, OllamaToolCall]] = []
             duplicate_calls: list[tuple[OllamaToolCall, OllamaToolCall]] = []
+            redundant_semantic_calls: list[
+                tuple[OllamaToolCall, OllamaToolCall, str]
+            ] = []
             overflow_calls: list[OllamaToolCall] = []
             batch_keys: set[str] = set()
+            batch_semantic_calls: list[OllamaToolCall] = []
             for requested_call in tool_calls:
                 call = self._enforce_date_scope(
                     requested_call,
@@ -313,12 +340,43 @@ class DreamRagAgent:
                 cache_key = self._tool_cache_key(call)
                 if cache_key in cached_results or cache_key in batch_keys:
                     duplicate_calls.append((requested_call, call))
+                elif call.name == self.semantic_search_tool:
+                    query = call.arguments.get("query")
+                    if tool_results_exposed:
+                        redundant_semantic_calls.append(
+                            (
+                                requested_call,
+                                call,
+                                "Semantic searches must be planned before any "
+                                "tool results are exposed.",
+                            )
+                        )
+                    elif isinstance(query, str) and any(
+                        self._semantic_calls_are_redundant(call, previous)
+                        for previous in batch_semantic_calls
+                    ):
+                        redundant_semantic_calls.append(
+                            (
+                                requested_call,
+                                call,
+                                "The semantic query substantially overlaps an "
+                                "already-requested semantic query.",
+                            )
+                        )
+                    elif len(accepted_calls) < remaining_calls:
+                        accepted_calls.append((requested_call, call))
+                        batch_keys.add(cache_key)
+                        if isinstance(query, str):
+                            batch_semantic_calls.append(call)
+                    else:
+                        overflow_calls.append(requested_call)
                 elif len(accepted_calls) < remaining_calls:
                     accepted_calls.append((requested_call, call))
                     batch_keys.add(cache_key)
                 else:
                     overflow_calls.append(requested_call)
 
+            batch_exposed_results = False
             for requested_call, call in accepted_calls:
                 result, report_result = self._execute(
                     call,
@@ -362,6 +420,10 @@ class DreamRagAgent:
                         "content": json.dumps(result, ensure_ascii=False),
                     }
                 )
+                if result.get("ok"):
+                    batch_exposed_results = True
+            if batch_exposed_results:
+                tool_results_exposed = True
 
             for requested_call, call in duplicate_calls:
                 request = ToolRequest(
@@ -380,6 +442,30 @@ class DreamRagAgent:
                                     "Duplicate tool call was not executed. Its "
                                     "effective arguments match a completed or "
                                     "already-requested call."
+                                ),
+                                "effective_arguments": dict(call.arguments),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                )
+
+            for requested_call, call, reason in redundant_semantic_calls:
+                request = ToolRequest(
+                    name=requested_call.name,
+                    arguments=dict(requested_call.arguments),
+                )
+                unexecuted_calls.append(request)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_name": requested_call.name,
+                        "content": json.dumps(
+                            {
+                                "ok": False,
+                                "error": (
+                                    "Redundant semantic search was not executed. "
+                                    + reason
                                 ),
                                 "effective_arguments": dict(call.arguments),
                             },
@@ -410,7 +496,7 @@ class DreamRagAgent:
                     }
                 )
 
-            if duplicate_calls:
+            if duplicate_calls or redundant_semantic_calls:
                 if not synthesize:
                     return AgentResponse(
                         answer="",
@@ -419,10 +505,16 @@ class DreamRagAgent:
                         turn_traces=tuple(turn_traces),
                         unexecuted_tool_calls=tuple(unexecuted_calls),
                     )
-                force_reason = (
-                    "A repeated tool call was rejected. Synthesize from the "
-                    "distinct searches already completed."
-                )
+                if redundant_semantic_calls:
+                    force_reason = (
+                        "A redundant semantic search was rejected. Synthesize "
+                        "from the distinct searches already completed."
+                    )
+                else:
+                    force_reason = (
+                        "A repeated tool call was rejected. Synthesize from the "
+                        "distinct searches already completed."
+                    )
             elif overflow_calls or len(executions) >= max_tool_calls:
                 if not synthesize:
                     return AgentResponse(
@@ -557,6 +649,63 @@ class DreamRagAgent:
             sort_keys=True,
             default=str,
         )
+
+    @classmethod
+    def _semantic_queries_are_redundant(cls, first: str, second: str) -> bool:
+        first_terms = cls._semantic_query_terms(first)
+        second_terms = cls._semantic_query_terms(second)
+        if not first_terms or not second_terms:
+            return False
+        overlap = len(first_terms & second_terms) / min(
+            len(first_terms), len(second_terms)
+        )
+        return overlap >= cls.semantic_query_overlap_threshold
+
+    @classmethod
+    def _semantic_calls_are_redundant(
+        cls,
+        first: OllamaToolCall,
+        second: OllamaToolCall,
+    ) -> bool:
+        first_scope = (
+            first.arguments.get("start_date"),
+            first.arguments.get("end_date"),
+        )
+        second_scope = (
+            second.arguments.get("start_date"),
+            second.arguments.get("end_date"),
+        )
+        if first_scope != second_scope:
+            return False
+        first_query = first.arguments.get("query")
+        second_query = second.arguments.get("query")
+        return (
+            isinstance(first_query, str)
+            and isinstance(second_query, str)
+            and cls._semantic_queries_are_redundant(first_query, second_query)
+        )
+
+    @classmethod
+    def _semantic_query_terms(cls, query: str) -> frozenset[str]:
+        terms: set[str] = set()
+        for token in re.findall(r"[a-z0-9]+", query.casefold()):
+            if token in cls.semantic_query_stopwords:
+                continue
+            if len(token) > 5 and token.endswith("ingly"):
+                token = token[:-5]
+            elif len(token) > 4 and token.endswith("ly"):
+                token = token[:-2]
+            elif len(token) > 5 and token.endswith("ing"):
+                token = token[:-3]
+                if token.endswith("v"):
+                    token += "e"
+            elif len(token) > 4 and token.endswith("ies"):
+                token = token[:-3] + "y"
+            elif len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+                token = token[:-1]
+            if token:
+                terms.add(token)
+        return frozenset(terms)
 
     @classmethod
     def _forced_synthesis_messages(

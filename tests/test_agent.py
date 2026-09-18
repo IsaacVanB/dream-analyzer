@@ -825,6 +825,26 @@ class DreamRagAgentTests(unittest.TestCase):
         error = json.loads(client.chat_calls[1]["messages"][-1]["content"])
         self.assertIn("query", error["error"])
 
+    def test_failed_semantic_call_can_be_corrected_before_results_are_exposed(self) -> None:
+        agent, _, index = self.make_agent(
+            [
+                tool_response("search_dreams", {}),
+                tool_response("search_dreams", {"query": "hidden room"}),
+            ]
+        )
+
+        response = agent.answer(
+            "dreams about hidden rooms",
+            max_tool_calls=2,
+            synthesize=False,
+        )
+
+        self.assertEqual(index.calls, [("hidden room", 4, None, None)])
+        self.assertEqual(len(response.tool_executions), 2)
+        self.assertFalse(response.tool_executions[0].result["ok"])
+        self.assertTrue(response.tool_executions[1].result["ok"])
+        self.assertEqual(len(response.unexecuted_tool_calls), 0)
+
     def test_unknown_tools_are_not_dispatched(self) -> None:
         agent, _, index = self.make_agent(
             [
@@ -897,11 +917,17 @@ class DreamRagAgentTests(unittest.TestCase):
         )
 
     def test_budget_executes_remaining_capacity_before_forced_answer(self) -> None:
-        second_response = {
+        first_response = {
             "message": {
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "house"},
+                        }
+                    },
                     {
                         "function": {
                             "name": "search_dreams",
@@ -919,8 +945,7 @@ class DreamRagAgentTests(unittest.TestCase):
         }
         agent, _, index = self.make_agent(
             [
-                tool_response("search_dreams", {"query": "house"}),
-                second_response,
+                first_response,
                 final_response("Forced comparison."),
             ]
         )
@@ -964,6 +989,213 @@ class DreamRagAgentTests(unittest.TestCase):
             "repeated tool call was rejected",
             response.forced_synthesis_reason,
         )
+
+    def test_later_semantic_search_is_rejected_after_results_are_exposed(self) -> None:
+        agent, _, index = self.make_agent(
+            [
+                tool_response(
+                    "search_dreams",
+                    {"query": "dog pet canine animal companion"},
+                ),
+                tool_response("search_dreams", {"query": "dog water bowl"}),
+            ]
+        )
+
+        response = agent.answer("dreams about dogs", synthesize=False)
+
+        self.assertEqual(
+            index.calls,
+            [("dog pet canine animal companion", 4, None, None)],
+        )
+        self.assertEqual(len(response.tool_executions), 1)
+        self.assertEqual(len(response.unexecuted_tool_calls), 1)
+        self.assertEqual(
+            response.unexecuted_tool_calls[0].arguments["query"],
+            "dog water bowl",
+        )
+
+    def test_overlapping_semantic_queries_in_initial_batch_are_rejected(self) -> None:
+        response_with_overlap = {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {
+                                "query": "phone strange behavior malfunction glitch"
+                            },
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "phone behaving strangely"},
+                        }
+                    },
+                ],
+            }
+        }
+        agent, _, index = self.make_agent([response_with_overlap])
+
+        response = agent.answer(
+            "dreams about phones behaving strangely",
+            synthesize=False,
+        )
+
+        self.assertEqual(
+            index.calls,
+            [("phone strange behavior malfunction glitch", 4, None, None)],
+        )
+        self.assertEqual(len(response.unexecuted_tool_calls), 1)
+
+    def test_distinct_semantic_queries_in_initial_batch_are_allowed(self) -> None:
+        response_with_distinct_facets = {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "school exam anxiety"},
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "Maya classroom friendship"},
+                        }
+                    },
+                ],
+            }
+        }
+        agent, _, index = self.make_agent([response_with_distinct_facets])
+
+        response = agent.answer(
+            "school anxiety dreams featuring Maya",
+            max_tool_calls=2,
+            synthesize=False,
+        )
+
+        self.assertEqual(
+            index.calls,
+            [
+                ("school exam anxiety", 4, None, None),
+                ("Maya classroom friendship", 4, None, None),
+            ],
+        )
+        self.assertEqual(len(response.unexecuted_tool_calls), 0)
+
+    def test_same_query_is_allowed_across_semantic_and_keyword_retrievers(self) -> None:
+        hybrid_batch = {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {"query": "hidden room"},
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "search_dreams_by_keywords",
+                            "arguments": {"query": "hidden room"},
+                        }
+                    },
+                ],
+            }
+        }
+        client = SequencedOllamaClient([hybrid_batch])
+        semantic_index = FakeIndex()
+        keyword_index = DreamBm25Index(
+            [
+                Dream(
+                    dream_id="room-dream",
+                    date="1/2/2024",
+                    text="I found a hidden room behind the pantry.",
+                    date_sort=date(2024, 1, 2),
+                )
+            ]
+        )
+        agent = DreamRagAgent(
+            ollama_gateway=OllamaGateway(client=client),
+            tools=[
+                DreamSearchTool(semantic_index, result_limit=4),
+                DreamKeywordSearchTool(keyword_index, result_limit=4),
+            ],
+        )
+
+        response = agent.answer(
+            "dreams about hidden rooms",
+            max_tool_calls=2,
+            synthesize=False,
+        )
+
+        self.assertEqual(
+            [execution.name for execution in response.tool_executions],
+            ["search_dreams", "search_dreams_by_keywords"],
+        )
+        self.assertEqual(len(response.unexecuted_tool_calls), 0)
+
+    def test_same_semantic_query_is_allowed_for_distinct_date_scopes(self) -> None:
+        date_comparison_batch = {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {
+                                "query": "school exam anxiety",
+                                "start_date": "2024-01-01",
+                                "end_date": "2024-12-31",
+                            },
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "search_dreams",
+                            "arguments": {
+                                "query": "school exam anxiety",
+                                "start_date": "2025-01-01",
+                                "end_date": "2025-12-31",
+                            },
+                        }
+                    },
+                ],
+            }
+        }
+        agent, _, index = self.make_agent([date_comparison_batch])
+
+        response = agent.answer(
+            "Compare school anxiety dreams from 2024 and 2025",
+            max_tool_calls=2,
+            synthesize=False,
+        )
+
+        self.assertEqual(
+            index.calls,
+            [
+                (
+                    "school exam anxiety",
+                    4,
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                ),
+                (
+                    "school exam anxiety",
+                    4,
+                    date(2025, 1, 1),
+                    date(2025, 12, 31),
+                ),
+            ],
+        )
+        self.assertEqual(len(response.unexecuted_tool_calls), 0)
 
     def test_empty_answer_gets_one_forced_synthesis_retry(self) -> None:
         agent, client, index = self.make_agent(
@@ -1297,7 +1529,9 @@ class DreamRagAgentTests(unittest.TestCase):
         self.assertIn("Formulate each query for its retriever", prompt)
         self.assertIn("6 to 10 content-bearing words", prompt)
         self.assertIn("hidden room hallway extra room concealed door", prompt)
-        self.assertIn("request those tool calls together", prompt)
+        self.assertIn("Normally make only one search_dreams call", prompt)
+        self.assertIn("Request every semantic search together", prompt)
+        self.assertIn("never derive a later query", prompt)
         self.assertIn("at most 3 distinct tool calls", prompt)
         self.assertIn("Never request the same tool twice", prompt)
         self.assertIn("do not invent a date range", prompt)
