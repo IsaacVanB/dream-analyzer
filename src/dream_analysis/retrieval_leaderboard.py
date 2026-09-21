@@ -149,10 +149,75 @@ def _entry(report: dict[str, Any], source: Path) -> dict[str, Any] | None:
     }
 
 
+def _model_configuration(entry: dict[str, Any]) -> dict[str, Any]:
+    """Return the configured embedding/chat pair used to partition tables."""
+    settings = entry.get("settings") or {}
+    embed_model = settings.get("embed_model")
+    chat_model = settings.get("chat_model")
+    if not isinstance(embed_model, str) or not embed_model.strip():
+        embed_model = "unknown"
+    if not isinstance(chat_model, str) or not chat_model.strip():
+        chat_model = "unknown"
+    key = json.dumps(
+        {"embed_model": embed_model, "chat_model": chat_model},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "key": key,
+        "embed_model": embed_model,
+        "chat_model": chat_model,
+    }
+
+
+def _model_groups(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Partition compatible experiments by configured model combination."""
+    grouped: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        configuration = _model_configuration(entry)
+        group = grouped.setdefault(
+            configuration["key"],
+            {
+                **configuration,
+                "experiments": [],
+            },
+        )
+        group["experiments"].append(entry)
+    model_groups = list(grouped.values())
+    model_groups.sort(
+        key=lambda group: (
+            str(group["experiments"][0]["created_at"]),
+            group["key"],
+        ),
+        reverse=True,
+    )
+    for group in model_groups:
+        group["best"] = _best(group["experiments"])
+        group["category_best"] = _category_best(group["experiments"])
+    return model_groups
+
+
 def _numeric(value: Any) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _winner_detail(entry: dict[str, Any]) -> dict[str, Any]:
+    """Describe the models actually used by one winning experiment."""
+    configuration = _model_configuration(entry)
+    mode = entry["mode"]
+    return {
+        "name": entry["name"],
+        "mode": mode,
+        "embed_model": (
+            configuration["embed_model"]
+            if mode in {"agent", "embedding", "hybrid"}
+            else None
+        ),
+        "chat_model": configuration["chat_model"] if mode == "agent" else None,
+    }
 
 
 def _best(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -175,6 +240,7 @@ def _best(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "value": target,
             "winners": [entry["source_json"] for entry in winner_entries],
             "winner_names": [entry["name"] for entry in winner_entries],
+            "winner_details": [_winner_detail(entry) for entry in winner_entries],
         }
     return best
 
@@ -189,20 +255,24 @@ def _category_best(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
     winners: list[dict[str, Any]] = []
     for category in categories:
-        candidates = []
+        candidates: list[tuple[dict[str, Any], float]] = []
         for entry in entries:
             summary = entry.get("category_summaries", {}).get(category, {})
             value = _numeric(summary.get("r_precision"))
             if value is not None:
-                candidates.append((entry["name"], value))
+                candidates.append((entry, value))
         if not candidates:
             continue
         target = max(value for _, value in candidates)
+        winner_entries = [entry for entry, value in candidates if value == target]
         winners.append(
             {
                 "category": category,
                 "r_precision": target,
-                "winners": [name for name, value in candidates if value == target],
+                "winners": [entry["name"] for entry in winner_entries],
+                "winner_details": [
+                    _winner_detail(entry) for entry in winner_entries
+                ],
             }
         )
     return winners
@@ -239,6 +309,9 @@ def build_leaderboard(
     current_key = configured_current_key or (
         entries[0]["compatibility_key"] if entries else None
     )
+    current_dream = current_dream_fingerprint or (
+        entries[0]["dream_fingerprint"] if entries else None
+    )
     grouped: dict[str, list[dict[str, Any]]] = {}
     for entry in entries:
         grouped.setdefault(entry["compatibility_key"], []).append(entry)
@@ -257,15 +330,20 @@ def build_leaderboard(
             {
                 "compatibility_key": key,
                 "current": key == current_key,
+                "current_corpus": bool(
+                    current_dream
+                    and group_entries[0]["dream_fingerprint"] == current_dream
+                ),
                 "query_fingerprint": group_entries[0]["query_fingerprint"],
                 "dream_fingerprint": group_entries[0]["dream_fingerprint"],
                 "experiments": group_entries,
+                "model_groups": _model_groups(group_entries),
                 "best": _best(group_entries),
                 "category_best": _category_best(group_entries),
             }
         )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "current_compatibility_key": current_key,
         "experiment_count": len(entries),
@@ -310,28 +388,52 @@ def _experiment_link(entry: dict[str, Any]) -> str:
     return f"[{label}](<{target}>)"
 
 
+def _winner_description(detail: dict[str, Any]) -> str:
+    """Render an experiment name with only the models its mode actually uses."""
+    name = _escape(detail["name"])
+    embed_model = detail.get("embed_model")
+    chat_model = detail.get("chat_model")
+    if embed_model and chat_model:
+        return (
+            f"{name} (embedding: `{_escape(embed_model)}`; "
+            f"chat: `{_escape(chat_model)}`)"
+        )
+    if embed_model:
+        return f"{name} (embedding: `{_escape(embed_model)}`; no chat model)"
+    return f"{name} (no embedding or chat model)"
+
+
 def _group_markdown(group: dict[str, Any]) -> list[str]:
     lines = [
         f"Compatibility key: `{group['compatibility_key']}`",
         "",
         f"- Query fingerprint: `{group['query_fingerprint'] or 'unknown'}`",
         f"- Dream corpus fingerprint: `{group['dream_fingerprint'] or 'unknown'}`",
-        "",
-        "| Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
-    for entry in group["experiments"]:
-        lines.append(
-            f"| {_experiment_link(entry)} | {_escape(entry['mode'])} | "
-            f"{_escape(entry['created_at'])} | {_display(entry['query_count'])} | "
-            f"{_metric_cell(group, 'r_precision', entry)} | "
-            f"{_metric_cell(group, 'recall_at_5', entry)} | "
-            f"{_metric_cell(group, 'recall_at_10', entry)} | "
-            f"{_metric_cell(group, 'strategy_accuracy', entry)} | "
-            f"{_metric_cell(group, 'error_query_count', entry)} | "
-            f"{_metric_cell(group, 'mean_retrieval_seconds', entry)} | "
-            f"{_escape(entry['note'])} |"
+    model_groups = group.get("model_groups") or _model_groups(group["experiments"])
+    for model_group in model_groups:
+        lines.extend(
+            [
+                "",
+                f"#### Embedding: `{_escape(model_group['embed_model'])}`; "
+                f"chat: `{_escape(model_group['chat_model'])}`",
+                "",
+                "| Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
+                "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+            ]
         )
+        for entry in model_group["experiments"]:
+            lines.append(
+                f"| {_experiment_link(entry)} | {_escape(entry['mode'])} | "
+                f"{_escape(entry['created_at'])} | {_display(entry['query_count'])} | "
+                f"{_metric_cell(model_group, 'r_precision', entry)} | "
+                f"{_metric_cell(model_group, 'recall_at_5', entry)} | "
+                f"{_metric_cell(model_group, 'recall_at_10', entry)} | "
+                f"{_metric_cell(model_group, 'strategy_accuracy', entry)} | "
+                f"{_metric_cell(model_group, 'error_query_count', entry)} | "
+                f"{_metric_cell(model_group, 'mean_retrieval_seconds', entry)} | "
+                f"{_escape(entry['note'])} |"
+            )
     return lines
 
 
@@ -342,7 +444,7 @@ def markdown_leaderboard(leaderboard: dict[str, Any]) -> str:
         "",
         f"- Generated: `{leaderboard['generated_at']}`",
         f"- Experiments: `{leaderboard['experiment_count']}`",
-        "- Bold values are best within a compatible query-suite and dream-corpus group.",
+        "- Bold values are best within each query-suite, dream-corpus, and model table.",
         "- Routing accuracy applies only to agent runs.",
         "",
     ]
@@ -365,13 +467,14 @@ def markdown_leaderboard(leaderboard: dict[str, Any]) -> str:
             winner = current.get("best", {}).get(metric)
             if not winner:
                 continue
-            names = ", ".join(_escape(name) for name in winner["winner_names"])
+            names = ", ".join(
+                _winner_description(detail)
+                for detail in winner["winner_details"]
+            )
             lines.append(
                 f"- {winner['label']}: "
                 f"**{_display_metric(metric, winner['value'])}** — {names}"
             )
-        lines.extend(["", "## Current compatible experiments", ""])
-        lines.extend(_group_markdown(current))
 
     if current is not None and current.get("category_best"):
         lines.extend(
@@ -379,17 +482,32 @@ def markdown_leaderboard(leaderboard: dict[str, Any]) -> str:
                 "",
                 "### Current R-precision winners by category",
                 "",
-                "| Category | Best R-precision | Experiment |",
+                "| Category | Best R-precision | Experiment and models |",
                 "|---|---:|---|",
             ]
         )
         for item in current["category_best"]:
             lines.append(
                 f"| {_escape(item['category'])} | {_display(item['r_precision'])} | "
-                f"{_escape(', '.join(item['winners']))} |"
+                f"{'; '.join(_winner_description(detail) for detail in item['winner_details'])} |"
             )
 
-    older = [group for group in groups if group is not current]
+    current_corpus_groups = [
+        group for group in groups if group.get("current_corpus")
+    ]
+    lines.extend(["", "## Current corpus experiments", ""])
+    if not current_corpus_groups:
+        lines.extend(["No experiments use the currently configured dream corpus.", ""])
+    else:
+        for group in current_corpus_groups:
+            heading = (
+                "### Current query suite"
+                if group.get("current")
+                else f"### Other query suite `{group['query_fingerprint'] or 'unknown'}`"
+            )
+            lines.extend([heading, "", *_group_markdown(group), ""])
+
+    older = [group for group in groups if not group.get("current_corpus")]
     if older:
         lines.extend(["", "## Older or incompatible experiment groups", ""])
         for group in older:

@@ -484,6 +484,14 @@ three tool calls. These settings can be changed with `--top-k` (10–20) and
 `--max-tool-calls`. Recall and R-precision are shown as `n/a` for queries with
 no known relevant dreams.
 
+Every completed run updates `outputs/retrieval_evaluations/leaderboard.md` and
+its JSON counterpart. Within each query-suite and corpus group, runs are split
+into separate tables by their configured `--embed-model` and `--chat-model`.
+All query suites using the current parsed dream corpus stay in the current
+corpus section; only different or unknown corpus fingerprints are historical.
+Use `--rebuild-leaderboard` to regenerate both leaderboard files from existing
+benchmark JSON reports.
+
 ## `src/cli/evaluate_retrieval_llm.py`
 
 Embeds one retrieval prompt with both `nomic-embed-text` and

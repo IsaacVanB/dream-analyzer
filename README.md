@@ -59,6 +59,11 @@ The results show different strengths across retrieval methods. BM25 currently gi
 See [`leaderboard.md`](outputs/retrieval_evaluations/leaderboard.md) for more detailed evaluation results.  
 
 Benchmark reports include per-query results, aggregate metrics, experiment metadata, errors, runtime, and agent routing accuracy.
+The running leaderboard places each configured embedding/chat-model combination
+in its own table. Query-suite fingerprints remain separate so unlike label sets
+are never scored together, while every suite evaluated against the current
+parsed dream corpus remains under **Current corpus experiments**. Runs against a
+different or unknown corpus appear in older/incompatible groups.
 
 ```bash
 dream-analyzer evaluate-retrieval \
