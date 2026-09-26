@@ -1,12 +1,12 @@
 {
-  "description": "Unified retrieval evaluation set for agent-level retrieval testing. Each query uses the same schema so a single evaluation script can score semantic, BM25, hybrid, temporal, character, and negative/ambiguous cases.",
-  "journal_file": "mock_dream_journal_v2.txt",
-  "num_queries": 64,
+  "description": "Retrieval evaluation set for agent-level and fixed-strategy testing. Relevance judgments measure retrieval quality without prescribing which retrieval tools should be used.",
+  "journal_file": "data/dreams.jsonl",
+  "num_queries": 56,
   "queries": [
     {
       "query": "dreams about dogs",
       "category": "direct_semantic",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "literal_signal"],
       "relevant_dream_ids": [
         "dream-2022-2-3-0",
         "dream-2022-8-26-0",
@@ -20,7 +20,7 @@
     {
       "query": "dreams about gorillas",
       "category": "direct_semantic",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "literal_signal"],
       "relevant_dream_ids": [
         "dream-2022-6-2-0",
         "dream-2023-6-1-0",
@@ -33,7 +33,7 @@
     {
       "query": "dreams involving airports",
       "category": "direct_semantic",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "literal_signal"],
       "relevant_dream_ids": [
         "dream-2022-2-18-0",
         "dream-2023-7-19-0",
@@ -45,7 +45,7 @@
     {
       "query": "dreams about phones behaving strangely",
       "category": "direct_semantic",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "literal_signal"],
       "relevant_dream_ids": [
         "dream-2022-1-22-1",
         "dream-2022-4-29-0",
@@ -65,7 +65,7 @@
     {
       "query": "dreams involving flooded or underwater places",
       "category": "direct_semantic",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "literal_signal"],
       "relevant_dream_ids": [
         "dream-2022-3-27-0",
         "dream-2022-6-2-0",
@@ -82,7 +82,7 @@
     {
       "query": "feeling trapped somewhere",
       "category": "conceptual",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "conceptual"],
       "relevant_dream_ids": [
         "dream-2022-1-6-0",
         "dream-2022-2-18-0",
@@ -93,7 +93,7 @@
     {
       "query": "being unable to find the way out",
       "category": "conceptual",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "conceptual"],
       "relevant_dream_ids": [
         "dream-2022-1-6-0",
         "dream-2022-8-26-0",
@@ -112,7 +112,7 @@
     {
       "query": "being evaluated or tested and feeling unprepared",
       "category": "conceptual",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "conceptual"],
       "relevant_dream_ids": [
         "dream-2022-1-6-0",
         "dream-2022-4-11-0",
@@ -133,7 +133,7 @@
     {
       "query": "records or documents that cannot be trusted",
       "category": "conceptual",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "conceptual"],
       "relevant_dream_ids": [
         "dream-2022-1-22-1",
         "dream-2022-5-15-2",
@@ -170,34 +170,7 @@
     {
       "query": "discovering unexpected rooms",
       "category": "recurring_event",
-      "expected_strategy": "semantic",
-      "relevant_dream_ids": [
-        "dream-2022-1-22-0",
-        "dream-2022-4-11-1",
-        "dream-2022-5-15-2",
-        "dream-2022-7-31-0",
-        "dream-2022-11-2-0",
-        "dream-2023-4-2-0",
-        "dream-2023-5-10-0",
-        "dream-2023-9-17-0",
-        "dream-2024-3-16-0",
-        "dream-2024-5-9-0",
-        "dream-2024-10-20-0",
-        "dream-2024-11-17-0",
-        "dream-2025-1-9-0",
-        "dream-2025-5-5-0",
-        "dream-2025-12-18-0",
-        "dream-2026-1-3-0",
-        "dream-2026-1-11-0",
-        "dream-2026-3-8-1",
-        "dream-2026-6-30-0",
-        "dream-2026-8-16-0"
-      ]
-    },
-    {
-      "query": "dreams about discovering hidden rooms",
-      "category": "recurring_event",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "recurring_event"],
       "relevant_dream_ids": [
         "dream-2022-1-22-0",
         "dream-2022-4-11-1",
@@ -224,7 +197,7 @@
     {
       "query": "transportation that does not work normally",
       "category": "recurring_event",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "recurring_event"],
       "relevant_dream_ids": [
         "dream-2022-2-18-0",
         "dream-2022-2-18-2",
@@ -243,7 +216,7 @@
     {
       "query": "animals behaving like people",
       "category": "recurring_event",
-      "expected_strategy": "semantic",
+      "attributes": ["topical", "recurring_event"],
       "relevant_dream_ids": [
         "dream-2022-2-3-0",
         "dream-2022-8-26-0",
@@ -261,7 +234,7 @@
     {
       "query": "school dreams involving anxiety",
       "category": "multi_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional"],
       "relevant_dream_ids": [
         "dream-2022-1-6-0",
         "dream-2022-4-11-0",
@@ -278,7 +251,7 @@
     {
       "query": "house dreams involving water",
       "category": "multi_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional"],
       "relevant_dream_ids": [
         "dream-2022-4-11-1",
         "dream-2023-3-1-0",
@@ -290,7 +263,7 @@
     {
       "query": "technology dreams that become threatening or unsettling",
       "category": "multi_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional"],
       "relevant_dream_ids": [
         "dream-2023-12-3-2",
         "dream-2025-3-30-2",
@@ -300,7 +273,7 @@
     {
       "query": "dreams involving both animals and transportation",
       "category": "multi_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional"],
       "relevant_dream_ids": [
         "dream-2022-8-26-0",
         "dream-2023-3-18-0",
@@ -314,7 +287,7 @@
     {
       "query": "school dreams featuring Maya",
       "category": "multi_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional", "entity"],
       "relevant_dream_ids": [
         "dream-2022-11-4-0",
         "dream-2024-2-14-0",
@@ -324,7 +297,7 @@
     {
       "query": "dreams featuring Maya",
       "category": "character",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["entity", "natural_language"],
       "relevant_dream_ids": [
         "dream-2022-2-18-2",
         "dream-2022-5-15-2",
@@ -344,7 +317,7 @@
     {
       "query": "dreams featuring Theo",
       "category": "character",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["entity", "natural_language"],
       "relevant_dream_ids": [
         "dream-2022-8-26-0",
         "dream-2023-1-17-0",
@@ -360,7 +333,7 @@
     {
       "query": "dreams featuring Lena",
       "category": "character",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["entity", "natural_language"],
       "relevant_dream_ids": [
         "dream-2023-4-2-0",
         "dream-2023-12-3-2",
@@ -374,7 +347,7 @@
     {
       "query": "dreams featuring Marcus",
       "category": "character",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["entity", "natural_language"],
       "relevant_dream_ids": [
         "dream-2024-10-5-0",
         "dream-2025-9-28-0"
@@ -383,7 +356,7 @@
     {
       "query": "dreams featuring Priya",
       "category": "character",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["entity", "natural_language"],
       "relevant_dream_ids": [
         "dream-2025-1-26-0"
       ]
@@ -391,7 +364,7 @@
     {
       "query": "house dreams from 2024",
       "category": "temporal",
-      "expected_strategy": "hybrid",
+      "attributes": ["temporal", "compositional"],
       "relevant_dream_ids": [
         "dream-2024-3-16-0",
         "dream-2024-5-9-0",
@@ -402,7 +375,7 @@
     {
       "query": "school dreams from 2025",
       "category": "temporal",
-      "expected_strategy": "hybrid",
+      "attributes": ["temporal", "compositional"],
       "relevant_dream_ids": [
         "dream-2025-3-1-0",
         "dream-2025-5-18-0",
@@ -412,7 +385,7 @@
     {
       "query": "animal dreams from 2026",
       "category": "temporal",
-      "expected_strategy": "hybrid",
+      "attributes": ["temporal", "compositional"],
       "relevant_dream_ids": [
         "dream-2026-3-8-0",
         "dream-2026-3-8-2",
@@ -422,34 +395,16 @@
     {
       "query": "dreams involving Maya from 2026",
       "category": "temporal",
-      "expected_strategy": "hybrid",
+      "attributes": ["temporal", "compositional", "entity"],
       "relevant_dream_ids": [
         "dream-2026-1-11-0",
         "dream-2026-8-16-0"
       ]
     },
     {
-      "query": "dreams about skiing",
-      "category": "negative_ambiguous",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
-    },
-    {
-      "query": "dreams involving a romantic relationship with Maya",
-      "category": "negative_ambiguous",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
-    },
-    {
-      "query": "dreams about dogs attacking people",
-      "category": "negative_ambiguous",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
-    },
-    {
       "query": "Priya",
       "category": "exact_proper_names",
-      "expected_strategy": "bm25",
+      "attributes": ["entity", "exact_lexical", "bare_term"],
       "relevant_dream_ids": [
         "dream-2025-1-26-0"
       ]
@@ -457,7 +412,7 @@
     {
       "query": "Evan",
       "category": "exact_proper_names",
-      "expected_strategy": "bm25",
+      "attributes": ["entity", "exact_lexical", "bare_term"],
       "relevant_dream_ids": [
         "dream-2026-6-27-0"
       ]
@@ -465,7 +420,7 @@
     {
       "query": "Arthur",
       "category": "exact_proper_names",
-      "expected_strategy": "bm25",
+      "attributes": ["entity", "exact_lexical", "bare_term"],
       "relevant_dream_ids": [
         "dream-2023-6-1-2"
       ]
@@ -473,7 +428,7 @@
     {
       "query": "Pepper",
       "category": "exact_proper_names",
-      "expected_strategy": "bm25",
+      "attributes": ["entity", "exact_lexical", "bare_term"],
       "relevant_dream_ids": [
         "dream-2022-8-26-0"
       ]
@@ -481,7 +436,7 @@
     {
       "query": "dentist compass",
       "category": "rare_literal_objects",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "rare_literal"],
       "relevant_dream_ids": [
         "dream-2022-6-2-1"
       ]
@@ -489,7 +444,7 @@
     {
       "query": "measuring wheel",
       "category": "rare_literal_objects",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "rare_literal"],
       "relevant_dream_ids": [
         "dream-2026-8-16-0"
       ]
@@ -497,7 +452,7 @@
     {
       "query": "calendar made of toast",
       "category": "rare_literal_objects",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "rare_literal"],
       "relevant_dream_ids": [
         "dream-2026-6-30-1"
       ]
@@ -505,7 +460,7 @@
     {
       "query": "red mailbox flag",
       "category": "rare_literal_objects",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "rare_literal"],
       "relevant_dream_ids": [
         "dream-2025-7-4-2"
       ]
@@ -513,7 +468,7 @@
     {
       "query": "velvet chair",
       "category": "rare_literal_objects",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "rare_literal"],
       "relevant_dream_ids": [
         "dream-2023-3-18-1"
       ]
@@ -521,7 +476,7 @@
     {
       "query": "Oregon",
       "category": "exact_places_and_labels",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "exact_label"],
       "relevant_dream_ids": [
         "dream-2022-2-18-0"
       ]
@@ -529,7 +484,7 @@
     {
       "query": "Mild Concern Avenue",
       "category": "exact_places_and_labels",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "exact_label"],
       "relevant_dream_ids": [
         "dream-2023-1-5-1"
       ]
@@ -537,7 +492,7 @@
     {
       "query": "Platform 6/7",
       "category": "exact_places_and_labels",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "exact_label"],
       "relevant_dream_ids": [
         "dream-2023-2-12-0"
       ]
@@ -545,7 +500,7 @@
     {
       "query": "Kitchen C",
       "category": "exact_places_and_labels",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "exact_label"],
       "relevant_dream_ids": [
         "dream-2026-6-11-0"
       ]
@@ -553,7 +508,7 @@
     {
       "query": "apologizing to a gorilla",
       "category": "inflected_word_variants",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["lexical", "inflection"],
       "relevant_dream_ids": [
         "dream-2025-3-1-1"
       ]
@@ -561,7 +516,7 @@
     {
       "query": "swimming through the flooded hidden room",
       "category": "inflected_word_variants",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["lexical", "inflection"],
       "relevant_dream_ids": [
         "dream-2026-5-20-0"
       ]
@@ -569,7 +524,7 @@
     {
       "query": "cars drive beneath a frozen lake",
       "category": "inflected_word_variants",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["lexical", "inflection"],
       "relevant_dream_ids": [
         "dream-2022-3-27-0"
       ]
@@ -577,7 +532,7 @@
     {
       "query": "maps printed by the office printer",
       "category": "inflected_word_variants",
-      "expected_strategy": "bm25_or_hybrid",
+      "attributes": ["lexical", "inflection"],
       "relevant_dream_ids": [
         "dream-2025-11-22-0",
         "dream-2025-11-22-2"
@@ -586,7 +541,7 @@
     {
       "query": "wax paper schedule",
       "category": "separated_phrase_terms",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "separated_terms"],
       "relevant_dream_ids": [
         "dream-2022-1-6-0"
       ]
@@ -594,7 +549,7 @@
     {
       "query": "sounds in glass jars",
       "category": "separated_phrase_terms",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "separated_terms"],
       "relevant_dream_ids": [
         "dream-2025-1-26-0"
       ]
@@ -602,7 +557,7 @@
     {
       "query": "appointment in a paper bag",
       "category": "separated_phrase_terms",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "separated_terms"],
       "relevant_dream_ids": [
         "dream-2022-6-19-1"
       ]
@@ -610,7 +565,7 @@
     {
       "query": "green carpet hidden room",
       "category": "separated_phrase_terms",
-      "expected_strategy": "bm25",
+      "attributes": ["lexical", "separated_terms"],
       "relevant_dream_ids": [
         "dream-2022-1-22-0",
         "dream-2024-11-17-0",
@@ -622,7 +577,7 @@
     {
       "query": "Maya discovering hidden rooms",
       "category": "mixed_entity_plus_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional", "entity"],
       "relevant_dream_ids": [
         "dream-2022-5-15-2",
         "dream-2024-11-17-0",
@@ -634,7 +589,7 @@
     {
       "query": "Theo dealing with strange technology",
       "category": "mixed_entity_plus_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional", "entity"],
       "relevant_dream_ids": [
         "dream-2023-1-17-0",
         "dream-2025-3-30-2",
@@ -645,33 +600,35 @@
     {
       "query": "Lena in dreams involving water",
       "category": "mixed_entity_plus_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional", "entity"],
       "relevant_dream_ids": [
         "dream-2024-11-17-0",
         "dream-2025-7-4-2"
       ]
     },
     {
-      "query": "Marcus getting lost or unable to leave",
+      "query": "Maya in dreams involving transportation",
       "category": "mixed_entity_plus_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional", "entity"],
       "relevant_dream_ids": [
-        "dream-2024-10-5-0",
+        "dream-2022-2-18-2",
+        "dream-2023-9-12-0",
+        "dream-2024-7-21-0",
         "dream-2025-9-28-0"
       ]
     },
     {
-      "query": "Priya handling a dangerous sample",
+      "query": "Lena in school dreams",
       "category": "mixed_entity_plus_concept",
-      "expected_strategy": "hybrid",
+      "attributes": ["compositional", "entity"],
       "relevant_dream_ids": [
-        "dream-2025-1-26-0"
+        "dream-2026-4-19-0"
       ]
     },
     {
       "query": "canine shopping in a supermarket",
       "category": "semantic_without_lexical_match",
-      "expected_strategy": "semantic_or_hybrid",
+      "attributes": ["semantic", "low_lexical_overlap"],
       "relevant_dream_ids": [
         "dream-2022-2-3-0"
       ]
@@ -679,7 +636,7 @@
     {
       "query": "ape studying literature",
       "category": "semantic_without_lexical_match",
-      "expected_strategy": "semantic_or_hybrid",
+      "attributes": ["semantic", "low_lexical_overlap"],
       "relevant_dream_ids": [
         "dream-2023-6-1-2"
       ]
@@ -687,7 +644,7 @@
     {
       "query": "animal chauffeur refusing canine passengers",
       "category": "semantic_without_lexical_match",
-      "expected_strategy": "semantic_or_hybrid",
+      "attributes": ["semantic", "low_lexical_overlap"],
       "relevant_dream_ids": [
         "dream-2026-1-3-1"
       ]
@@ -695,34 +652,10 @@
     {
       "query": "repeatedly returning to the starting point while commuting",
       "category": "semantic_without_lexical_match",
-      "expected_strategy": "semantic_or_hybrid",
+      "attributes": ["semantic", "low_lexical_overlap"],
       "relevant_dream_ids": [
         "dream-2026-2-15-0"
       ]
-    },
-    {
-      "query": "Maya romantic relationship",
-      "category": "lexical_distractors_and_no_true_match",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
-    },
-    {
-      "query": "Priya at school",
-      "category": "lexical_distractors_and_no_true_match",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
-    },
-    {
-      "query": "Arthur taking a taxi",
-      "category": "lexical_distractors_and_no_true_match",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
-    },
-    {
-      "query": "airport in Oregon with Maya",
-      "category": "lexical_distractors_and_no_true_match",
-      "expected_strategy": "hybrid_or_reasoned_filter",
-      "relevant_dream_ids": []
     }
   ]
 }

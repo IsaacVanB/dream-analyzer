@@ -139,13 +139,14 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(result["available_collections"], [])
         self.assertEqual(result["data_files"]["parsed dreams"]["record_count"], 0)
 
-    def test_query_loader_requires_a_known_expected_strategy(self) -> None:
+    def test_query_loader_does_not_require_a_retrieval_strategy(self) -> None:
         payload = {
             "num_queries": 1,
             "queries": [
                 {
                     "query": "dreams about dogs",
                     "category": "direct",
+                    "attributes": ["topical"],
                     "relevant_dream_ids": ["dog-dream"],
                 }
             ],
@@ -153,50 +154,44 @@ class RetrievalMetricTests(unittest.TestCase):
         with TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "queries.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "expected_strategy"):
-                evaluate_retrieval.load_evaluation_queries(path)
-
-            payload["queries"][0]["expected_strategy"] = "unknown"
-            path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "expected one of"):
-                evaluate_retrieval.load_evaluation_queries(path)
-
-            payload["queries"][0]["expected_strategy"] = "semantic_or_hybrid"
-            path.write_text(json.dumps(payload), encoding="utf-8")
             loaded = evaluate_retrieval.load_evaluation_queries(path)
 
-        self.assertEqual(
-            loaded["queries"][0]["expected_strategy"],
-            "semantic_or_hybrid",
-        )
+        self.assertNotIn("expected_strategy", loaded["queries"][0])
 
-    def test_strategy_classification_and_alternative_labels(self) -> None:
+    def test_query_loader_rejects_empty_relevance_sets(self) -> None:
+        payload = {
+            "num_queries": 1,
+            "queries": [
+                {
+                    "query": "dreams about skiing",
+                    "category": "negative",
+                    "attributes": ["empty_result"],
+                    "relevant_dream_ids": [],
+                }
+            ],
+        }
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "queries.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "abstention suite"):
+                evaluate_retrieval.load_evaluation_queries(path)
+
+    def test_agent_route_classification(self) -> None:
         self.assertEqual(
-            evaluate_retrieval.infer_agent_strategy(["search_dreams"]),
+            evaluate_retrieval.infer_agent_route(["search_dreams"]),
             "semantic",
         )
         self.assertEqual(
-            evaluate_retrieval.infer_agent_strategy(
+            evaluate_retrieval.infer_agent_route(
                 ["search_dreams", "search_dreams_by_keywords"]
             ),
             "hybrid",
         )
         self.assertEqual(
-            evaluate_retrieval.infer_agent_strategy(["get_character_mentions"]),
-            "reasoned_filter",
+            evaluate_retrieval.infer_agent_route(["get_character_mentions"]),
+            "deterministic_tools",
         )
-        accepted = evaluate_retrieval.evaluate_agent_strategy(
-            "semantic_or_hybrid",
-            ["search_dreams", "search_dreams_by_keywords"],
-        )
-        rejected = evaluate_retrieval.evaluate_agent_strategy(
-            "bm25",
-            ["search_dreams"],
-        )
-
-        self.assertTrue(accepted["strategy_match"])
-        self.assertEqual(accepted["actual_strategy"], "hybrid")
-        self.assertFalse(rejected["strategy_match"])
 
     def test_metrics_at_cutoffs_and_r_precision(self) -> None:
         relevant = ["a", "c", "e"]
@@ -244,6 +239,7 @@ class RetrievalMetricTests(unittest.TestCase):
                     {
                         "query": "dreams about exact wording",
                         "category": "direct",
+                        "attributes": ["topical"],
                         "relevant_dream_ids": [
                             "relevant",
                             *[f"other-{index}" for index in range(11)],
@@ -284,6 +280,7 @@ class RetrievalMetricTests(unittest.TestCase):
                     {
                         "query": "green bicycles",
                         "category": "literal",
+                        "attributes": ["lexical"],
                         "relevant_dream_ids": ["relevant"],
                     }
                 ],
@@ -328,6 +325,7 @@ class RetrievalMetricTests(unittest.TestCase):
                     {
                         "query": "bicycle",
                         "category": "mixed",
+                        "attributes": ["compositional"],
                         "relevant_dream_ids": ["shared"],
                     }
                 ],
@@ -391,7 +389,7 @@ class RetrievalMetricTests(unittest.TestCase):
                     {
                         "query": "original query",
                         "category": "test",
-                        "expected_strategy": "hybrid",
+                        "attributes": ["test"],
                         "relevant_dream_ids": ["shared"],
                     },
                 ],
@@ -420,9 +418,7 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "ok")
         self.assertEqual(rows[0]["retrieved_dream_ids"][0], "shared")
         self.assertEqual(rows[0]["r_precision"], 1.0)
-        self.assertEqual(rows[0]["expected_strategy"], "hybrid")
-        self.assertEqual(rows[0]["actual_strategy"], "hybrid")
-        self.assertTrue(rows[0]["strategy_match"])
+        self.assertEqual(rows[0]["observed_route"], "hybrid")
         self.assertEqual(rows[0]["tool_calls"][0]["arguments"], {"query": "one"})
         self.assertIn("[1/1] Starting: original query", output.getvalue())
         self.assertIn("[1/1] Finished in", output.getvalue())
@@ -449,7 +445,7 @@ class RetrievalMetricTests(unittest.TestCase):
                     {
                         "query": "dogs",
                         "category": "direct",
-                        "expected_strategy": "semantic",
+                        "attributes": ["topical"],
                         "relevant_dream_ids": ["a"],
                     }
                 ],
@@ -467,30 +463,13 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(summary["evaluated_query_count"], 0)
         self.assertEqual(summary["error_query_count"], 1)
         self.assertIsNone(summary["precision_at_5"])
-        self.assertEqual(summary["strategy_evaluated_count"], 1)
-        self.assertEqual(summary["strategy_accuracy"], 1.0)
-
-    def test_strategy_summary_counts_only_observable_labeled_routes(self) -> None:
-        metrics = evaluate_retrieval.retrieval_metrics([], [])
-        rows = [
-            {"status": "ok", **metrics, "strategy_match": True},
-            {"status": "ok", **metrics, "strategy_match": False},
-            {"status": "error", **metrics, "strategy_match": None},
-        ]
-
-        summary = evaluate_retrieval.summarize(rows)
-
-        self.assertEqual(summary["strategy_evaluated_count"], 2)
-        self.assertEqual(summary["strategy_correct_count"], 1)
-        self.assertEqual(summary["strategy_accuracy"], 0.5)
 
     def test_markdown_reports_maximum_precision(self) -> None:
         row = {
             "query": "dogs",
             "category": "direct",
-            "expected_strategy": "semantic",
-            "actual_strategy": "semantic",
-            "strategy_match": True,
+            "attributes": ["topical"],
+            "observed_route": "semantic",
             **evaluate_retrieval.retrieval_metrics(["a"], ["a", "b"]),
         }
         summary = evaluate_retrieval.summarize([row])
@@ -508,6 +487,7 @@ class RetrievalMetricTests(unittest.TestCase):
             "preflight": {"status": "ok"},
             "summary": summary,
             "category_summaries": {"direct": summary},
+            "attribute_summaries": {"topical": summary},
             "queries": [row],
         }
         row["status"] = "ok"
@@ -520,10 +500,10 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertIn("max P@5", markdown)
         self.assertIn("max P@10", markdown)
         self.assertIn("R-precision", markdown)
-        self.assertIn("| dogs | direct | ok | 2 |", markdown)
-        self.assertIn("## Agent routing accuracy", markdown)
-        self.assertIn("| all | 1 | 1 | 1.000 |", markdown)
-        self.assertIn("| dogs | semantic | semantic | yes |", markdown)
+        self.assertIn("| dogs | direct | topical | ok | 2 |", markdown)
+        self.assertIn("## Attribute macro averages", markdown)
+        self.assertNotIn("routing accuracy", markdown.lower())
+        self.assertIn("| dogs | semantic | none |", markdown)
         self.assertIn("wrapped as an explicit retrieval task", markdown)
 
     def test_markdown_describes_bm25_and_hybrid_baselines(self) -> None:

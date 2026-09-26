@@ -454,7 +454,7 @@ use date filters, retrieve exact tags or date ranges, and call character or
 analytical tools. Each labeled query is first wrapped as an explicit dream-
 retrieval task, so a bare input such as `Priya` or `Kitchen C` cannot be mistaken
 for a request for background information or a final answer. The wrapper does not
-expose the query category, expected strategy, or relevance judgments. Results
+expose the query category, attributes, or relevance judgments. Results
 from dream-returning calls are combined with the same
 reciprocal-rank fusion used for answer synthesis. Exhaustive date and exact-tag
 sets are semantically reranked first; every match is retained, and unindexed

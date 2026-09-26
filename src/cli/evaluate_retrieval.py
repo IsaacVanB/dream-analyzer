@@ -33,14 +33,6 @@ QUERIES_PATH = Path("data/retrieval_eval_queries.json")
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
 CUTOFFS = (5, 10)
 RETRIEVAL_MODES = ("agent", "embedding", "bm25", "hybrid")
-EXPECTED_STRATEGIES = {
-    "semantic": frozenset({"semantic"}),
-    "bm25": frozenset({"bm25"}),
-    "hybrid": frozenset({"hybrid"}),
-    "bm25_or_hybrid": frozenset({"bm25", "hybrid"}),
-    "semantic_or_hybrid": frozenset({"semantic", "hybrid"}),
-    "hybrid_or_reasoned_filter": frozenset({"hybrid", "reasoned_filter"}),
-}
 SEMANTIC_TOOL = "search_dreams"
 BM25_TOOL = "search_dreams_by_keywords"
 SCORED_METRICS = (
@@ -211,7 +203,7 @@ def load_evaluation_queries(path: Path) -> dict[str, Any]:
             raise ValueError(f"Query record {index} must be an object.")
         query = item.get("query")
         category = item.get("category")
-        expected_strategy = item.get("expected_strategy")
+        attributes = item.get("attributes")
         relevant_ids = item.get("relevant_dream_ids")
         if not isinstance(query, str) or not query.strip():
             raise ValueError(f"Query record {index} has no valid query.")
@@ -220,16 +212,23 @@ def load_evaluation_queries(path: Path) -> dict[str, Any]:
         seen_queries.add(query)
         if not isinstance(category, str) or not category.strip():
             raise ValueError(f"Query {query!r} has no valid category.")
-        if expected_strategy not in EXPECTED_STRATEGIES:
-            allowed = ", ".join(sorted(EXPECTED_STRATEGIES))
-            raise ValueError(
-                f"Query {query!r} has invalid expected_strategy "
-                f"{expected_strategy!r}; expected one of: {allowed}."
+        if (
+            not isinstance(attributes, list)
+            or not attributes
+            or not all(
+                isinstance(attribute, str) and attribute.strip()
+                for attribute in attributes
             )
-        if not isinstance(relevant_ids, list) or not all(
+            or len(attributes) != len(set(attributes))
+        ):
+            raise ValueError(f"Query {query!r} has invalid attributes.")
+        if not isinstance(relevant_ids, list) or not relevant_ids or not all(
             isinstance(dream_id, str) and dream_id for dream_id in relevant_ids
         ):
-            raise ValueError(f"Query {query!r} has invalid relevant_dream_ids.")
+            raise ValueError(
+                f"Query {query!r} must have at least one valid relevant dream ID; "
+                "evaluate empty-result behavior in an end-to-end abstention suite."
+            )
         if len(relevant_ids) != len(set(relevant_ids)):
             raise ValueError(f"Query {query!r} contains duplicate relevant IDs.")
     return payload
@@ -290,10 +289,6 @@ def _mean(values: Iterable[float | None]) -> float | None:
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Return macro averages, excluding undefined metrics for zero-relevance queries."""
     evaluated = [row for row in rows if row.get("status", "ok") == "ok"]
-    strategy_evaluated = [
-        row for row in rows if isinstance(row.get("strategy_match"), bool)
-    ]
-    strategy_correct = sum(row["strategy_match"] for row in strategy_evaluated)
     retrieval_seconds = [
         float(row["retrieval_seconds"])
         for row in evaluated
@@ -306,13 +301,6 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "error_query_count": len(rows) - len(evaluated),
         "queries_with_relevant_dreams": sum(
             row["relevant_count"] > 0 for row in evaluated
-        ),
-        "strategy_evaluated_count": len(strategy_evaluated),
-        "strategy_correct_count": strategy_correct,
-        "strategy_accuracy": (
-            strategy_correct / len(strategy_evaluated)
-            if strategy_evaluated
-            else None
         ),
         "mean_retrieval_seconds": (
             statistics.fmean(retrieval_seconds) if retrieval_seconds else None
@@ -348,8 +336,8 @@ def source_control_metadata() -> dict[str, Any]:
     return {"git_commit": git_commit, "git_dirty": git_dirty}
 
 
-def infer_agent_strategy(tool_names: Iterable[str]) -> str:
-    """Classify an agent's retrieval route from the tools it requested."""
+def infer_agent_route(tool_names: Iterable[str]) -> str:
+    """Describe an agent's retrieval route from the tools it requested."""
     names = {str(name) for name in tool_names}
     uses_semantic = SEMANTIC_TOOL in names
     uses_bm25 = BM25_TOOL in names
@@ -360,35 +348,8 @@ def infer_agent_strategy(tool_names: Iterable[str]) -> str:
     if uses_bm25:
         return "bm25"
     if names:
-        return "reasoned_filter"
+        return "deterministic_tools"
     return "none"
-
-
-def evaluate_agent_strategy(
-    expected_strategy: Any,
-    tool_names: Iterable[str],
-    *,
-    observable: bool = True,
-) -> dict[str, str | bool | None]:
-    """Compare one observed route with the labeled acceptable strategies."""
-    if not isinstance(expected_strategy, str):
-        return {
-            "expected_strategy": None,
-            "actual_strategy": None,
-            "strategy_match": None,
-        }
-    if not observable:
-        return {
-            "expected_strategy": expected_strategy,
-            "actual_strategy": None,
-            "strategy_match": None,
-        }
-    actual_strategy = infer_agent_strategy(tool_names)
-    return {
-        "expected_strategy": expected_strategy,
-        "actual_strategy": actual_strategy,
-        "strategy_match": actual_strategy in EXPECTED_STRATEGIES[expected_strategy],
-    }
 
 
 def evaluate_queries(
@@ -430,10 +391,11 @@ def evaluate_queries(
                     "query": item["query"],
                     "agent_input": agent_input,
                     "category": item["category"],
-                    **evaluate_agent_strategy(
-                        item.get("expected_strategy"),
-                        requested_tool_names,
-                        observable=bool(requested_tool_names),
+                    "attributes": item["attributes"],
+                    "observed_route": (
+                        infer_agent_route(requested_tool_names)
+                        if requested_tool_names
+                        else None
                     ),
                     "status": "error",
                     "error_type": type(exc).__name__,
@@ -490,10 +452,8 @@ def evaluate_queries(
                 "query": item["query"],
                 "agent_input": agent_input,
                 "category": item["category"],
-                **evaluate_agent_strategy(
-                    item.get("expected_strategy"),
-                    requested_tool_names,
-                ),
+                "attributes": item["attributes"],
+                "observed_route": infer_agent_route(requested_tool_names),
                 "status": status,
                 "error_type": "ToolExecutionError" if tool_errors else None,
                 "error": error,
@@ -554,7 +514,7 @@ def evaluate_embedding_queries(
                 {
                     "query": item["query"],
                     "category": item["category"],
-                    "expected_strategy": item.get("expected_strategy"),
+                    "attributes": item["attributes"],
                     "status": "error",
                     "error_type": type(exc).__name__,
                     "error": str(exc),
@@ -582,7 +542,7 @@ def evaluate_embedding_queries(
             {
                 "query": item["query"],
                 "category": item["category"],
-                "expected_strategy": item.get("expected_strategy"),
+                "attributes": item["attributes"],
                 "status": "ok",
                 "error_type": None,
                 "error": None,
@@ -627,7 +587,7 @@ def evaluate_bm25_queries(
                 {
                     "query": query,
                     "category": item["category"],
-                    "expected_strategy": item.get("expected_strategy"),
+                    "attributes": item["attributes"],
                     "status": "error",
                     "error_type": type(exc).__name__,
                     "error": str(exc),
@@ -655,7 +615,7 @@ def evaluate_bm25_queries(
             {
                 "query": query,
                 "category": item["category"],
-                "expected_strategy": item.get("expected_strategy"),
+                "attributes": item["attributes"],
                 "status": "ok",
                 "error_type": None,
                 "error": None,
@@ -755,7 +715,7 @@ def evaluate_hybrid_queries(
                 {
                     "query": query,
                     "category": item["category"],
-                    "expected_strategy": item.get("expected_strategy"),
+                    "attributes": item["attributes"],
                     "status": "error",
                     "error_type": type(exc).__name__,
                     "error": str(exc),
@@ -784,7 +744,7 @@ def evaluate_hybrid_queries(
             {
                 "query": query,
                 "category": item["category"],
-                "expected_strategy": item.get("expected_strategy"),
+                "attributes": item["attributes"],
                 "status": "ok",
                 "error_type": None,
                 "error": None,
@@ -879,8 +839,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             embed_model=args.embed_model,
         )
     by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_attribute: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         by_category[row["category"]].append(row)
+        for attribute in row["attributes"]:
+            by_attribute[attribute].append(row)
     return {
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "queries_path": str(args.queries_path),
@@ -919,6 +882,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             category: summarize(category_rows)
             for category, category_rows in sorted(by_category.items())
         },
+        "attribute_summaries": {
+            attribute: summarize(attribute_rows)
+            for attribute, attribute_rows in sorted(by_attribute.items())
+        },
         "queries": rows,
     }
 
@@ -950,22 +917,6 @@ def _summary_table(rows: Iterable[tuple[str, dict[str, Any]]]) -> list[str]:
             f"{_display(summary['max_precision_at_10'])} | "
             f"{_display(summary['recall_at_10'])} | "
             f"{_display(summary['r_precision'])} |"
-        )
-    return lines
-
-
-def _strategy_summary_table(
-    rows: Iterable[tuple[str, dict[str, Any]]],
-) -> list[str]:
-    lines = [
-        "| group | labeled routes | correct | accuracy |",
-        "|---|---:|---:|---:|",
-    ]
-    for label, summary in rows:
-        lines.append(
-            f"| {label} | {summary['strategy_evaluated_count']} | "
-            f"{summary['strategy_correct_count']} | "
-            f"{_display(summary['strategy_accuracy'])} |"
         )
     return lines
 
@@ -1022,10 +973,10 @@ def markdown_report(report: dict[str, Any]) -> str:
                 f"- Agent chat model: `{settings['chat_model']}`",
                 f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
                 f"- Results per agent search: `{results_per_agent_search}`",
-                "- Each labeled query is wrapped as an explicit retrieval task before being sent to the agent; its category, expected strategy, and relevance labels remain hidden.",
+                "- Each labeled query is wrapped as an explicit retrieval task before being sent to the agent; its category, attributes, and relevance labels remain hidden.",
                 "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
-                "- Routing accuracy compares requested retrieval tools with each query's expected_strategy, independently of retrieval success.",
-                "- reasoned_filter means the agent requested non-topical deterministic tools without semantic or BM25 search; errors with no observable tool route are excluded.",
+                "- Observed routes describe requested retrieval tools for diagnostics; they are not scored as correct or incorrect.",
+                "- deterministic_tools means the agent requested non-topical deterministic tools without semantic or BM25 search.",
             ]
         )
     elif retrieval_mode == "embedding":
@@ -1051,17 +1002,23 @@ def markdown_report(report: dict[str, Any]) -> str:
             "",
             *_summary_table(report["category_summaries"].items()),
             "",
+            "## Attribute macro averages",
+            "",
+            *_summary_table(report.get("attribute_summaries", {}).items()),
+            "",
             "## Per-query results",
             "",
-            "| query | category | status | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
-            "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+            "| query | category | attributes | status | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
+            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for row in report["queries"]:
         query = row["query"].replace("|", "\\|").replace("\n", " ")
         error = str(row.get("error") or "").replace("|", "\\|")
+        attributes = ", ".join(row.get("attributes", ())).replace("|", "\\|")
         lines.append(
-            f"| {query} | {row['category']} | {row.get('status', 'ok')} | "
+            f"| {query} | {row['category']} | {attributes} | "
+            f"{row.get('status', 'ok')} | "
             f"{row['relevant_count']} | {_display(row['relevant_at_5'])} | "
             f"{_display(row['precision_at_5'])} | "
             f"{_display(row['max_precision_at_5'])} | {_display(row['recall_at_5'])} | "
@@ -1074,18 +1031,10 @@ def markdown_report(report: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "## Agent routing accuracy",
-                "",
-                *_strategy_summary_table([("all", report["summary"])]),
-                "",
-                "### Routing accuracy by category",
-                "",
-                *_strategy_summary_table(report["category_summaries"].items()),
-                "",
                 "## Agent retrieval trace",
                 "",
-                "| query | expected strategy | actual strategy | match | generated tool calls |",
-                "|---|---|---|---|---|",
+                "| query | observed route | generated tool calls |",
+                "|---|---|---|",
             ]
         )
         for row in report["queries"]:
@@ -1095,9 +1044,8 @@ def markdown_report(report: dict[str, Any]) -> str:
             )
             escaped_calls = calls.replace("|", "\\|") or "none"
             lines.append(
-                f"| {query} | {row.get('expected_strategy') or 'n/a'} | "
-                f"{row.get('actual_strategy') or 'n/a'} | "
-                f"{_display(row.get('strategy_match'))} | {escaped_calls} |"
+                f"| {query} | {row.get('observed_route') or 'n/a'} | "
+                f"{escaped_calls} |"
             )
     return "\n".join(lines).rstrip() + "\n"
 

@@ -44,24 +44,26 @@ The system separates reusable retrieval and analytical services from CLI and age
 
 ## Retrieval evaluation
 
-Retrieval is evaluated on a 64-query labeled benchmark built from the included synthetic journal. The benchmark includes semantic queries as well as cases designed to stress lexical retrieval: proper names, rare objects, exact places, inflected variants, separated phrase terms, mixed entity/concept queries, and queries with little or no lexical overlap.
+Retrieval is evaluated on a 56-query labeled benchmark built from the included synthetic journal. Each query has a fine-grained category plus multi-label attributes for topical, lexical, entity, compositional, temporal, and low-overlap analysis. The benchmark includes proper names, rare objects, exact places, inflected variants, separated phrase terms, mixed entity/concept queries, and queries with little or no lexical overlap. Empty-result behavior belongs in a separate end-to-end abstention evaluation because this benchmark scores ranked candidates without generating a final answer.
 
-| Strategy | R-precision | R@5 | R@10 | Routing accuracy | Time/query |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| BM25 baseline | 0.595 | 0.597 | 0.676 | — | <0.001 s |
-| Fixed hybrid (BM25 + semantic) | 0.459 | 0.639 | 0.731 | — | 0.093 s |
-| Semantic baseline | 0.418 | 0.412 | 0.466 | — | 0.165 s |
-| Expanded batched agent | 0.477 | 0.537 | 0.701 | 0.531 | 11.369 s |
-| One-shot expanded agent | 0.376 | 0.383 | 0.459 | 0.469 | 2.174 s |
+| Strategy | R-precision | R@5 | R@10 | Time/query |
+| --- | ---: | ---: | ---: | ---: |
+| BM25 baseline | 0.595 | 0.597 | 0.676 | <0.001 s |
+| Fixed hybrid (BM25 + semantic) | 0.459 | 0.639 | 0.731 | 0.093 s |
+| Semantic baseline | 0.418 | 0.412 | 0.466 | 0.165 s |
+| Expanded batched agent | 0.477 | 0.537 | 0.701 | 11.369 s |
+| One-shot expanded agent | 0.376 | 0.383 | 0.459 | 2.174 s |
+
+These figures are retained from the previous 64-query suite; query-suite fingerprints keep them separate from new runs using the revised benchmark.
 
 The results show different strengths across retrieval methods. BM25 currently gives the highest R-precision, while the fixed hybrid retriever gives the highest recall at both 5 and 10 results. Agent-driven retrieval is evaluated separately to measure how effectively the LLM can select and combine retrieval strategies.
 
 See [`leaderboard.md`](outputs/retrieval_evaluations/leaderboard.md) for more detailed evaluation results.  
 
-Benchmark reports include per-query results, aggregate metrics, experiment metadata, errors, runtime, and agent routing accuracy.
+Benchmark reports include per-query results, aggregate metrics, experiment metadata, errors, runtime, and descriptive agent tool traces.
 For agent-mode evaluation, every labeled input is wrapped as an explicit request
 to retrieve relevant dreams. This makes bare names and places unambiguously
-retrieval queries without revealing their category, expected strategy, or known
+retrieval queries without revealing their category, attributes, or known
 relevant dream IDs to the agent.
 The running leaderboard places each configured embedding/chat-model combination
 in its own table. Query-suite fingerprints remain separate so unlike label sets

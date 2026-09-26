@@ -17,7 +17,6 @@ METRICS = (
     ("r_precision", "R-precision", "max"),
     ("recall_at_5", "R@5", "max"),
     ("recall_at_10", "R@10", "max"),
-    ("strategy_accuracy", "Routing accuracy", "max"),
     ("error_query_count", "Errors", "min"),
     ("mean_retrieval_seconds", "Mean seconds/query", "min"),
 )
@@ -43,7 +42,7 @@ def _fallback_query_fingerprint(report: dict[str, Any]) -> str | None:
         {
             "query": item.get("query"),
             "category": item.get("category"),
-            "expected_strategy": item.get("expected_strategy"),
+            "attributes": item.get("attributes"),
             "relevant_dream_ids": item.get("relevant_dream_ids"),
         }
         for item in queries
@@ -101,6 +100,21 @@ def _mean_latency(report: dict[str, Any]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _retrieval_summaries(value: Any) -> dict[str, dict[str, Any]]:
+    """Drop retired routing fields when importing historical reports."""
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(label): {
+            key: metric
+            for key, metric in summary.items()
+            if not str(key).startswith("strategy_")
+        }
+        for label, summary in value.items()
+        if isinstance(summary, dict)
+    }
+
+
 def _entry(report: dict[str, Any], source: Path) -> dict[str, Any] | None:
     summary = report.get("summary")
     settings = report.get("settings")
@@ -123,7 +137,6 @@ def _entry(report: dict[str, Any], source: Path) -> dict[str, Any] | None:
         "r_precision": summary.get("r_precision"),
         "recall_at_5": summary.get("recall_at_5"),
         "recall_at_10": summary.get("recall_at_10"),
-        "strategy_accuracy": summary.get("strategy_accuracy"),
         "error_query_count": summary.get("error_query_count"),
         "mean_retrieval_seconds": _mean_latency(report),
     }
@@ -145,7 +158,12 @@ def _entry(report: dict[str, Any], source: Path) -> dict[str, Any] | None:
         "metrics": metrics,
         "settings": settings,
         "source_control": report.get("source_control"),
-        "category_summaries": report.get("category_summaries", {}),
+        "category_summaries": _retrieval_summaries(
+            report.get("category_summaries")
+        ),
+        "attribute_summaries": _retrieval_summaries(
+            report.get("attribute_summaries")
+        ),
     }
 
 
@@ -418,8 +436,8 @@ def _group_markdown(group: dict[str, Any]) -> list[str]:
                 f"#### Embedding: `{_escape(model_group['embed_model'])}`; "
                 f"chat: `{_escape(model_group['chat_model'])}`",
                 "",
-                "| Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |",
-                "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                "| Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Errors | Mean seconds/query | Note |",
+                "|---|---|---|---:|---:|---:|---:|---:|---:|---|",
             ]
         )
         for entry in model_group["experiments"]:
@@ -429,7 +447,6 @@ def _group_markdown(group: dict[str, Any]) -> list[str]:
                 f"{_metric_cell(model_group, 'r_precision', entry)} | "
                 f"{_metric_cell(model_group, 'recall_at_5', entry)} | "
                 f"{_metric_cell(model_group, 'recall_at_10', entry)} | "
-                f"{_metric_cell(model_group, 'strategy_accuracy', entry)} | "
                 f"{_metric_cell(model_group, 'error_query_count', entry)} | "
                 f"{_metric_cell(model_group, 'mean_retrieval_seconds', entry)} | "
                 f"{_escape(entry['note'])} |"
@@ -445,7 +462,6 @@ def markdown_leaderboard(leaderboard: dict[str, Any]) -> str:
         f"- Generated: `{leaderboard['generated_at']}`",
         f"- Experiments: `{leaderboard['experiment_count']}`",
         "- Bold values are best within each query-suite, dream-corpus, and model table.",
-        "- Routing accuracy applies only to agent runs.",
         "",
     ]
     groups = leaderboard.get("groups", [])
