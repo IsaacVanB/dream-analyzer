@@ -1,7 +1,7 @@
 # Retrieval evaluation leaderboard
 
-- Generated: `2026-09-21T19:22:43-04:00`
-- Experiments: `7`
+- Generated: `2026-09-21T19:57:02-04:00`
+- Experiments: `8`
 - Bold values are best within each query-suite, dream-corpus, and model table.
 - Routing accuracy applies only to agent runs.
 
@@ -9,28 +9,28 @@
 
 - R-precision: **0.595** — BM25 baseline (no embedding or chat model)
 - R@5: **0.639** — fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model)
-- R@10: **0.731** — fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model)
-- Routing accuracy: **0.531** — expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`)
-- Errors: **0** — fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model), BM25 baseline (no embedding or chat model), semantic-baseline (embedding: `nomic-embed-text`; no chat model), one-shot-expanded-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`), expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`)
+- R@10: **0.732** — no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`)
+- Routing accuracy: **0.547** — no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`)
+- Errors: **0** — no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`), fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model), BM25 baseline (no embedding or chat model), semantic-baseline (embedding: `nomic-embed-text`; no chat model), one-shot-expanded-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`), expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`)
 - Mean seconds/query: **0.000** — BM25 baseline (no embedding or chat model)
 
 ### Current R-precision winners by category
 
 | Category | Best R-precision | Experiment and models |
 |---|---:|---|
-| character | 0.905 | fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model) |
+| character | 0.956 | no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
 | conceptual | 0.279 | expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
-| direct_semantic | 0.533 | BM25 baseline (no embedding or chat model) |
+| direct_semantic | 0.648 | no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
 | exact_places_and_labels | 1 | BM25 baseline (no embedding or chat model) |
 | exact_proper_names | 1 | fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model); BM25 baseline (no embedding or chat model); semantic-baseline (embedding: `nomic-embed-text`; no chat model); expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
 | inflected_word_variants | 1 | BM25 baseline (no embedding or chat model) |
-| mixed_entity_plus_concept | 0.900 | semantic-baseline (embedding: `nomic-embed-text`; no chat model) |
-| multi_concept | 0.472 | expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
+| mixed_entity_plus_concept | 0.950 | no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
+| multi_concept | 0.512 | no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
 | rare_literal_objects | 0.800 | BM25 baseline (no embedding or chat model) |
 | recurring_event | 0.409 | fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model) |
-| semantic_without_lexical_match | 0.250 | fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model); semantic-baseline (embedding: `nomic-embed-text`; no chat model); one-shot-expanded-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`); expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
+| semantic_without_lexical_match | 0.250 | no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`); fixed-hybrid-baseline (embedding: `nomic-embed-text`; no chat model); semantic-baseline (embedding: `nomic-embed-text`; no chat model); one-shot-expanded-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`); expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
 | separated_phrase_terms | 0.950 | BM25 baseline (no embedding or chat model) |
-| temporal | 0.542 | expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
+| temporal | 0.542 | no-redundant-results (embedding: `nomic-embed-text`; chat: `qwen3:8b`); expanded-batched-agent (embedding: `nomic-embed-text`; chat: `qwen3:8b`) |
 
 ## Current corpus experiments
 
@@ -45,11 +45,12 @@ Compatibility key: `38728809d53d-7f3937edabb4`
 
 | Experiment | Mode | Created | Queries | R-precision | R@5 | R@10 | Routing accuracy | Errors | Mean seconds/query | Note |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| [fixed-hybrid-baseline](<benchmark_hybrid_2026-09-15_21-38-05-626331.md>) | hybrid | 2026-09-15T21:38:05-04:00 | 64 | 0.459 | **0.639** | **0.731** | n/a | **0** | 0.093 | Verbatim semantic and BM25 retrieval fused using reciprocal-rank fusion |
+| [no-redundant-results](<benchmark_agent_2026-09-21_19-57-02-802607.md>) | agent | 2026-09-21T19:57:02-04:00 | 64 | 0.448 | 0.628 | **0.732** | **0.547** | **0** | 10.375 | Prevented duplicate queries skewing RRF results |
+| [fixed-hybrid-baseline](<benchmark_hybrid_2026-09-15_21-38-05-626331.md>) | hybrid | 2026-09-15T21:38:05-04:00 | 64 | 0.459 | **0.639** | 0.731 | n/a | **0** | 0.093 | Verbatim semantic and BM25 retrieval fused using reciprocal-rank fusion |
 | [BM25 baseline](<benchmark_bm25_2026-09-15_21-37-14-119953.md>) | bm25 | 2026-09-15T21:37:14-04:00 | 64 | **0.595** | 0.597 | 0.676 | n/a | **0** | **0.000** | Evaluation queries sent verbatim to the in-memory BM25 index |
 | [semantic-baseline](<benchmark_embedding_2026-09-15_21-36-43-290945.md>) | embedding | 2026-09-15T21:36:43-04:00 | 64 | 0.418 | 0.412 | 0.466 | n/a | **0** | 0.165 | Evaluation queries embedded verbatim and ranked by Chroma |
 | [one-shot-expanded-agent](<benchmark_agent_2026-09-15_19-02-45-183907.md>) | agent | 2026-09-15T19:02:45-04:00 | 64 | 0.376 | 0.383 | 0.459 | 0.469 | **0** | 2.174 | One-shot upfront retrieval plan with expanded 6-10 word semantic rewrites and normalized duplicate rejection. |
-| [expanded-batched-agent](<benchmark_agent_2026-09-15_18-55-09-469453.md>) | agent | 2026-09-15T18:55:09-04:00 | 64 | 0.477 | 0.537 | 0.701 | **0.531** | **0** | 11.369 | Expanded 6-10 word semantic rewrites, upfront complementary query batching, and rejected duplicate calls. |
+| [expanded-batched-agent](<benchmark_agent_2026-09-15_18-55-09-469453.md>) | agent | 2026-09-15T18:55:09-04:00 | 64 | 0.477 | 0.537 | 0.701 | 0.531 | **0** | 11.369 | Expanded 6-10 word semantic rewrites, upfront complementary query batching, and rejected duplicate calls. |
 
 
 ## Older or incompatible experiment groups

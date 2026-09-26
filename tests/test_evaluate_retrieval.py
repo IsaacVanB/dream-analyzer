@@ -403,7 +403,20 @@ class RetrievalMetricTests(unittest.TestCase):
                 temperature=0,
             )
 
-        self.assertTrue(agent.calls[0][1]["synthesize"] is False)
+        agent_input, call_options = agent.calls[0]
+        self.assertEqual(
+            agent_input,
+            "RETRIEVAL EVALUATION TASK:\n"
+            "Retrieve and rank the dreams most relevant to the search query below. "
+            "Treat the text under SEARCH QUERY as a retrieval query, even when it is "
+            "only a name, place, object, or short phrase. Do not interpret a bare term "
+            "as a request for background information or a final answer. Use the "
+            "available retrieval tools to return dream evidence.\n\n"
+            "SEARCH QUERY:\noriginal query",
+        )
+        self.assertTrue(call_options["synthesize"] is False)
+        self.assertEqual(rows[0]["query"], "original query")
+        self.assertEqual(rows[0]["agent_input"], agent_input)
         self.assertEqual(rows[0]["status"], "ok")
         self.assertEqual(rows[0]["retrieved_dream_ids"][0], "shared")
         self.assertEqual(rows[0]["r_precision"], 1.0)
@@ -511,6 +524,7 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertIn("## Agent routing accuracy", markdown)
         self.assertIn("| all | 1 | 1 | 1.000 |", markdown)
         self.assertIn("| dogs | semantic | semantic | yes |", markdown)
+        self.assertIn("wrapped as an explicit retrieval task", markdown)
 
     def test_markdown_describes_bm25_and_hybrid_baselines(self) -> None:
         summary = evaluate_retrieval.summarize([])

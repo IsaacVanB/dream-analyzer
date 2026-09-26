@@ -293,6 +293,19 @@ def agent_retrieval_system_prompt(*, today: date, max_tool_calls: int = 3) -> st
     )
 
 
+def retrieval_evaluation_agent_user_prompt(query: str) -> str:
+    """Wrap one labeled query as an unambiguous dream-retrieval task."""
+    return (
+        "RETRIEVAL EVALUATION TASK:\n"
+        "Retrieve and rank the dreams most relevant to the search query below. "
+        "Treat the text under SEARCH QUERY as a retrieval query, even when it is "
+        "only a name, place, object, or short phrase. Do not interpret a bare term "
+        "as a request for background information or a final answer. Use the "
+        "available retrieval tools to return dream evidence.\n\n"
+        f"SEARCH QUERY:\n{query}"
+    )
+
+
 def agent_synthesis_user_prompt(
     *, question: str, reason: str, evidence: str, task: str
 ) -> str:

@@ -20,6 +20,7 @@ from dream_analysis.agent import DreamRagAgent, ToolExecution
 from dream_analysis.artifacts import write_json_atomic, write_text_atomic
 from dream_analysis.bm25 import DreamBm25Index
 from dream_analysis.index import validate_collection_embedding_model
+from dream_analysis.prompts import retrieval_evaluation_agent_user_prompt
 from dream_analysis.repository import (
     CharacterDictionaryRepository,
     DreamRepository,
@@ -404,12 +405,13 @@ def evaluate_queries(
     rows: list[dict[str, Any]] = []
     for number, item in enumerate(queries, start=1):
         relevant_ids = item["relevant_dream_ids"]
+        agent_input = retrieval_evaluation_agent_user_prompt(item["query"])
         progress = f"[{number}/{len(queries)}]"
         print(f"{progress} Starting: {item['query']}", flush=True)
         started = perf_counter()
         try:
             response = agent.answer(
-                item["query"],
+                agent_input,
                 chat_model=chat_model,
                 num_ctx=num_ctx,
                 num_predict=num_predict,
@@ -426,6 +428,7 @@ def evaluate_queries(
             rows.append(
                 {
                     "query": item["query"],
+                    "agent_input": agent_input,
                     "category": item["category"],
                     **evaluate_agent_strategy(
                         item.get("expected_strategy"),
@@ -485,6 +488,7 @@ def evaluate_queries(
         rows.append(
             {
                 "query": item["query"],
+                "agent_input": agent_input,
                 "category": item["category"],
                 **evaluate_agent_strategy(
                     item.get("expected_strategy"),
@@ -1018,6 +1022,7 @@ def markdown_report(report: dict[str, Any]) -> str:
                 f"- Agent chat model: `{settings['chat_model']}`",
                 f"- Maximum tool calls per query: `{settings['max_tool_calls']}`",
                 f"- Results per agent search: `{results_per_agent_search}`",
+                "- Each labeled query is wrapped as an explicit retrieval task before being sent to the agent; its category, expected strategy, and relevance labels remain hidden.",
                 "- Retrieval uses the dream agent's tool planner and reciprocal-rank fusion; final answer synthesis is skipped.",
                 "- Routing accuracy compares requested retrieval tools with each query's expected_strategy, independently of retrieval success.",
                 "- reasoned_filter means the agent requested non-topical deterministic tools without semantic or BM25 search; errors with no observable tool route are excluded.",
