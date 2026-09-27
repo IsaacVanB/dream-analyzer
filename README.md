@@ -44,19 +44,23 @@ The system separates reusable retrieval and analytical services from CLI and age
 
 ## Retrieval evaluation
 
-Retrieval is evaluated on a 56-query labeled benchmark built from the included synthetic journal. Each query has a fine-grained category plus multi-label attributes for topical, lexical, entity, compositional, temporal, and low-overlap analysis. The benchmark includes proper names, rare objects, exact places, inflected variants, separated phrase terms, mixed entity/concept queries, and queries with little or no lexical overlap. Empty-result behavior belongs in a separate end-to-end abstention evaluation because this benchmark scores ranked candidates without generating a final answer.
+Retrieval is evaluated on a 56-query labeled benchmark built from the included synthetic journal. Each query has a fine-grained category plus multi-label attributes for topical, lexical, entity, compositional, temporal, and low-overlap analysis. The benchmark includes proper names, rare objects, exact places, inflected variants, separated phrase terms, mixed entity/concept queries, and queries with little or no lexical overlap.  
 
-| Strategy | R-precision | R@5 | R@10 | Time/query |
-| --- | ---: | ---: | ---: | ---: |
-| BM25 baseline | 0.595 | 0.597 | 0.676 | <0.001 s |
-| Fixed hybrid (BM25 + semantic) | 0.459 | 0.639 | 0.731 | 0.093 s |
-| Semantic baseline | 0.418 | 0.412 | 0.466 | 0.165 s |
-| Expanded batched agent | 0.477 | 0.537 | 0.701 | 11.369 s |
-| One-shot expanded agent | 0.376 | 0.383 | 0.459 | 2.174 s |
+| Strategy | Embedding model | Chat model | R-precision | R@5 | R@10 | Time/query |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Agent | qwen3-embedding | gemma4:12b | **0.608** | **0.676** | 0.763 | 50.793 s |
+| Agent | nomic-embed-text | qwen3:8b | 0.537 | 0.659 | **0.783** | 9.920 s |
+| BM25 baseline | — | — | 0.596 | 0.602 | 0.677 | **<0.001 s** |
+| Agent | qwen3-embedding | qwen3:8b | 0.574 | 0.652 | 0.746 | 16.389 s |
+| Agent | nomic-embed-text | gemma4:12b | 0.554 | 0.656 | 0.716 | 24.840 s |
+| Fixed hybrid | qwen3-embedding | — | 0.444 | 0.589 | 0.680 | 0.359 s |
+| Fixed hybrid | nomic-embed-text | — | 0.434 | 0.636 | 0.736 | 0.103 s |
+| Semantic baseline | nomic-embed-text | — | 0.416 | 0.411 | 0.469 | 0.094 s |
+| Semantic baseline | qwen3-embedding | — | 0.357 | 0.403 | 0.445 | 0.458 s |
 
-These figures are retained from the previous 64-query suite; query-suite fingerprints keep them separate from new runs using the revised benchmark.
-
-The results show different strengths across retrieval methods. BM25 currently gives the highest R-precision, while the fixed hybrid retriever gives the highest recall at both 5 and 10 results. Agent-driven retrieval is evaluated separately to measure how effectively the LLM can select and combine retrieval strategies.
+The qwen3-embedding and gemma4:12b agent has the highest R-precision and R@5,
+while the nomic-embed-text and qwen3:8b agent has the highest R@10. BM25 remains
+the fastest strategy and has the second-highest R-precision.  
 
 See [`leaderboard.md`](outputs/retrieval_evaluations/leaderboard.md) for more detailed evaluation results.  
 
