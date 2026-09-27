@@ -479,6 +479,8 @@ class RetrievalMetricTests(unittest.TestCase):
             "category": "direct",
             "attributes": ["topical"],
             "observed_route": "semantic",
+            "retrieved_dream_ids": ["a", "other|dream"],
+            "relevant_dream_ids": ["a", "b"],
             **evaluate_retrieval.retrieval_metrics(["a"], ["a", "b"]),
         }
         summary = evaluate_retrieval.summarize([row])
@@ -510,6 +512,9 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertIn("max P@10", markdown)
         self.assertIn("R-precision", markdown)
         self.assertIn("| dogs | direct | topical | ok | 2 |", markdown)
+        self.assertIn("retrieved dream IDs (ranked)", markdown)
+        self.assertIn("correct dream IDs", markdown)
+        self.assertIn('["a", "other\\|dream"] | ["a", "b"]', markdown)
         self.assertIn("## Attribute macro averages", markdown)
         self.assertNotIn("routing accuracy", markdown.lower())
         self.assertIn("| dogs | semantic | none |", markdown)

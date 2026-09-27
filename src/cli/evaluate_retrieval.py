@@ -941,6 +941,15 @@ def _summary_table(rows: Iterable[tuple[str, dict[str, Any]]]) -> list[str]:
     return lines
 
 
+def _format_dream_ids(dream_ids: Iterable[Any]) -> str:
+    """Render dream IDs unambiguously inside a Markdown table cell."""
+    rendered = json.dumps(
+        [str(dream_id) for dream_id in dream_ids],
+        ensure_ascii=False,
+    )
+    return rendered.replace("|", "\\|").replace("\n", " ")
+
+
 def markdown_report(report: dict[str, Any]) -> str:
     """Render aggregate and per-query retrieval metrics as Markdown."""
     settings = report["settings"]
@@ -1028,8 +1037,8 @@ def markdown_report(report: dict[str, Any]) -> str:
             "",
             "## Per-query results",
             "",
-            "| query | category | attributes | status | relevant | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
-            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+            "| query | category | attributes | status | relevant | retrieved dream IDs (ranked) | correct dream IDs | hits@5 | P@5 | max P@5 | R@5 | hits@10 | P@10 | max P@10 | R@10 | R-precision | error |",
+            "|---|---|---|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for row in report["queries"]:
@@ -1039,7 +1048,10 @@ def markdown_report(report: dict[str, Any]) -> str:
         lines.append(
             f"| {query} | {row['category']} | {attributes} | "
             f"{row.get('status', 'ok')} | "
-            f"{row['relevant_count']} | {_display(row['relevant_at_5'])} | "
+            f"{row['relevant_count']} | "
+            f"{_format_dream_ids(row.get('retrieved_dream_ids', ()))} | "
+            f"{_format_dream_ids(row.get('relevant_dream_ids', ()))} | "
+            f"{_display(row['relevant_at_5'])} | "
             f"{_display(row['precision_at_5'])} | "
             f"{_display(row['max_precision_at_5'])} | {_display(row['recall_at_5'])} | "
             f"{_display(row['relevant_at_10'])} | {_display(row['precision_at_10'])} | "
