@@ -143,10 +143,6 @@ def _preflight_agent_data(
             Path(args.dreams_path),
             DreamRepository(args.dreams_path),
         ),
-        "character dictionary": (
-            Path(args.characters_path),
-            CharacterDictionaryRepository(args.characters_path),
-        ),
     }
     data_file_results: dict[str, dict[str, Any]] = {}
     for label, (path, repository) in required_data_files.items():
@@ -162,6 +158,30 @@ def _preflight_agent_data(
             "path": str(path),
             "record_count": record_count,
         }
+
+    characters_path = Path(args.characters_path)
+    if not characters_path.is_file():
+        data_file_results["character dictionary"] = {
+            "path": str(characters_path),
+            "status": "unavailable",
+            "effect": "get_character_context disabled",
+        }
+    else:
+        try:
+            character_count = len(
+                CharacterDictionaryRepository(characters_path).all()
+            )
+        except Exception as exc:
+            errors.append(
+                f"cannot load character dictionary {characters_path}: {exc}"
+            )
+        else:
+            data_file_results["character dictionary"] = {
+                "path": str(characters_path),
+                "status": "available",
+                "record_count": character_count,
+                "effect": "get_character_context enabled",
+            }
 
     structured_path = Path(args.structured_dreams_path)
     if not structured_path.is_file():

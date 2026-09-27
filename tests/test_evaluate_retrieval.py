@@ -56,6 +56,7 @@ class RetrievalMetricTests(unittest.TestCase):
         with TemporaryDirectory() as temporary_directory:
             args = self.preflight_args(Path(temporary_directory))
             args.structured_dreams_path.unlink()
+            args.characters_path.unlink()
             result = evaluate_retrieval.preflight(
                 args,
                 chroma_client=Client(),
@@ -69,6 +70,14 @@ class RetrievalMetricTests(unittest.TestCase):
         self.assertEqual(
             result["data_files"]["structured dreams"]["effect"],
             "get_character_mentions disabled",
+        )
+        self.assertEqual(
+            result["data_files"]["character dictionary"]["status"],
+            "unavailable",
+        )
+        self.assertEqual(
+            result["data_files"]["character dictionary"]["effect"],
+            "get_character_context disabled",
         )
 
     def test_preflight_reports_available_collection(self) -> None:

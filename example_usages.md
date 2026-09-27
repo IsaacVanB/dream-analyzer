@@ -311,8 +311,9 @@ Arguments:
 - `--structured-dreams-path`: structured feature JSONL used by
   `get_character_mentions`. Defaults to
   `outputs/structured_dreams/dream_features.jsonl`.
-- `--characters-path`: manually curated character dictionary used by
-  `get_character_context`. Defaults to `data/characters.json`.
+- `--characters-path`: optional manually curated character dictionary used by
+  `get_character_context`. Defaults to `data/characters.json`; when the file is
+  absent, only that tool is disabled.
 - `--num-ctx`, `--num-predict`, and `--temperature`: control chat generation. `--num-ctx` defaults to `8192` so ten average-length dreams fit comfortably.
 
 The `search_dreams` tool supports optional inclusive `start_date` and `end_date`
@@ -463,7 +464,8 @@ are unsupported by the original evaluation query are removed before execution
 and identified in the tool trace. The final prose answer is not generated
 during evaluation. A fail-fast preflight first checks the Chroma path,
 collection, embedding-model metadata, and tool data files. Missing structured
-data is allowed and disables only `get_character_mentions`; malformed structured
+data is allowed and disables only `get_character_mentions`; a missing character
+dictionary similarly disables only `get_character_context`. Malformed optional
 data remains a preflight error. Tool or agent failures are marked as query errors
 and excluded from metric averages. The JSON and Markdown reports include the
 tool trace, recall and precision at 5 and 10, R-precision, macro and category

@@ -61,7 +61,6 @@ def build_agent(
 ) -> DreamRagAgent:
     gateway = OllamaGateway()
     repository = DreamRepository(dreams_path)
-    character_repository = CharacterDictionaryRepository(characters_path)
     index = DreamIndex(
         path=chroma_path,
         collection_name=collection_name,
@@ -85,8 +84,12 @@ def build_agent(
         ),
         DreamStatisticsTool(repository),
         TagTrendTool(repository),
-        CharacterContextTool(character_repository),
     ]
+    character_path = Path(characters_path)
+    if character_path.is_file():
+        tools.append(
+            CharacterContextTool(CharacterDictionaryRepository(character_path))
+        )
     structured_path = Path(structured_dreams_path)
     if structured_path.is_file():
         tools.append(
@@ -135,7 +138,10 @@ def build_parser(
         "--characters-path",
         type=Path,
         default=CHARACTERS_PATH,
-        help="Path to the manually curated character context JSON.",
+        help=(
+            "Optional path to manually curated character context JSON; "
+            "get_character_context is disabled when the file is absent."
+        ),
     )
     parser.add_argument(
         "--chroma-path",
