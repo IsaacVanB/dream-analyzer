@@ -150,10 +150,13 @@ class DreamAgentCliTests(unittest.TestCase):
     def test_build_agent_omits_optional_character_tools_without_data(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            dreams_path = root / "dreams.jsonl"
+            dreams_path.write_text("", encoding="utf-8")
             structured_path = root / "structured.jsonl"
             characters_path = root / "characters.json"
             with patch.object(dream_agent, "DreamIndex", return_value=object()):
                 without_optional_data = dream_agent.build_agent(
+                    dreams_path=dreams_path,
                     chroma_path=str(root / "chroma"),
                     collection_name="dreams",
                     embed_model="embed",
@@ -165,6 +168,7 @@ class DreamAgentCliTests(unittest.TestCase):
                 structured_path.write_text("", encoding="utf-8")
                 characters_path.write_text("[]", encoding="utf-8")
                 with_optional_data = dream_agent.build_agent(
+                    dreams_path=dreams_path,
                     chroma_path=str(root / "chroma"),
                     collection_name="dreams",
                     embed_model="embed",
@@ -246,7 +250,9 @@ class DreamAgentCliTests(unittest.TestCase):
         self.assertIn("Retrieved by searches: `1, 2`", report)
         self.assertEqual(report.count("A hidden room.\nThen I woke up."), 1)
 
-    def test_markdown_renders_keyword_scores_without_treating_them_as_tags(self) -> None:
+    def test_markdown_renders_keyword_scores_without_treating_them_as_tags(
+        self,
+    ) -> None:
         result = {
             "ok": True,
             "retrieval_method": "bm25",

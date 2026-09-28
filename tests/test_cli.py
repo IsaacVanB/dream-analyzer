@@ -50,6 +50,10 @@ class ConsolidatedCliTests(unittest.TestCase):
     def test_representative_arguments_for_major_subcommands(self) -> None:
         parser = consolidated_cli.build_parser()
 
+        parsed = parser.parse_args(["parse"])
+        self.assertEqual(parsed.input, Path("data/dream_journal.txt"))
+        self.assertEqual(parsed.output, Path("data/dreams.jsonl"))
+
         parsed = parser.parse_args(["parse", "journal.txt", "dreams.jsonl"])
         self.assertEqual(parsed.input, Path("journal.txt"))
         self.assertEqual(parsed.output, Path("dreams.jsonl"))

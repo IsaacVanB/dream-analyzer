@@ -96,21 +96,40 @@ ollama pull nomic-embed-text
 ollama pull qwen3:8b
 ```
 
-A synthetic journal containing 176 dreams from 2022–2026 is included, so the basic pipeline can be tested without providing personal data.
+A synthetic journal containing 176 dreams from 2022–2026 is included under
+`examples/`, so the basic pipeline can be tested without providing personal
+data. The parsed reference corpus and its labeled retrieval suite live under
+`benchmarks/synthetic/`.
 
 ```bash
-dream-analyzer parse
-dream-analyzer index
+dream-analyzer parse \
+  examples/mock_dream_journal.txt \
+  data/sample/dreams.jsonl
+dream-analyzer index \
+  --dreams-path data/sample/dreams.jsonl \
+  --chroma-path data/sample/chroma_db
 
 dream-analyzer ask \
-  "What patterns appear in dreams about hidden rooms?"
+  "What patterns appear in dreams about hidden rooms?" \
+  --dreams-path data/sample/dreams.jsonl \
+  --chroma-path data/sample/chroma_db
 ```
 
-To work with another journal:
+To work with your own journal, copy it to the default private path and run the
+same commands without path arguments:
 
 ```bash
-dream-analyzer parse path/to/journal.txt data/my_dreams.jsonl
+mkdir -p data
+cp path/to/journal.txt data/dream_journal.txt
+dream-analyzer parse
+dream-analyzer index
 ```
+
+The entire project-local `data/` directory is ignored by Git. It is reserved
+for private source journals, parsed records, character notes, import state, and
+the local Chroma index, so pulls cannot replace those files. Back up this
+directory separately; cloning the repository does not restore it. Commands
+still accept explicit paths when a different location is preferred.
 
 See [`example_usages.md`](example_usages.md) for detailed command options and workflows.
 

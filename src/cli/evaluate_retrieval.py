@@ -29,7 +29,11 @@ from dream_analysis.repository import (
 from dream_analysis.retrieval_leaderboard import file_sha256, write_leaderboard
 
 
-QUERIES_PATH = Path("data/retrieval_eval_queries.json")
+QUERIES_PATH = Path("benchmarks/synthetic/retrieval_eval_queries.json")
+BENCHMARK_DREAMS_PATH = Path("benchmarks/synthetic/dreams.jsonl")
+BENCHMARK_STRUCTURED_DREAMS_PATH = Path("benchmarks/synthetic/structured_dreams.jsonl")
+BENCHMARK_CHARACTERS_PATH = Path("benchmarks/synthetic/characters.json")
+BENCHMARK_CHROMA_PATH = Path("data/benchmark/chroma_db")
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
 CUTOFFS = (5, 10)
 RETRIEVAL_MODES = ("agent", "embedding", "bm25", "hybrid")
@@ -168,13 +172,9 @@ def _preflight_agent_data(
         }
     else:
         try:
-            character_count = len(
-                CharacterDictionaryRepository(characters_path).all()
-            )
+            character_count = len(CharacterDictionaryRepository(characters_path).all())
         except Exception as exc:
-            errors.append(
-                f"cannot load character dictionary {characters_path}: {exc}"
-            )
+            errors.append(f"cannot load character dictionary {characters_path}: {exc}")
         else:
             data_file_results["character dictionary"] = {
                 "path": str(characters_path),
@@ -242,8 +242,12 @@ def load_evaluation_queries(path: Path) -> dict[str, Any]:
             or len(attributes) != len(set(attributes))
         ):
             raise ValueError(f"Query {query!r} has invalid attributes.")
-        if not isinstance(relevant_ids, list) or not relevant_ids or not all(
-            isinstance(dream_id, str) and dream_id for dream_id in relevant_ids
+        if (
+            not isinstance(relevant_ids, list)
+            or not relevant_ids
+            or not all(
+                isinstance(dream_id, str) and dream_id for dream_id in relevant_ids
+            )
         ):
             raise ValueError(
                 f"Query {query!r} must have at least one valid relevant dream ID; "
@@ -326,8 +330,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             statistics.fmean(retrieval_seconds) if retrieval_seconds else None
         ),
         **{
-            metric: _mean(row[metric] for row in evaluated)
-            for metric in SCORED_METRICS
+            metric: _mean(row[metric] for row in evaluated) for metric in SCORED_METRICS
         },
     }
 
@@ -426,8 +429,7 @@ def evaluate_queries(
                     "retrieved_dream_ids": [],
                     "relevant_dream_ids": relevant_ids,
                     "tool_calls": [
-                        tool_execution_report(execution)
-                        for execution in executions
+                        tool_execution_report(execution) for execution in executions
                     ],
                     "unexecuted_tool_calls": [
                         {"name": call.name, "arguments": dict(call.arguments)}
@@ -446,8 +448,7 @@ def evaluate_queries(
         retrieved_ids = [dream["dream_id"] for dream in ranked]
         retrieval_seconds = round(perf_counter() - started, 3)
         tool_calls = [
-            tool_execution_report(execution)
-            for execution in response.tool_executions
+            tool_execution_report(execution) for execution in response.tool_executions
         ]
         requested_tool_names = [
             execution.name for execution in response.tool_executions
@@ -802,9 +803,7 @@ def tool_execution_report(execution: ToolExecution) -> dict[str, Any]:
         "scope_correction": result.get("scope_correction"),
         "semantic_reranked": bool(result.get("semantic_reranked")),
         "semantic_rerank_query": result.get("semantic_rerank_query"),
-        "semantic_rerank_indexed_count": result.get(
-            "semantic_rerank_indexed_count"
-        ),
+        "semantic_rerank_indexed_count": result.get("semantic_rerank_indexed_count"),
         "semantic_rerank_unindexed_count": result.get(
             "semantic_rerank_unindexed_count"
         ),
@@ -1071,21 +1070,16 @@ def markdown_report(report: dict[str, Any]) -> str:
         )
         for row in report["queries"]:
             query = row["query"].replace("|", "\\|").replace("\n", " ")
-            calls = "; ".join(
-                _format_tool_call(call) for call in row["tool_calls"]
-            )
+            calls = "; ".join(_format_tool_call(call) for call in row["tool_calls"])
             escaped_calls = calls.replace("|", "\\|") or "none"
             lines.append(
-                f"| {query} | {row.get('observed_route') or 'n/a'} | "
-                f"{escaped_calls} |"
+                f"| {query} | {row.get('observed_route') or 'n/a'} | {escaped_calls} |"
             )
     return "\n".join(lines).rstrip() + "\n"
 
 
 def _format_tool_call(call: dict[str, Any]) -> str:
-    rendered = (
-        f"`{call['name']}({json.dumps(call['arguments'], ensure_ascii=False, sort_keys=True)})`"
-    )
+    rendered = f"`{call['name']}({json.dumps(call['arguments'], ensure_ascii=False, sort_keys=True)})`"
     if not call["ok"]:
         rendered += f" **ERROR:** {call['error'] or 'unknown tool error'}"
     elif call.get("semantic_reranked"):
@@ -1117,21 +1111,21 @@ def build_parser(
     parser.add_argument(
         "--dreams-path",
         type=Path,
-        default=dream_agent.DEFAULT_SETTINGS.dreams_path,
+        default=BENCHMARK_DREAMS_PATH,
     )
     parser.add_argument(
         "--structured-dreams-path",
         type=Path,
-        default=dream_agent.STRUCTURED_DREAMS_PATH,
+        default=BENCHMARK_STRUCTURED_DREAMS_PATH,
     )
     parser.add_argument(
         "--characters-path",
         type=Path,
-        default=dream_agent.CHARACTERS_PATH,
+        default=BENCHMARK_CHARACTERS_PATH,
     )
     parser.add_argument(
         "--chroma-path",
-        default=str(dream_agent.DEFAULT_SETTINGS.index.path),
+        default=str(BENCHMARK_CHROMA_PATH),
     )
     parser.add_argument(
         "--collection-name", default=dream_agent.DEFAULT_SETTINGS.index.collection_name

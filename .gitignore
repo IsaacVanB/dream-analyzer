@@ -8,7 +8,8 @@ outputs/plots/*
 !outputs/retrieval_evaluations/
 outputs/retrieval_evaluations/*
 !outputs/retrieval_evaluations/leaderboard.md
-data/chroma_db
+# Private, project-local journals and generated data.
+/data/
 .codex
 __pycache__/
 *.py[cod]

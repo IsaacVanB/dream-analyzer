@@ -3,6 +3,12 @@
 These examples assume the project has been installed in editable mode with
 `pip install -e .` as described in the README.
 
+The project-local `data/` directory is reserved for private user data and is
+ignored by Git. Put a journal at `data/dream_journal.txt` to use the default
+paths. The tracked synthetic journal is kept separately under `examples/`, and
+the corresponding reference corpus and retrieval labels are under
+`benchmarks/synthetic/`.
+
 The preferred interface is the installed `dream-analyzer` command. It provides
 help at both levels:
 
@@ -27,13 +33,13 @@ Parses the raw dream journal text file into JSON Lines, one JSON object per drea
 
 ```bash
 dream-analyzer parse
-dream-analyzer parse data/mock_dream_journal.txt data/dreams.jsonl
+dream-analyzer parse examples/mock_dream_journal.txt data/sample/dreams.jsonl
 dream-analyzer parse other_journal.txt data/other_dreams.jsonl --dream-separator-blank-lines 2
 ```
 
 Arguments:
 
-- `input`: optional path to the raw journal text file. Defaults to `data/mock_dream_journal.txt`.
+- `input`: optional path to the raw journal text file. Defaults to `data/dream_journal.txt`.
 - `output`: optional path for parsed JSONL output. Defaults to `data/dreams.jsonl`.
 - `--dream-separator-blank-lines`: number of consecutive blank lines that separates dreams. Defaults to auto-detection.
 
@@ -449,7 +455,7 @@ The runner defaults to temperature `0` for a controlled first comparison. Run
 
 ## `src/cli/evaluate_retrieval.py`
 
-Runs every query in `data/retrieval_eval_queries.json` through the same tool
+Runs every query in `benchmarks/synthetic/retrieval_eval_queries.json` through the same tool
 planner used by `dream-analyzer ask`. The agent can generate semantic queries,
 use date filters, retrieve exact tags or date ranges, and call character or
 analytical tools. Each labeled query is first wrapped as an explicit dream-
@@ -471,6 +477,18 @@ and excluded from metric averages. The JSON and Markdown reports include the
 tool trace, recall and precision at 5 and 10, R-precision, macro and category
 averages, and the maximum possible precision at each cutoff based on the number
 of known relevant dreams.
+
+The evaluation command defaults to the tracked synthetic corpus, character
+dictionary, and labels. Its index is kept separately from the normal private
+index. Build that benchmark index once before running an evaluation:
+
+```bash
+dream-analyzer index \
+  --dreams-path benchmarks/synthetic/dreams.jsonl \
+  --chroma-path data/benchmark/chroma_db
+```
+
+Then run an evaluation:
 
 ```bash
 python3 src/cli/evaluate_retrieval.py

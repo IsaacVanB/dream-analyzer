@@ -59,7 +59,7 @@ def build_parser(
         "input",
         nargs="?",
         type=Path,
-        default=Path("data/mock_dream_journal.txt"),
+        default=Path("data/dream_journal.txt"),
         help="Path to the dream journal text file.",
     )
     parser.add_argument(

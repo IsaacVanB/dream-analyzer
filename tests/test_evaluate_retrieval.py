@@ -96,7 +96,9 @@ class RetrievalMetricTests(unittest.TestCase):
         with TemporaryDirectory() as temporary_directory:
             args = self.preflight_args(Path(temporary_directory))
             args.structured_dreams_path.unlink()
-            with self.assertRaises(evaluate_retrieval.EvaluationPreflightError) as raised:
+            with self.assertRaises(
+                evaluate_retrieval.EvaluationPreflightError
+            ) as raised:
                 evaluate_retrieval.preflight(args, chroma_client=Client())
 
         message = str(raised.exception)
@@ -230,6 +232,22 @@ class RetrievalMetricTests(unittest.TestCase):
         agent_args = parser.parse_args([])
 
         self.assertEqual(agent_args.retrieval_mode, "agent")
+        self.assertEqual(
+            agent_args.queries_path,
+            Path("benchmarks/synthetic/retrieval_eval_queries.json"),
+        )
+        self.assertEqual(
+            agent_args.dreams_path,
+            Path("benchmarks/synthetic/dreams.jsonl"),
+        )
+        self.assertEqual(
+            agent_args.characters_path,
+            Path("benchmarks/synthetic/characters.json"),
+        )
+        self.assertEqual(
+            agent_args.chroma_path,
+            "data/benchmark/chroma_db",
+        )
         for mode in ("embedding", "bm25", "hybrid"):
             with self.subTest(mode=mode):
                 args = parser.parse_args(["--retrieval-mode", mode])
