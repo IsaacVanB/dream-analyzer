@@ -51,7 +51,7 @@ class ConsolidatedCliTests(unittest.TestCase):
         parser = consolidated_cli.build_parser()
 
         parsed = parser.parse_args(["parse"])
-        self.assertEqual(parsed.input, Path("data/dream_journal.txt"))
+        self.assertEqual(parsed.input, Path("data/mock_dream_journal.txt"))
         self.assertEqual(parsed.output, Path("data/dreams.jsonl"))
 
         parsed = parser.parse_args(["parse", "journal.txt", "dreams.jsonl"])

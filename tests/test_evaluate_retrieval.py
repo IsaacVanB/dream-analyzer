@@ -232,22 +232,10 @@ class RetrievalMetricTests(unittest.TestCase):
         agent_args = parser.parse_args([])
 
         self.assertEqual(agent_args.retrieval_mode, "agent")
-        self.assertEqual(
-            agent_args.queries_path,
-            Path("benchmarks/synthetic/retrieval_eval_queries.json"),
-        )
-        self.assertEqual(
-            agent_args.dreams_path,
-            Path("benchmarks/synthetic/dreams.jsonl"),
-        )
-        self.assertEqual(
-            agent_args.characters_path,
-            Path("benchmarks/synthetic/characters.json"),
-        )
-        self.assertEqual(
-            agent_args.chroma_path,
-            "data/benchmark/chroma_db",
-        )
+        self.assertEqual(agent_args.queries_path, Path("data/retrieval_eval_queries.json"))
+        self.assertEqual(agent_args.dreams_path, Path("data/dreams.jsonl"))
+        self.assertEqual(agent_args.characters_path, Path("data/characters.json"))
+        self.assertEqual(agent_args.chroma_path, "data/chroma_db")
         for mode in ("embedding", "bm25", "hybrid"):
             with self.subTest(mode=mode):
                 args = parser.parse_args(["--retrieval-mode", mode])

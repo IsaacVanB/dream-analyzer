@@ -96,10 +96,9 @@ ollama pull nomic-embed-text
 ollama pull qwen3:8b
 ```
 
-A synthetic journal containing 176 dreams from 2022–2026 is included under
-`examples/`, so the basic pipeline can be tested without providing personal
-data. The parsed reference corpus and its labeled retrieval suite live under
-`benchmarks/synthetic/`.
+The `examples/` directory contains a synthetic journal with 176 dreams from
+2022–2026, its parsed corpus, character dictionary, and labeled retrieval suite,
+so the complete pipeline can be tested without providing personal data.
 
 ```bash
 dream-analyzer parse \
@@ -120,7 +119,7 @@ same commands without path arguments:
 
 ```bash
 mkdir -p data
-cp path/to/journal.txt data/dream_journal.txt
+cp path/to/journal.txt data/mock_dream_journal.txt
 dream-analyzer parse
 dream-analyzer index
 ```

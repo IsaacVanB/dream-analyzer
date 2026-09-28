@@ -4,10 +4,9 @@ These examples assume the project has been installed in editable mode with
 `pip install -e .` as described in the README.
 
 The project-local `data/` directory is reserved for private user data and is
-ignored by Git. Put a journal at `data/dream_journal.txt` to use the default
-paths. The tracked synthetic journal is kept separately under `examples/`, and
-the corresponding reference corpus and retrieval labels are under
-`benchmarks/synthetic/`.
+ignored by Git. Put a journal at `data/mock_dream_journal.txt` to use the default
+paths. The tracked synthetic journal, parsed corpus, character dictionary, and
+retrieval labels are kept separately under `examples/`.
 
 The preferred interface is the installed `dream-analyzer` command. It provides
 help at both levels:
@@ -39,7 +38,7 @@ dream-analyzer parse other_journal.txt data/other_dreams.jsonl --dream-separator
 
 Arguments:
 
-- `input`: optional path to the raw journal text file. Defaults to `data/dream_journal.txt`.
+- `input`: optional path to the raw journal text file. Defaults to `data/mock_dream_journal.txt`.
 - `output`: optional path for parsed JSONL output. Defaults to `data/dreams.jsonl`.
 - `--dream-separator-blank-lines`: number of consecutive blank lines that separates dreams. Defaults to auto-detection.
 
@@ -455,7 +454,7 @@ The runner defaults to temperature `0` for a controlled first comparison. Run
 
 ## `src/cli/evaluate_retrieval.py`
 
-Runs every query in `benchmarks/synthetic/retrieval_eval_queries.json` through the same tool
+Runs every query in `data/retrieval_eval_queries.json` through the same tool
 planner used by `dream-analyzer ask`. The agent can generate semantic queries,
 use date filters, retrieve exact tags or date ranges, and call character or
 analytical tools. Each labeled query is first wrapped as an explicit dream-
@@ -478,17 +477,10 @@ tool trace, recall and precision at 5 and 10, R-precision, macro and category
 averages, and the maximum possible precision at each cutoff based on the number
 of known relevant dreams.
 
-The evaluation command defaults to the tracked synthetic corpus, character
-dictionary, and labels. Its index is kept separately from the normal private
-index. Build that benchmark index once before running an evaluation:
-
-```bash
-dream-analyzer index \
-  --dreams-path benchmarks/synthetic/dreams.jsonl \
-  --chroma-path data/benchmark/chroma_db
-```
-
-Then run an evaluation:
+Like the other commands, evaluation defaults to the user's ignored `data/`
+files: `dreams.jsonl`, `characters.json`, `retrieval_eval_queries.json`, and
+`chroma_db`. A user who supplies those files can run the same commands without
+path arguments:
 
 ```bash
 python3 src/cli/evaluate_retrieval.py
@@ -496,6 +488,22 @@ python3 src/cli/evaluate_retrieval.py --retrieval-mode embedding
 python3 src/cli/evaluate_retrieval.py \
   --collection-name dreams_qwen3_embedding \
   --embed-model qwen3-embedding
+```
+
+To run the repository's tracked synthetic benchmark without touching personal
+data, build a separate index and pass the reference paths explicitly:
+
+```bash
+dream-analyzer index \
+  --dreams-path examples/dreams.jsonl \
+  --chroma-path data/benchmark/chroma_db
+
+python3 src/cli/evaluate_retrieval.py \
+  --queries-path examples/retrieval_eval_queries.json \
+  --dreams-path examples/dreams.jsonl \
+  --structured-dreams-path data/benchmark/structured_dreams.jsonl \
+  --characters-path examples/characters.json \
+  --chroma-path data/benchmark/chroma_db
 ```
 
 Agent retrieval is the default. The `embedding` mode provides a non-agentic

@@ -29,11 +29,7 @@ from dream_analysis.repository import (
 from dream_analysis.retrieval_leaderboard import file_sha256, write_leaderboard
 
 
-QUERIES_PATH = Path("benchmarks/synthetic/retrieval_eval_queries.json")
-BENCHMARK_DREAMS_PATH = Path("benchmarks/synthetic/dreams.jsonl")
-BENCHMARK_STRUCTURED_DREAMS_PATH = Path("benchmarks/synthetic/structured_dreams.jsonl")
-BENCHMARK_CHARACTERS_PATH = Path("benchmarks/synthetic/characters.json")
-BENCHMARK_CHROMA_PATH = Path("data/benchmark/chroma_db")
+QUERIES_PATH = Path("data/retrieval_eval_queries.json")
 OUTPUT_DIR = Path("outputs/retrieval_evaluations")
 CUTOFFS = (5, 10)
 RETRIEVAL_MODES = ("agent", "embedding", "bm25", "hybrid")
@@ -1111,21 +1107,21 @@ def build_parser(
     parser.add_argument(
         "--dreams-path",
         type=Path,
-        default=BENCHMARK_DREAMS_PATH,
+        default=dream_agent.DEFAULT_SETTINGS.dreams_path,
     )
     parser.add_argument(
         "--structured-dreams-path",
         type=Path,
-        default=BENCHMARK_STRUCTURED_DREAMS_PATH,
+        default=dream_agent.STRUCTURED_DREAMS_PATH,
     )
     parser.add_argument(
         "--characters-path",
         type=Path,
-        default=BENCHMARK_CHARACTERS_PATH,
+        default=dream_agent.CHARACTERS_PATH,
     )
     parser.add_argument(
         "--chroma-path",
-        default=str(BENCHMARK_CHROMA_PATH),
+        default=str(dream_agent.DEFAULT_SETTINGS.index.path),
     )
     parser.add_argument(
         "--collection-name", default=dream_agent.DEFAULT_SETTINGS.index.collection_name
