@@ -16,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 LEVELS = ["none", "low", "moderate", "high"]
 
 DREAM_FEATURE_SCHEMA = {
@@ -58,7 +58,7 @@ DREAM_FEATURE_SCHEMA = {
             "type": "string",
             "enum": ["fragmentary", "partial", "detailed"],
         },
-        "meaningfulness_score": {
+        "meaningfulness": {
             "type": "number",
             "minimum": 0.0,
             "maximum": 1.0,
@@ -92,7 +92,7 @@ DREAM_FEATURE_SCHEMA = {
         "perspective",
         "ending",
         "memory_quality",
-        "meaningfulness_score",
+        "meaningfulness",
         "summary",
     ],
     "additionalProperties": False,
@@ -104,7 +104,7 @@ ARRAY_FIELDS = {
     if definition["type"] == "array"
 }
 BOOLEAN_FIELDS = {"lucidity"}
-NUMBER_FIELDS = {"meaningfulness_score"}
+NUMBER_FIELDS = {"meaningfulness"}
 
 SYSTEM_PROMPT = STRUCTURING_SYSTEM_PROMPT
 

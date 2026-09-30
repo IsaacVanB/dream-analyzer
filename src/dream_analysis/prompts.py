@@ -218,7 +218,7 @@ Extraction guidance:
 - `perspective`: first_person, third_person, mixed, or unclear.
 - `ending`: resolved, unresolved, interrupted, or unclear.
 - `memory_quality`: fragmentary, partial, or detailed based on the report itself.
-- `meaningfulness_score`: a number from 0.0 to 1.0 measuring the report's
+- `meaningfulness`: a number from 0.0 to 1.0 measuring the report's
   narrative substance, coherence, and focus—not its psychological importance.
   Very short, content-free, or largely incoherent fragments should score near
   0.0. Reports with some understandable events but limited detail, continuity,
