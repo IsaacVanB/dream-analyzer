@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 LEVELS = ["none", "low", "moderate", "high"]
 
 DREAM_FEATURE_SCHEMA = {
@@ -57,6 +58,16 @@ DREAM_FEATURE_SCHEMA = {
             "type": "string",
             "enum": ["fragmentary", "partial", "detailed"],
         },
+        "meaningfulness_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": (
+                "Narrative substance and coherence of the reported dream; "
+                "short, incoherent, or content-free reports score low, while "
+                "coherent, focused reports score high."
+            ),
+        },
         "summary": {"type": "string"},
     },
     "required": [
@@ -81,6 +92,7 @@ DREAM_FEATURE_SCHEMA = {
         "perspective",
         "ending",
         "memory_quality",
+        "meaningfulness_score",
         "summary",
     ],
     "additionalProperties": False,
@@ -92,6 +104,7 @@ ARRAY_FIELDS = {
     if definition["type"] == "array"
 }
 BOOLEAN_FIELDS = {"lucidity"}
+NUMBER_FIELDS = {"meaningfulness_score"}
 
 SYSTEM_PROMPT = STRUCTURING_SYSTEM_PROMPT
 
@@ -187,8 +200,22 @@ def validate_features(features: Any) -> dict[str, Any]:
         if type(normalized_features[field]) is not bool:
             raise ValueError(f"{field} must be a boolean.")
 
+    for field in NUMBER_FIELDS:
+        value = normalized_features[field]
+        definition = DREAM_FEATURE_SCHEMA["properties"][field]
+        if (
+            type(value) not in (int, float)
+            or not math.isfinite(value)
+            or not definition["minimum"] <= value <= definition["maximum"]
+        ):
+            raise ValueError(
+                f"{field} must be a finite number between "
+                f"{definition['minimum']} and {definition['maximum']}."
+            )
+        normalized_features[field] = float(value)
+
     for field, definition in DREAM_FEATURE_SCHEMA["properties"].items():
-        if field in ARRAY_FIELDS or field in BOOLEAN_FIELDS:
+        if field in ARRAY_FIELDS or field in BOOLEAN_FIELDS or field in NUMBER_FIELDS:
             continue
         value = normalized_features[field]
         if not isinstance(value, str) or not value.strip():

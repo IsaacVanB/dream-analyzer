@@ -25,6 +25,8 @@ def valid_features() -> dict:
             features[name] = []
         elif definition["type"] == "boolean":
             features[name] = False
+        elif definition["type"] == "number":
+            features[name] = 0.5
         elif "enum" in definition:
             features[name] = definition["enum"][0]
         else:
@@ -77,6 +79,27 @@ class DreamStructuringTests(unittest.TestCase):
 
         self.assertEqual(normalized["themes"], ["hidden space"])
         self.assertEqual(features["themes"], [" Hidden   Space ", "hidden space"])
+
+    def test_validation_normalizes_meaningfulness_score_to_float(self) -> None:
+        features = valid_features()
+        features["meaningfulness_score"] = 1
+
+        normalized = validate_features(features)
+
+        self.assertEqual(normalized["meaningfulness_score"], 1.0)
+        self.assertIs(type(normalized["meaningfulness_score"]), float)
+
+    def test_validation_rejects_invalid_meaningfulness_scores(self) -> None:
+        for invalid_score in (-0.1, 1.1, True, "0.5", float("nan")):
+            with self.subTest(invalid_score=invalid_score):
+                features = valid_features()
+                features["meaningfulness_score"] = invalid_score
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "meaningfulness_score must be a finite number between 0.0 and 1.0",
+                ):
+                    validate_features(features)
 
     def test_pending_selection_respects_version_and_overwrite(self) -> None:
         dreams = [{"dream_id": "current"}, {"dream_id": "stale"}]
