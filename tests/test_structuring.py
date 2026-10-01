@@ -81,6 +81,59 @@ class DreamStructuringTests(unittest.TestCase):
         self.assertEqual(normalized["themes"], ["hidden space"])
         self.assertEqual(features["themes"], [" Hidden   Space ", "hidden space"])
 
+    def test_validation_removes_array_sentinels(self) -> None:
+        features = valid_features()
+        features["themes"] = ["none", " Hidden room ", "N/A", "hidden room"]
+        features["named_characters"] = ["Unknown", "Maya", "UNCLEAR"]
+
+        normalized = validate_features(features)
+
+        self.assertEqual(normalized["themes"], ["hidden room"])
+        self.assertEqual(normalized["named_characters"], ["Maya"])
+
+    def test_validation_moves_source_backed_generic_roles_to_characters(self) -> None:
+        features = valid_features()
+        features["characters"] = ["teacher"]
+        features["named_characters"] = [
+            "Cop",
+            "Maya",
+            "Guy From Work",
+            "Coworker",
+        ]
+
+        normalized = validate_features(
+            features,
+            dream_text="Maya spoke to the cop and the guy from work.",
+        )
+
+        self.assertEqual(
+            normalized["characters"],
+            ["teacher", "cop", "guy from work"],
+        )
+        self.assertEqual(normalized["named_characters"], ["Maya", "Coworker"])
+        self.assertEqual(
+            features["named_characters"],
+            ["Cop", "Maya", "Guy From Work", "Coworker"],
+        )
+
+    def test_service_uses_dream_text_when_reclassifying_generic_roles(self) -> None:
+        features = valid_features()
+        features["named_characters"] = ["Cop"]
+        service = DreamStructuringService(
+            ollama_gateway=FakeGateway(features),
+            model="feature-model",
+        )
+
+        record = service.structure(
+            {
+                "dream_id": "role",
+                "text": "A cop waved to me.",
+            }
+        )
+
+        self.assertEqual(record["characters"], ["cop"])
+        self.assertEqual(record["named_characters"], [])
+
     def test_extraction_prompt_requires_conservative_grounding(self) -> None:
         messages = build_extraction_messages(
             {

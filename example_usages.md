@@ -830,7 +830,10 @@ not currently used by retrieval.
 
 `characters` contains unnamed roles, while `named_characters` contains only
 explicit proper names and preserves their capitalization. Both are produced in
-the same model call.
+the same model call. Array sentinel values such as `none`, `unknown`, `unclear`,
+and `n/a` are discarded during validation. Duplicate array values are collapsed
+case-insensitively. An evident generic role returned as a named character is
+moved to `characters` only when that phrase occurs in the source dream text.
 
 ## `src/cli/build_character_lookup.py`
 

@@ -16,8 +16,54 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 LEVELS = ["none", "low", "moderate", "high"]
+ARRAY_SENTINELS = frozenset(
+    {"none", "n/a", "not applicable", "unknown", "unclear"}
+)
+GENERIC_CHARACTER_ROLES = frozenset(
+    {
+        "aunt",
+        "boss",
+        "boyfriend",
+        "brother",
+        "cashier",
+        "classmate",
+        "colleague",
+        "cop",
+        "cops",
+        "co-worker",
+        "coworker",
+        "dad",
+        "doctor",
+        "father",
+        "friend",
+        "girlfriend",
+        "grandfather",
+        "grandma",
+        "grandmother",
+        "grandpa",
+        "husband",
+        "manager",
+        "mom",
+        "mother",
+        "neighbor",
+        "nurse",
+        "partner",
+        "police",
+        "police officer",
+        "professor",
+        "roommate",
+        "sister",
+        "stranger",
+        "teacher",
+        "therapist",
+        "uncle",
+        "waiter",
+        "waitress",
+        "wife",
+    }
+)
 
 DREAM_FEATURE_SCHEMA = {
     "type": "object",
@@ -108,6 +154,37 @@ NUMBER_FIELDS = {"retrieval_quality"}
 SYSTEM_PROMPT = STRUCTURING_SYSTEM_PROMPT
 
 
+def _is_evident_generic_role(value: str) -> bool:
+    normalized = value.casefold()
+    normalized = re.sub(r"^(?:a|an|the|my)\s+", "", normalized)
+    if normalized in GENERIC_CHARACTER_ROLES:
+        return True
+    if re.fullmatch(
+        r"(?:unknown|unidentified)\s+"
+        r"(?:boy|child|girl|guy|man|person|woman)",
+        normalized,
+    ):
+        return True
+    return bool(
+        re.fullmatch(
+            r"(?:boy|girl|guy|man|person|woman)\s+(?:at|from|in)\s+.+",
+            normalized,
+        )
+    )
+
+
+def _source_contains_phrase(source_text: str, phrase: str) -> bool:
+    compact_source = re.sub(r"\s+", " ", source_text).casefold()
+    compact_phrase = re.sub(r"\s+", " ", phrase.strip()).casefold()
+    return bool(
+        compact_phrase
+        and re.search(
+            rf"(?<!\w){re.escape(compact_phrase)}(?!\w)",
+            compact_source,
+        )
+    )
+
+
 def load_dreams(path: Path | str) -> list[dict[str, Any]]:
     """Load validated dream records for feature extraction."""
     return DreamRepository(path).records()
@@ -164,7 +241,11 @@ def build_extraction_messages(dream: Mapping[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def validate_features(features: Any) -> dict[str, Any]:
+def validate_features(
+    features: Any,
+    *,
+    dream_text: str | None = None,
+) -> dict[str, Any]:
     """Validate and normalize a structured Ollama response."""
     if not isinstance(features, dict):
         raise ValueError("Structured features must be a JSON object.")
@@ -190,10 +271,31 @@ def validate_features(features: Any) -> dict[str, Any]:
             if field != "named_characters":
                 normalized = normalized.lower()
             identity = normalized.casefold()
-            if normalized and identity not in seen:
+            if (
+                normalized
+                and identity not in ARRAY_SENTINELS
+                and identity not in seen
+            ):
                 seen.add(identity)
                 cleaned.append(normalized)
         normalized_features[field] = cleaned
+
+    if dream_text is not None:
+        characters = normalized_features["characters"]
+        character_identities = {character.casefold() for character in characters}
+        named_characters: list[str] = []
+        for character in normalized_features["named_characters"]:
+            if _is_evident_generic_role(character) and _source_contains_phrase(
+                dream_text,
+                character,
+            ):
+                role = character.lower()
+                if role.casefold() not in character_identities:
+                    character_identities.add(role.casefold())
+                    characters.append(role)
+            else:
+                named_characters.append(character)
+        normalized_features["named_characters"] = named_characters
 
     for field in BOOLEAN_FIELDS:
         if type(normalized_features[field]) is not bool:
@@ -245,10 +347,11 @@ def extract_features(
     """Extract and validate structured features for one dream."""
     if num_ctx < 1:
         raise ValueError("num_ctx must be positive")
+    messages = build_extraction_messages(dream)
     features = (gateway or OllamaGateway()).chat_json(
         schema=DREAM_FEATURE_SCHEMA,
         model=model,
-        messages=build_extraction_messages(dream),
+        messages=messages,
         think=False,
         options={
             "temperature": 0,
@@ -256,7 +359,11 @@ def extract_features(
             "num_predict": 1200,
         },
     )
-    return validate_features(features)
+    dream_text = dream.get("text")
+    return validate_features(
+        features,
+        dream_text=dream_text if isinstance(dream_text, str) else None,
+    )
 
 
 def build_record(
