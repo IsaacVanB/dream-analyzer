@@ -10,6 +10,7 @@ from dream_analysis.structuring import (
     DREAM_FEATURE_SCHEMA,
     SCHEMA_VERSION,
     DreamStructuringService,
+    build_extraction_messages,
     build_record,
     load_existing_records,
     select_pending_dreams,
@@ -79,6 +80,40 @@ class DreamStructuringTests(unittest.TestCase):
 
         self.assertEqual(normalized["themes"], ["hidden space"])
         self.assertEqual(features["themes"], [" Hidden   Space ", "hidden space"])
+
+    def test_extraction_prompt_requires_conservative_grounding(self) -> None:
+        messages = build_extraction_messages(
+            {
+                "dream_id": "names-only",
+                "date": "unknown",
+                "tags": [],
+                "text": "Ksenia\nGabby Rachelle",
+            }
+        )
+        prompt = "\n".join(message["content"] for message in messages)
+
+        self.assertIn("never `named_characters`", prompt)
+        self.assertIn("contains names but", prompt)
+        self.assertIn("do not infer any action, setting, emotion", prompt)
+        self.assertIn("Do not omit, euphemize, sanitize", prompt)
+        self.assertIn("Never invent details", prompt)
+
+    def test_extraction_prompt_defines_content_intensity_levels(self) -> None:
+        messages = build_extraction_messages(
+            {
+                "dream_id": "levels",
+                "date": "unknown",
+                "tags": [],
+                "text": "Someone followed me, but never attacked me.",
+            }
+        )
+        prompt = "\n".join(message["content"] for message in messages)
+
+        self.assertIn("`violence`: none for no physical aggression", prompt)
+        self.assertIn("A threat by itself does not count as violence", prompt)
+        self.assertIn("`sexual_content`: none for no sexual behavior", prompt)
+        self.assertIn("`threat_level`: none for no credible danger", prompt)
+        self.assertIn("Threat can be high even when no", prompt)
 
     def test_validation_normalizes_retrieval_quality_to_float(self) -> None:
         features = valid_features()

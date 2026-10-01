@@ -823,9 +823,10 @@ output includes source metadata plus settings, characters, emotions, themes,
 objects, actions, sensory details, dream mechanics, tone,
 lucidity, violence, sexual content, social conflict, threat, agency,
 bizarreness, perspective, ending, memory quality, query-independent
-`retrieval_quality` from `0.0` to `1.0`, and a factual summary. Social conflict
-and bizarreness use `none`, `low`, `moderate`, and `high`. The retrieval-quality
-value is stored for future reranking but is not currently used by retrieval.
+`retrieval_quality` from `0.0` to `1.0`, and a factual summary. Violence, sexual
+content, threat, social conflict, and bizarreness use `none`, `low`, `moderate`,
+and `high`. The retrieval-quality value is stored for future reranking but is
+not currently used by retrieval.
 
 `characters` contains unnamed roles, while `named_characters` contains only
 explicit proper names and preserves their capitalization. Both are produced in

@@ -45,7 +45,11 @@ STRUCTURING_SYSTEM_PROMPT = (
     "the capitalization of names, remove duplicates, and use empty arrays when a "
     "category has no evidence. Do not invent identities. Themes should describe "
     "observable narrative patterns such as being chased, failing a task, or "
-    "discovering a hidden space—not speculative psychological interpretations."
+    "discovering a hidden space—not speculative psychological interpretations. "
+    "Describe sexual, violent, taboo, embarrassing, or disturbing material "
+    "directly and neutrally when it is present. Never sanitize, omit, or replace "
+    "such material with invented safer content. Never complete a fragment into a "
+    "plausible story; when evidence is absent, use the appropriate schema default."
 )
 
 AGENT_SYNTHESIS_SYSTEM_PROMPT = (
@@ -194,9 +198,21 @@ Extraction guidance:
 - `named_characters`: only characters explicitly called by a proper name in the
   report, preserving how the name is capitalized. Include named real people,
   public figures, fictional characters, animals, or other personified entities.
-  Do not infer a name from a role or description.
+  Do not infer a name from a role or description. Generic roles or descriptions
+  such as cop, coworker, guy from work, or unknown woman belong in `characters`,
+  never `named_characters`.
+- If the report contains only one or more proper names, preserve those names in
+  `named_characters` but do not infer any action, setting, emotion, relationship,
+  or situation. State factually in `summary` that the report contains names but
+  describes no event.
+- Never invent details to connect isolated fragments or make a report into a
+  coherent story. Unsupported information must remain absent or use the field's
+  appropriate default.
+- Describe sexual, violent, taboo, embarrassing, or disturbing details directly
+  and neutrally. Do not omit, euphemize, sanitize, or replace them with invented
+  safer details.
 - `emotions`: stated or strongly evidenced feelings only.
-- `themes`: concrete recurring situations, goals, conflicts, or transformations.
+- `themes`: concrete recurring situations, goals, conflicts, or transformations present in this report.
 - `objects`: salient physical objects, not every incidental noun.
 - `actions`: major actions that move the dream forward.
 - `sensory_details`: notable colors, sounds, textures, bodily sensations, or weather.
@@ -206,6 +222,20 @@ Extraction guidance:
 - `lucidity`: true only when the dreamer knows they are dreaming.
 - `violence`, `sexual_content`, `threat_level`, `social_conflict`, and
   `bizarreness` use none, low, moderate, or high.
+- `violence`: none for no physical aggression or injury; low for brief or minor
+  physical aggression without meaningful injury, or violence that is only
+  implied; moderate for explicit assault, sustained fighting, or non-severe
+  injury; high for killing, severe injury, torture, or graphic or pervasive
+  violence. A threat by itself does not count as violence.
+- `sexual_content`: none for no sexual behavior or explicitly sexual nudity;
+  low for flirting, kissing, sexual suggestion, or non-explicit nudity; moderate
+  for clearly described sexual activity without graphic detail; high for
+  graphic or sustained sexual activity, sexual coercion, or sexual violence.
+- `threat_level`: none for no credible danger; low for unease, ambiguous danger,
+  or minor risk; moderate for clear danger such as pursuit, confinement, or a
+  credible threat of harm; high for imminent death, severe injury, sexual
+  violence, or comparable catastrophic danger. Threat can be high even when no
+  violence actually occurs.
 - `social_conflict`: none for no interpersonal friction; low for mild tension,
   awkwardness, or disagreement; moderate for sustained hostility, rejection,
   coercion, humiliation, or betrayal; high for severe domination, interpersonal

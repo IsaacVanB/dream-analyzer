@@ -16,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 9
 LEVELS = ["none", "low", "moderate", "high"]
 
 DREAM_FEATURE_SCHEMA = {
