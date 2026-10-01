@@ -16,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 LEVELS = ["none", "low", "moderate", "high"]
 
 DREAM_FEATURE_SCHEMA = {
@@ -58,14 +58,13 @@ DREAM_FEATURE_SCHEMA = {
             "type": "string",
             "enum": ["fragmentary", "partial", "detailed"],
         },
-        "meaningfulness": {
+        "retrieval_quality": {
             "type": "number",
             "minimum": 0.0,
             "maximum": 1.0,
             "description": (
-                "Narrative substance and coherence of the reported dream; "
-                "short, incoherent, or content-free reports score low, while "
-                "coherent, focused reports score high."
+                "Query-independent estimate of how much specific, coherent, "
+                "and distinctive evidence the report offers for retrieval."
             ),
         },
         "summary": {"type": "string"},
@@ -92,7 +91,7 @@ DREAM_FEATURE_SCHEMA = {
         "perspective",
         "ending",
         "memory_quality",
-        "meaningfulness",
+        "retrieval_quality",
         "summary",
     ],
     "additionalProperties": False,
@@ -104,7 +103,7 @@ ARRAY_FIELDS = {
     if definition["type"] == "array"
 }
 BOOLEAN_FIELDS = {"lucidity"}
-NUMBER_FIELDS = {"meaningfulness"}
+NUMBER_FIELDS = {"retrieval_quality"}
 
 SYSTEM_PROMPT = STRUCTURING_SYSTEM_PROMPT
 

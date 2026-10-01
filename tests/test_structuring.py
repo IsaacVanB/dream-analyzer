@@ -80,24 +80,24 @@ class DreamStructuringTests(unittest.TestCase):
         self.assertEqual(normalized["themes"], ["hidden space"])
         self.assertEqual(features["themes"], [" Hidden   Space ", "hidden space"])
 
-    def test_validation_normalizes_meaningfulness_to_float(self) -> None:
+    def test_validation_normalizes_retrieval_quality_to_float(self) -> None:
         features = valid_features()
-        features["meaningfulness"] = 1
+        features["retrieval_quality"] = 1
 
         normalized = validate_features(features)
 
-        self.assertEqual(normalized["meaningfulness"], 1.0)
-        self.assertIs(type(normalized["meaningfulness"]), float)
+        self.assertEqual(normalized["retrieval_quality"], 1.0)
+        self.assertIs(type(normalized["retrieval_quality"]), float)
 
-    def test_validation_rejects_invalid_meaningfulness_values(self) -> None:
+    def test_validation_rejects_invalid_retrieval_quality_values(self) -> None:
         for invalid_score in (-0.1, 1.1, True, "0.5", float("nan")):
             with self.subTest(invalid_score=invalid_score):
                 features = valid_features()
-                features["meaningfulness"] = invalid_score
+                features["retrieval_quality"] = invalid_score
 
                 with self.assertRaisesRegex(
                     ValueError,
-                    "meaningfulness must be a finite number between 0.0 and 1.0",
+                    "retrieval_quality must be a finite number between 0.0 and 1.0",
                 ):
                     validate_features(features)
 
