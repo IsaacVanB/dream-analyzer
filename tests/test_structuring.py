@@ -46,6 +46,16 @@ class FakeGateway:
         return self.response
 
 
+class SequenceGateway:
+    def __init__(self, responses: list[dict]) -> None:
+        self.responses = list(responses)
+        self.calls = []
+
+    def chat_json(self, messages, **kwargs):
+        self.calls.append({"messages": messages, **kwargs})
+        return self.responses.pop(0)
+
+
 class DreamStructuringTests(unittest.TestCase):
     def test_service_extracts_and_builds_a_versioned_record(self) -> None:
         gateway = FakeGateway(valid_features())
@@ -71,6 +81,62 @@ class DreamStructuringTests(unittest.TestCase):
         self.assertRegex(record["structured_text_hash"], r"^[0-9a-f]{64}$")
         self.assertEqual(gateway.calls[0]["schema"], DREAM_FEATURE_SCHEMA)
         self.assertEqual(gateway.calls[0]["options"]["num_ctx"], 4096)
+        self.assertEqual(len(gateway.calls), 1)
+
+    def test_service_retries_a_validation_error_with_focused_feedback(self) -> None:
+        invalid = valid_features()
+        invalid["lucidity"] = True
+        invalid["lucidity_level"] = "none"
+        corrected = valid_features()
+        corrected["lucidity"] = True
+        corrected["lucidity_level"] = "lucid"
+        gateway = SequenceGateway([invalid, corrected])
+        service = DreamStructuringService(
+            ollama_gateway=gateway,
+            model="feature-model",
+        )
+
+        record = service.structure(
+            {
+                "dream_id": "lucid",
+                "text": "I realized that I was dreaming.",
+            }
+        )
+
+        self.assertTrue(record["lucidity"])
+        self.assertEqual(record["lucidity_level"], "lucid")
+        self.assertEqual(len(gateway.calls), 2)
+        retry_messages = gateway.calls[1]["messages"]
+        self.assertEqual(retry_messages[-2]["role"], "assistant")
+        self.assertIn('"lucidity": true', retry_messages[-2]["content"])
+        self.assertIn(
+            "lucidity must be true exactly when lucidity_level is 'lucid'",
+            retry_messages[-1]["content"],
+        )
+        self.assertIn("complete corrected JSON object", retry_messages[-1]["content"])
+
+    def test_service_fails_after_one_invalid_retry(self) -> None:
+        invalid = valid_features()
+        invalid["lucidity"] = True
+        invalid["lucidity_level"] = "none"
+        gateway = SequenceGateway([invalid, invalid])
+        service = DreamStructuringService(
+            ollama_gateway=gateway,
+            model="feature-model",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Structured response failed validation after 2 attempts",
+        ):
+            service.structure(
+                {
+                    "dream_id": "lucid",
+                    "text": "I realized that I was dreaming.",
+                }
+            )
+
+        self.assertEqual(len(gateway.calls), 2)
 
     def test_validation_normalizes_without_mutating_the_response(self) -> None:
         features = valid_features()

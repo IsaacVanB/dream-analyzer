@@ -17,6 +17,7 @@ from dream_analysis.repository import DreamRepository
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
 SCHEMA_VERSION = 10
+MAX_VALIDATION_ATTEMPTS = 2
 LEVELS = ["none", "low", "moderate", "high"]
 ARRAY_SENTINELS = frozenset(
     {"none", "n/a", "not applicable", "unknown", "unclear"}
@@ -337,6 +338,32 @@ def validate_features(
     return normalized_features
 
 
+def _validation_retry_messages(
+    messages: Sequence[Mapping[str, Any]],
+    features: Any,
+    error: ValueError,
+) -> list[dict[str, Any]]:
+    """Append one focused correction request after a rejected response."""
+    return [
+        *(dict(message) for message in messages),
+        {
+            "role": "assistant",
+            "content": json.dumps(features, ensure_ascii=False),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Your previous structured response failed application "
+                f"validation:\n- {error}\n\n"
+                "Return one complete corrected JSON object matching the same "
+                "schema. Correct the validation error, use only information "
+                "supported by the original dream text, preserve valid fields, "
+                "and do not include an explanation."
+            ),
+        },
+    ]
+
+
 def extract_features(
     dream: Mapping[str, Any],
     *,
@@ -348,22 +375,35 @@ def extract_features(
     if num_ctx < 1:
         raise ValueError("num_ctx must be positive")
     messages = build_extraction_messages(dream)
-    features = (gateway or OllamaGateway()).chat_json(
-        schema=DREAM_FEATURE_SCHEMA,
-        model=model,
-        messages=messages,
-        think=False,
-        options={
-            "temperature": 0,
-            "num_ctx": num_ctx,
-            "num_predict": 1200,
-        },
-    )
+    ollama = gateway or OllamaGateway()
+    options = {
+        "temperature": 0,
+        "num_ctx": num_ctx,
+        "num_predict": 1200,
+    }
     dream_text = dream.get("text")
-    return validate_features(
-        features,
-        dream_text=dream_text if isinstance(dream_text, str) else None,
-    )
+    for attempt in range(MAX_VALIDATION_ATTEMPTS):
+        features = ollama.chat_json(
+            schema=DREAM_FEATURE_SCHEMA,
+            model=model,
+            messages=messages,
+            think=False,
+            options=options,
+        )
+        try:
+            return validate_features(
+                features,
+                dream_text=dream_text if isinstance(dream_text, str) else None,
+            )
+        except ValueError as exc:
+            if attempt + 1 == MAX_VALIDATION_ATTEMPTS:
+                raise ValueError(
+                    "Structured response failed validation after "
+                    f"{MAX_VALIDATION_ATTEMPTS} attempts: {exc}"
+                ) from exc
+            messages = _validation_retry_messages(messages, features, exc)
+
+    raise AssertionError("validation attempt loop exited unexpectedly")
 
 
 def build_record(

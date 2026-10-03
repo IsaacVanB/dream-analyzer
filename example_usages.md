@@ -818,8 +818,11 @@ by the latest append-oriented journal import. Select another import entry with
 Existing dream IDs with the current schema version are skipped unless
 `--overwrite` is supplied; records from an older schema are regenerated
 automatically. Successful records are saved after each model response, so a
-long run can be resumed. The
-output includes source metadata plus settings, characters, emotions, themes,
+long run can be resumed. If a model response fails application validation, the
+extractor makes one focused retry containing the rejected response and the
+validation error. A second invalid response is reported as a failure and is not
+saved. Connection and model-request failures are not retried by this mechanism.
+The output includes source metadata plus settings, characters, emotions, themes,
 objects, actions, sensory details, dream mechanics, tone,
 lucidity, violence, sexual content, social conflict, threat, agency,
 bizarreness, perspective, ending, memory quality, query-independent
