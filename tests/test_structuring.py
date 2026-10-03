@@ -198,7 +198,7 @@ class DreamStructuringTests(unittest.TestCase):
         self.assertEqual(normalized["themes"], ["hidden room"])
         self.assertEqual(normalized["named_characters"], ["Maya"])
 
-    def test_validation_moves_source_backed_generic_roles_to_characters(self) -> None:
+    def test_validation_rejects_generic_roles_in_named_characters(self) -> None:
         features = valid_features()
         features["characters"] = ["teacher"]
         features["named_characters"] = [
@@ -207,20 +207,34 @@ class DreamStructuringTests(unittest.TestCase):
             "Guy From Work",
         ]
 
-        normalized = validate_features(
-            features,
-            dream_text="Maya spoke to the cop and the guy from work.",
-        )
-
-        self.assertEqual(
-            normalized["characters"],
-            ["teacher", "cop", "guy from work"],
-        )
-        self.assertEqual(normalized["named_characters"], ["Maya"])
+        with self.assertRaisesRegex(
+            ValueError,
+            "named_characters must contain only explicit proper-name spans",
+        ):
+            validate_features(
+                features,
+                dream_text="Maya spoke to the cop and the guy from work.",
+            )
         self.assertEqual(
             features["named_characters"],
             ["Cop", "Maya", "Guy From Work"],
         )
+
+    def test_validation_rejects_descriptive_named_character_values(self) -> None:
+        invalid_values = [
+            "Jubilee Debates (the regenerative agriculture guy)",
+            "the regenerative agriculture guy",
+            "Maya, my coworker",
+            "person with a very long descriptive identifying phrase",
+        ]
+
+        for invalid_value in invalid_values:
+            with self.subTest(invalid_value=invalid_value):
+                features = valid_features()
+                features["named_characters"] = [invalid_value]
+
+                with self.assertRaisesRegex(ValueError, "invalid values"):
+                    validate_features(features, dream_text=invalid_value)
 
     def test_validation_accepts_source_backed_named_characters(self) -> None:
         features = valid_features()
@@ -271,11 +285,41 @@ class DreamStructuringTests(unittest.TestCase):
             gateway.calls[1]["messages"][-1]["content"],
         )
 
-    def test_service_uses_dream_text_when_reclassifying_generic_roles(self) -> None:
-        features = valid_features()
-        features["named_characters"] = ["Cop"]
+    def test_service_retries_a_parenthetical_name_as_the_proper_name_only(self) -> None:
+        invalid = valid_features()
+        invalid["named_characters"] = [
+            "jubilee debates (the regenerative agriculture guy)"
+        ]
+        corrected = valid_features()
+        corrected["named_characters"] = ["jubilee debates"]
+        gateway = SequenceGateway([invalid, corrected])
         service = DreamStructuringService(
-            ollama_gateway=FakeGateway(features),
+            ollama_gateway=gateway,
+            model="feature-model",
+        )
+
+        record = service.structure(
+            {
+                "dream_id": "parenthetical-name",
+                "text": "I spoke to jubilee debates, the regenerative agriculture guy.",
+            }
+        )
+
+        self.assertEqual(record["named_characters"], ["jubilee debates"])
+        self.assertEqual(len(gateway.calls), 2)
+        self.assertIn(
+            "contains parentheses or brackets",
+            gateway.calls[1]["messages"][-1]["content"],
+        )
+
+    def test_service_retries_generic_roles_as_unnamed_characters(self) -> None:
+        invalid = valid_features()
+        invalid["named_characters"] = ["Cop"]
+        corrected = valid_features()
+        corrected["characters"] = ["cop"]
+        gateway = SequenceGateway([invalid, corrected])
+        service = DreamStructuringService(
+            ollama_gateway=gateway,
             model="feature-model",
         )
 
@@ -288,6 +332,9 @@ class DreamStructuringTests(unittest.TestCase):
 
         self.assertEqual(record["characters"], ["cop"])
         self.assertEqual(record["named_characters"], [])
+        retry = gateway.calls[1]["messages"][-1]["content"]
+        self.assertIn("only the exact proper-name span", retry)
+        self.assertIn("put the source-backed unnamed role", retry)
 
     def test_extraction_prompt_requires_conservative_grounding(self) -> None:
         messages = build_extraction_messages(
@@ -301,6 +348,8 @@ class DreamStructuringTests(unittest.TestCase):
         prompt = "\n".join(message["content"] for message in messages)
 
         self.assertIn("never `named_characters`", prompt)
+        self.assertIn("do not include parentheses, brackets", prompt)
+        self.assertIn("If no proper name is given", prompt)
         self.assertIn("contains names but", prompt)
         self.assertIn("do not infer any action, setting, emotion", prompt)
         self.assertIn("Do not omit, euphemize, sanitize", prompt)

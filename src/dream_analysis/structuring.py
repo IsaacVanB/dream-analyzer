@@ -16,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 MAX_VALIDATION_ATTEMPTS = 2
 LEVELS = ["none", "low", "moderate", "high"]
 ARRAY_SENTINELS = frozenset(
@@ -35,6 +35,7 @@ GENERIC_CHARACTER_ROLES = frozenset(
         "cops",
         "co-worker",
         "coworker",
+        "debater",
         "dad",
         "doctor",
         "father",
@@ -65,6 +66,22 @@ GENERIC_CHARACTER_ROLES = frozenset(
         "wife",
     }
 )
+
+GENERIC_PERSON_NOUNS = frozenset(
+    {
+        "boy",
+        "child",
+        "girl",
+        "guy",
+        "kid",
+        "lady",
+        "man",
+        "person",
+        "woman",
+    }
+)
+MAX_NAMED_CHARACTER_WORDS = 5
+MAX_NAMED_CHARACTER_CHARS = 60
 
 DREAM_FEATURE_SCHEMA = {
     "type": "object",
@@ -172,6 +189,45 @@ def _is_evident_generic_role(value: str) -> bool:
             normalized,
         )
     )
+
+
+def _named_character_rejection_reasons(value: str) -> list[str]:
+    """Describe why a value is not a conservative proper-name span."""
+    reasons: list[str] = []
+    normalized = re.sub(r"\s+", " ", value.strip())
+    casefolded = normalized.casefold()
+
+    if re.search(r"[()\[\]{}]", normalized):
+        reasons.append("contains parentheses or brackets")
+    if re.match(r"^(?:the|a|an|my)\b", casefolded):
+        reasons.append("begins with an article or possessive determiner")
+    if (
+        re.search(r"\b(?:also known as|a\.k\.a\.?|aka)\b", casefolded)
+        or re.search(r"\s(?:-|–|—|:)\s", normalized)
+        or re.search(r",\s*(?:the|a|an|my)\s+.+$", casefolded)
+        or re.search(
+            r"\b(?:the|a|an|my)\s+(?:\w+\s+){0,3}"
+            r"(?:boy|child|girl|guy|kid|lady|man|person|woman)\b",
+            casefolded,
+        )
+        or any(
+            normalized.endswith(f" {noun}")
+            for noun in GENERIC_PERSON_NOUNS
+        )
+        or any(
+            normalized.endswith(f", {role}")
+            for role in GENERIC_CHARACTER_ROLES
+        )
+    ):
+        reasons.append("contains an explanatory role phrase")
+    if (
+        len(normalized) > MAX_NAMED_CHARACTER_CHARS
+        or len(normalized.split()) > MAX_NAMED_CHARACTER_WORDS
+    ):
+        reasons.append("is an unusually long descriptive phrase")
+    if _is_evident_generic_role(normalized):
+        reasons.append("matches a generic character role")
+    return reasons
 
 
 def _source_contains_phrase(source_text: str, phrase: str) -> bool:
@@ -294,25 +350,24 @@ def validate_features(
                 cleaned.append(normalized)
         normalized_features[field] = cleaned
 
+    invalid_names: dict[str, list[str]] = {}
+    for character in normalized_features["named_characters"]:
+        if reasons := _named_character_rejection_reasons(character):
+            invalid_names[character] = reasons
+    if invalid_names:
+        details = "; ".join(
+            f"{character!r}: {', '.join(reasons)}"
+            for character, reasons in invalid_names.items()
+        )
+        raise ValueError(
+            "named_characters must contain only explicit proper-name spans; "
+            f"invalid values: {details}"
+        )
+
     if dream_text is not None:
-        characters = normalized_features["characters"]
-        character_identities = {character.casefold() for character in characters}
-        named_characters: list[str] = []
-        for character in normalized_features["named_characters"]:
-            if _is_evident_generic_role(character) and _source_contains_phrase(
-                dream_text,
-                character,
-            ):
-                role = character.lower()
-                if role.casefold() not in character_identities:
-                    character_identities.add(role.casefold())
-                    characters.append(role)
-            else:
-                named_characters.append(character)
-        normalized_features["named_characters"] = named_characters
         unsupported_names = [
             character
-            for character in named_characters
+            for character in normalized_features["named_characters"]
             if not _source_contains_phrase(dream_text, character)
         ]
         if unsupported_names:
@@ -376,6 +431,14 @@ def _validation_retry_messages(
     error: ValueError,
 ) -> list[dict[str, Any]]:
     """Append one focused correction request after a rejected response."""
+    named_character_guidance = ""
+    if "named_characters" in str(error):
+        named_character_guidance = (
+            " For each invalid named_characters value, return only the exact "
+            "proper-name span stated in the dream. If the dream gives no proper "
+            "name, remove the value from named_characters and put the source-backed "
+            "unnamed role or description in characters."
+        )
     return [
         *(dict(message) for message in messages),
         {
@@ -390,7 +453,7 @@ def _validation_retry_messages(
                 "Return one complete corrected JSON object matching the same "
                 "schema. Correct the validation error, use only information "
                 "supported by the original dream text, preserve valid fields, "
-                "and do not include an explanation."
+                f"and do not include an explanation.{named_character_guidance}"
             ),
         },
     ]

@@ -201,7 +201,10 @@ Extraction guidance:
   Every returned name must occur explicitly in the dream text using the text's
   own wording; do not expand, standardize, translate, or infer a name. Generic
   roles or descriptions such as cop, coworker, guy from work, or unknown woman
-  belong in `characters`, never `named_characters`.
+  belong in `characters`, never `named_characters`. Return only the proper-name
+  span itself: do not include parentheses, brackets, leading the/a/an/my,
+  explanatory role phrases, or long descriptions. If no proper name is given,
+  put the source-backed role or description in `characters` instead.
 - If the report contains only one or more proper names, preserve those names in
   `named_characters` but do not infer any action, setting, emotion, relationship,
   or situation. State factually in `summary` that the report contains names but

@@ -840,11 +840,13 @@ or false.
 explicit proper names and preserves their capitalization. Both are produced in
 the same model call. Array sentinel values such as `none`, `unknown`, `unclear`,
 and `n/a` are discarded during validation. Duplicate array values are collapsed
-case-insensitively. An evident generic role returned as a named character is
-moved to `characters` only when that phrase occurs in the source dream text.
-Every remaining named character must also occur in the source text after
-case-and-whitespace normalization; otherwise the response enters the validation
-retry path.
+case-insensitively. Named-character values containing parentheses or brackets,
+beginning with `the`, `a`, `an`, or `my`, containing explanatory role language,
+forming an unusually long descriptive phrase, or matching a generic role are
+rejected and enter the validation retry path. The retry asks for only the
+explicit proper-name span, or for the source-backed unnamed role to be placed in
+`characters` when no name was given. Every named character must also occur in
+the source text after case-and-whitespace normalization.
 
 ## `src/cli/build_character_lookup.py`
 
