@@ -842,6 +842,9 @@ the same model call. Array sentinel values such as `none`, `unknown`, `unclear`,
 and `n/a` are discarded during validation. Duplicate array values are collapsed
 case-insensitively. An evident generic role returned as a named character is
 moved to `characters` only when that phrase occurs in the source dream text.
+Every remaining named character must also occur in the source text after
+case-and-whitespace normalization; otherwise the response enters the validation
+retry path.
 
 ## `src/cli/build_character_lookup.py`
 

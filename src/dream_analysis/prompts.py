@@ -198,9 +198,10 @@ Extraction guidance:
 - `named_characters`: only characters explicitly called by a proper name in the
   report, preserving how the name is capitalized. Include named real people,
   public figures, fictional characters, animals, or other personified entities.
-  Do not infer a name from a role or description. Generic roles or descriptions
-  such as cop, coworker, guy from work, or unknown woman belong in `characters`,
-  never `named_characters`.
+  Every returned name must occur explicitly in the dream text using the text's
+  own wording; do not expand, standardize, translate, or infer a name. Generic
+  roles or descriptions such as cop, coworker, guy from work, or unknown woman
+  belong in `characters`, never `named_characters`.
 - If the report contains only one or more proper names, preserve those names in
   `named_characters` but do not infer any action, setting, emotion, relationship,
   or situation. State factually in `summary` that the report contains names but

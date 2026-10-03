@@ -16,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 MAX_VALIDATION_ATTEMPTS = 2
 LEVELS = ["none", "low", "moderate", "high"]
 ARRAY_SENTINELS = frozenset(
@@ -310,6 +310,16 @@ def validate_features(
             else:
                 named_characters.append(character)
         normalized_features["named_characters"] = named_characters
+        unsupported_names = [
+            character
+            for character in named_characters
+            if not _source_contains_phrase(dream_text, character)
+        ]
+        if unsupported_names:
+            raise ValueError(
+                "named_characters must occur explicitly in the dream text; "
+                f"unsupported values: {unsupported_names}"
+            )
 
     for field in BOOLEAN_FIELDS:
         if type(normalized_features[field]) is not bool:

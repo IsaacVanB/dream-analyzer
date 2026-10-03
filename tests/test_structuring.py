@@ -205,7 +205,6 @@ class DreamStructuringTests(unittest.TestCase):
             "Cop",
             "Maya",
             "Guy From Work",
-            "Coworker",
         ]
 
         normalized = validate_features(
@@ -217,10 +216,59 @@ class DreamStructuringTests(unittest.TestCase):
             normalized["characters"],
             ["teacher", "cop", "guy from work"],
         )
-        self.assertEqual(normalized["named_characters"], ["Maya", "Coworker"])
+        self.assertEqual(normalized["named_characters"], ["Maya"])
         self.assertEqual(
             features["named_characters"],
-            ["Cop", "Maya", "Guy From Work", "Coworker"],
+            ["Cop", "Maya", "Guy From Work"],
+        )
+
+    def test_validation_accepts_source_backed_named_characters(self) -> None:
+        features = valid_features()
+        features["named_characters"] = ["Ksenia", "Gabby Rachelle"]
+
+        normalized = validate_features(
+            features,
+            dream_text="ksenia spoke to GABBY   RACHELLE's friend.",
+        )
+
+        self.assertEqual(
+            normalized["named_characters"],
+            ["Ksenia", "Gabby Rachelle"],
+        )
+
+    def test_validation_rejects_named_characters_absent_from_source(self) -> None:
+        features = valid_features()
+        features["named_characters"] = ["Ksenia", "Invented Person"]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "named_characters must occur explicitly.*Invented Person",
+        ):
+            validate_features(features, dream_text="Ksenia")
+
+    def test_service_retries_a_named_character_absent_from_source(self) -> None:
+        invalid = valid_features()
+        invalid["named_characters"] = ["Invented Person"]
+        corrected = valid_features()
+        corrected["named_characters"] = ["Ksenia"]
+        gateway = SequenceGateway([invalid, corrected])
+        service = DreamStructuringService(
+            ollama_gateway=gateway,
+            model="feature-model",
+        )
+
+        record = service.structure(
+            {
+                "dream_id": "named-character",
+                "text": "Ksenia",
+            }
+        )
+
+        self.assertEqual(record["named_characters"], ["Ksenia"])
+        self.assertEqual(len(gateway.calls), 2)
+        self.assertIn(
+            "unsupported values: ['Invented Person']",
+            gateway.calls[1]["messages"][-1]["content"],
         )
 
     def test_service_uses_dream_text_when_reclassifying_generic_roles(self) -> None:
