@@ -220,6 +220,9 @@ Extraction guidance:
   time discontinuity, altered physics, or other explicitly dreamlike mechanics.
 - `tone`: one concise dominant tone, or `unclear`.
 - `lucidity`: true only when the dreamer knows they are dreaming.
+- When `JOURNAL_TAGS` contains `lucid` or `#lucid`, set `lucidity` to true and
+  `lucidity_level` to `lucid`. The absence of that tag does not imply the dream
+  was non-lucid; determine lucidity from the report itself.
 - `violence`, `sexual_content`, `threat_level`, `social_conflict`, and
   `bizarreness` use none, low, moderate, or high.
 - `violence`: none for no physical aggression or injury; low for brief or minor

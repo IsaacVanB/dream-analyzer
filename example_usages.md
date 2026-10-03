@@ -831,6 +831,11 @@ content, threat, social conflict, and bizarreness use `none`, `low`, `moderate`,
 and `high`. The retrieval-quality value is stored for future reranking but is
 not currently used by retrieval.
 
+A journal tag of `lucid` or `#lucid` requires `lucidity: true` and
+`lucidity_level: lucid`; contradictory model output enters the validation retry
+path. Without that tag, lucidity is determined from the report and may be true
+or false.
+
 `characters` contains unnamed roles, while `named_characters` contains only
 explicit proper names and preserves their capitalization. Both are produced in
 the same model call. Array sentinel values such as `none`, `unknown`, `unclear`,

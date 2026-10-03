@@ -138,6 +138,47 @@ class DreamStructuringTests(unittest.TestCase):
 
         self.assertEqual(len(gateway.calls), 2)
 
+    def test_lucid_tag_triggers_retry_until_lucidity_is_true(self) -> None:
+        unmarked = valid_features()
+        corrected = valid_features()
+        corrected["lucidity"] = True
+        corrected["lucidity_level"] = "lucid"
+        gateway = SequenceGateway([unmarked, corrected])
+        service = DreamStructuringService(
+            ollama_gateway=gateway,
+            model="feature-model",
+        )
+
+        record = service.structure(
+            {
+                "dream_id": "tagged-lucid",
+                "tags": ["dream", "#LuCiD"],
+                "text": "I flew over the town.",
+            }
+        )
+
+        self.assertTrue(record["lucidity"])
+        self.assertEqual(record["lucidity_level"], "lucid")
+        self.assertEqual(len(gateway.calls), 2)
+        self.assertIn(
+            "dreams tagged 'lucid' must have lucidity true",
+            gateway.calls[1]["messages"][-1]["content"],
+        )
+
+    def test_absent_lucid_tag_does_not_constrain_lucidity(self) -> None:
+        non_lucid = validate_features(
+            valid_features(),
+            dream_tags=["flying"],
+        )
+        lucid = valid_features()
+        lucid["lucidity"] = True
+        lucid["lucidity_level"] = "lucid"
+
+        validated_lucid = validate_features(lucid, dream_tags=[])
+
+        self.assertFalse(non_lucid["lucidity"])
+        self.assertTrue(validated_lucid["lucidity"])
+
     def test_validation_normalizes_without_mutating_the_response(self) -> None:
         features = valid_features()
         features["themes"] = [" Hidden   Space ", "hidden space"]
@@ -233,6 +274,7 @@ class DreamStructuringTests(unittest.TestCase):
         self.assertIn("`sexual_content`: none for no sexual behavior", prompt)
         self.assertIn("`threat_level`: none for no credible danger", prompt)
         self.assertIn("Threat can be high even when no", prompt)
+        self.assertIn("absence of that tag does not imply", prompt)
 
     def test_validation_normalizes_retrieval_quality_to_float(self) -> None:
         features = valid_features()

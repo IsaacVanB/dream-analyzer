@@ -16,7 +16,7 @@ from dream_analysis.repository import DreamRepository
 
 
 DEFAULT_STRUCTURING_MODEL = "gemma3:12b"
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 MAX_VALIDATION_ATTEMPTS = 2
 LEVELS = ["none", "low", "moderate", "high"]
 ARRAY_SENTINELS = frozenset(
@@ -186,6 +186,18 @@ def _source_contains_phrase(source_text: str, phrase: str) -> bool:
     )
 
 
+def _has_lucid_tag(tags: Sequence[object] | None) -> bool:
+    if tags is None or isinstance(tags, (str, bytes)):
+        return False
+    for tag in tags:
+        if not isinstance(tag, str):
+            continue
+        normalized = tag.strip().casefold().removeprefix("#").strip()
+        if normalized == "lucid":
+            return True
+    return False
+
+
 def load_dreams(path: Path | str) -> list[dict[str, Any]]:
     """Load validated dream records for feature extraction."""
     return DreamRepository(path).records()
@@ -246,6 +258,7 @@ def validate_features(
     features: Any,
     *,
     dream_text: str | None = None,
+    dream_tags: Sequence[object] | None = None,
 ) -> dict[str, Any]:
     """Validate and normalize a structured Ollama response."""
     if not isinstance(features, dict):
@@ -329,6 +342,15 @@ def validate_features(
             )
         normalized_features[field] = value
 
+    if _has_lucid_tag(dream_tags) and (
+        normalized_features["lucidity"] is not True
+        or normalized_features["lucidity_level"] != "lucid"
+    ):
+        raise ValueError(
+            "dreams tagged 'lucid' must have lucidity true and "
+            "lucidity_level 'lucid'."
+        )
+
     if normalized_features["lucidity"] != (
         normalized_features["lucidity_level"] == "lucid"
     ):
@@ -382,6 +404,7 @@ def extract_features(
         "num_predict": 1200,
     }
     dream_text = dream.get("text")
+    dream_tags = dream.get("tags")
     for attempt in range(MAX_VALIDATION_ATTEMPTS):
         features = ollama.chat_json(
             schema=DREAM_FEATURE_SCHEMA,
@@ -394,6 +417,12 @@ def extract_features(
             return validate_features(
                 features,
                 dream_text=dream_text if isinstance(dream_text, str) else None,
+                dream_tags=(
+                    dream_tags
+                    if isinstance(dream_tags, Sequence)
+                    and not isinstance(dream_tags, (str, bytes))
+                    else None
+                ),
             )
         except ValueError as exc:
             if attempt + 1 == MAX_VALIDATION_ATTEMPTS:
